@@ -28,6 +28,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # through Alembic migrations (alembic/), never this.
         Base.metadata.create_all(bind=engine)
     yield
+    engine.dispose()
 
 
 app = FastAPI(title="isd-bus-routing API", version="0.1.0", lifespan=lifespan)

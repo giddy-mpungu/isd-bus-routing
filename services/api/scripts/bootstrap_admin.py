@@ -19,7 +19,9 @@ from __future__ import annotations
 import os
 import sys
 
-from isd_api.db import Base, SessionLocal, engine
+from sqlalchemy.exc import OperationalError
+
+from isd_api.db import SessionLocal
 from isd_api.models import Role, User
 from isd_api.security import hash_password
 
@@ -40,10 +42,19 @@ def main() -> int:
         print("ISD_API_BOOTSTRAP_PASSWORD must be at least 8 characters.", file=sys.stderr)
         return 1
 
-    Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        if db.query(User).count() > 0:
+        try:
+            user_count = db.query(User).count()
+        except OperationalError:
+            print(
+                "Database schema not found. Run `alembic upgrade head` first, "
+                "then re-run this script.",
+                file=sys.stderr,
+            )
+            return 1
+
+        if user_count > 0:
             print(
                 "Refusing to bootstrap: users already exist. Create additional "
                 "admins via POST /users as an existing transportation_admin.",
