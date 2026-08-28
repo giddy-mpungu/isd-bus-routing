@@ -17,8 +17,15 @@ this is a living operational document, not a feature).
   https://github.com/giddy-mpungu/isd-bus-routing (private).
 - Workflow: one branch per feature → PR via `gh` CLI → CI must pass →
   `gh pr merge --merge --delete-branch` → sync local `main`. Followed
-  for every PR this session (9 so far) with no exceptions except
-  this file.
+  for every PR this session (11 so far) with two accidental exceptions
+  where a commit was made directly on `main` before remembering to
+  branch first (caught before pushing both times — fixed by
+  `git branch <name>` at the current commit, `git reset --hard
+  origin/main`, then `git checkout <name>` and pushing that instead;
+  safe only because `origin/main` was confirmed to be a strict
+  ancestor of local `main` first). **Always run `git checkout -b
+  <branch>` as the literal first step of any new increment**, before
+  writing any file.
 - `gh` CLI path on this Windows machine (not on default bash PATH):
   `"/c/Program Files/GitHub CLI/gh.exe"`.
 - Node.js path (not on default bash PATH): `export PATH="/c/Program Files/nodejs:$PATH"` before any `npm`/`node` call in the Bash tool.
@@ -75,6 +82,21 @@ Monorepo, 3 services, each separately installed:
    on every file locally (not in CI, which runs on Linux). If a wall
    of prettier failures appears that doesn't match reality, check
    `.gitattributes` survived and `git config core.autocrlf`.
+4. Docker: a named volume's mount point is created **owned by root**
+   by default — if the container drops to a non-root `USER` before any
+   volume is attached (as `services/api/Dockerfile` does), writes to
+   that mount fail. Fix applied: `mkdir -p /data && chown -R appuser
+   /data` *before* `USER appuser`. If a future volume mount is added,
+   apply the same pattern.
+5. docker-compose: `VAR: ${VAR:-default}` syntax **always sets** the
+   env var in the container (to `default`, or `""` if `default` is
+   empty) — it does not mean "leave unset so the app's own fallback
+   applies." Setting `ISD_API_JWT_SECRET_KEY: ${ISD_API_JWT_SECRET_KEY:-}`
+   passed a genuinely empty string into the container, which
+   pydantic-settings read as a real (invalid) value instead of falling
+   back to its own default — broke login with a 500
+   ("HMAC key must not be empty"). Fix: don't list a compose env var
+   at all when the intent is "let the app's own default apply."
 
 **Auth (revised mid-session — see PR #6):** httpOnly, `SameSite=Lax`
 session cookie (`isd_session`), sliding 30-min inactivity renewal
@@ -108,23 +130,23 @@ PATCH edits that bypass the solver.
   lock-aware re-solve), `Driver.max_continuous_minutes` enforced as a
   real CP-SAT hard constraint, ADR 0007 (integrations boundary
   decision, no code yet).
-- **Phase 3** (dispatcher console, MVP) — **IN PROGRESS**:
-  - Done: login (cookie session), `/schedule` page (run/re-run solver,
-    view assignments joined to school/driver/vehicle, lock/unlock,
-    delete, crew-reassignment dropdown), `/setup` page (create/list
-    schools, qualifications, drivers, vehicles — admin-only creation,
-    RBAC-verified live with a real dispatcher-role user).
-  - **Not done / current work**: creating Crews and Runs (the two
-    date-scoped entities) still requires raw API calls — no UI yet.
-    Planned as inline forms on `SchedulePage.tsx` (reuse its existing
-    date picker/state), split out of PR #9 to keep it reviewable. **See
-    "Next step" below.**
-  - Also not done: other roles (driver/school_admin/parent) in the
-    console; any deployment/Docker config for any service.
+- **Phase 3** (dispatcher console) — **DONE** for its own defined
+  scope: login (cookie session), `/schedule` page (run/re-run solver,
+  view assignments joined to school/driver/vehicle, lock/unlock,
+  delete, crew-reassignment dropdown, **inline crew+run creation for
+  the selected date**), `/setup` page (create/list schools,
+  qualifications, drivers, vehicles — admin-only creation, RBAC-
+  verified live with a real dispatcher-role user). Console is usable
+  end to end with **zero raw API calls needed**. Dockerized (both
+  images build+run+pass a CI smoke test). "Other roles" is *not* a
+  Phase 3 gap — driver app is Phase 4, parent/student is Phase 5, each
+  its own phase in the original roadmap.
 - **Phases 4–6** — Not started (driver app, parent/student app,
   dynamic rerouting/substitutes/field trips/historical learning).
-- **CI**: `.github/workflows/ci.yml`, 3 jobs (solver/api/web), runs on
-  every push to `main` and every PR. Currently green.
+  **Phase 4 has an open decision the user needs to make** — see "Next
+  step" below.
+- **CI**: `.github/workflows/ci.yml`, 4 jobs (solver/api/web/docker),
+  runs on every push to `main` and every PR. Currently green.
 
 ## PRs merged this session (chronological)
 
@@ -137,8 +159,10 @@ PATCH edits that bypass the solver.
 7. #7 `chore/ci-setup` — `.github/workflows/ci.yml`, `.gitattributes`, fixed isd_solver dep + numpy/mypy bugs
 8. #8 `feat/crew-reassignment-ui` — Crew `<select>` on SchedulePage, fixed stale `explanation_text` bug
 9. #9 `feat/setup-page-master-data` — `/setup` page (schools/quals/drivers/vehicles)
+10. #10 `feat/inline-crew-run-creation` — inline crew/run forms on SchedulePage; console now usable with zero raw API calls
+11. #11 `feat/docker-deployment-config` — Dockerfiles, `docker-compose.yml`, CI `docker` job; fixed a volume-permissions bug and a compose env-var footgun (both found by actually running the containers, not just building them)
 
-## Key files (current state, post-PR #9)
+## Key files (current state, post-PR #11)
 
 - `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal)
 - `services/api/src/isd_api/routers/auth.py` — login sets cookie + returns bearer token; `POST /auth/logout` (no auth required)
@@ -153,46 +177,49 @@ PATCH edits that bypass the solver.
 - `services/web/src/pages/SchedulePage.tsx` — main dispatcher view
 - `services/web/src/pages/SetupPage.tsx` — schools/quals/drivers/vehicles create+list
 - `services/web/src/layout/AppLayout.tsx` — header, nav (Schedule/Setup links), logout
+- `services/api/Dockerfile`, `services/web/Dockerfile`, `services/web/nginx.conf`, `docker-compose.yml`, `.dockerignore` (root, api's build context) / `services/web/.dockerignore`
 - `docs/architecture.md` — system diagram + phase table + known gaps — **keep updated per PR**
 - `docs/adr/0001`–`0007` — architecture decision records
 
 ## Exact next step (as of this checkpoint)
 
-Add inline **Crew-creation** and **Run-creation** forms to
-`services/web/src/pages/SchedulePage.tsx`, scoped to the currently
-selected `serviceDate`:
+Phase 3 is done. Two threads, running in parallel:
 
-- **"Add crew" form**: driver `<select>` (from existing `drivers`
-  state), vehicle `<select>` (from existing `vehicles` state),
-  `available_window_earliest`/`latest` (default 0/1439 or simple
-  number inputs) → `POST /crews` via a new `api.createCrew()` (add to
-  `client.ts` + a `CrewCreate` type in `types.ts`, mirroring the
-  `SchoolCreate`/`DriverCreate` pattern from PR #9). RBAC:
-  `transportation_admin` **and** `dispatcher` (both — unlike the Setup
-  page's admin-only forms; matches `crews.py`'s `_WRITE_ROLES`).
-- **"Add run" form**: school `<select>` (from existing `schools`
-  state), `window_earliest`/`latest`, `duration_minutes`,
-  `buffer_minutes`, `passenger_count`, `required_qualification_codes`
-  (checkboxes filtered to `kind === 'vehicle_capability'`, reuse the
-  pattern from `SetupPage.tsx`) → `POST /runs` via a new
-  `api.createRun()`. RBAC: `transportation_admin` **and** `dispatcher`.
-- After either creation, call the existing `loadAll(serviceDate)` to
-  refresh.
-- New tests in `SchedulePage.test.tsx`: crew creation calls the API
-  and reloads; run creation calls the API and reloads; a validation
-  error (e.g. `window_earliest > window_latest`) surfaces the
-  backend's message.
-- **Manual browser verification required** (standing project rule for
-  UI changes) — start both dev servers, exercise the real flow,
-  confirm server-side persistence via a direct `curl`, stop servers
-  when done.
-- Branch: `feat/inline-crew-run-creation` (or similar).
-- After merging: update `docs/architecture.md`'s Phase 3 row (remove
-  the "creating crews/runs..." caveat), update this file, update
-  persistent memory (`project_isd_bus_routing_overview.md`).
-- **Beyond that**, no explicit user direction yet — likely candidates:
-  other roles' console views, or deployment/Docker config (both
-  flagged as open in `docs/architecture.md`).
+1. **Blocked on a user decision** (asked this checkpoint, answer may
+   already be in the conversation above this file): Phase 4 (driver
+   app) needs a client-platform choice ADR 0003 explicitly deferred
+   ("Mobile clients (Phase 4+): decision deferred — evaluate React
+   Native vs. Flutter... once we're building it" — that's now).
+   Recommendation given: reuse the existing React+TS+Vite stack as a
+   responsive web app rather than adopting a new native framework —
+   keeps one toolchain/skillset/CI pattern, and spec §9's "large
+   controls, minimal typing, audible instructions" doesn't require
+   native/app-store distribution. Alternatives offered: React Native,
+   Flutter. **Check for the user's answer before starting Phase 4** —
+   do not assume the recommendation was accepted.
+2. **Not blocked, in progress in the meantime**: enforce partial-day
+   crew availability in the solver — closes a documented Phase 1
+   simplification (`docs/domain-model.md`, `docs/architecture.md`'s
+   remaining known-gap item): today, locking one assignment on a crew
+   makes `POST /schedule` treat that crew as fully unavailable for the
+   *entire* day (`routers/schedule.py`'s re-schedule logic excludes
+   the whole crew, not just its locked time window), because the
+   solver's `Crew.available_window` is a single whole-day window with
+   no busy-interval concept. Scope: extend the solver domain (likely a
+   `busy_intervals: tuple[TimeWindow, ...]` on `Crew`, or an
+   equivalent), update `scheduler.py`'s CP-SAT model to exclude those
+   intervals from where a job can be scheduled on that crew (not just
+   filtering the crew out entirely), thread it through from
+   `routers/schedule.py` when building solver inputs for a re-solve
+   (locked assignments' time ranges become the excluded crew's busy
+   intervals, instead of removing the crew from the candidate pool).
+   New solver tests + api tests covering: a crew with one locked
+   assignment can still be given a *different*, non-overlapping job on
+   the same re-solve. Update `docs/architecture.md`/`docs/domain-model.md`
+   once done. Branch: `feat/partial-day-crew-availability` (or similar).
+
+After whichever lands: update this file, update persistent memory
+(`project_isd_bus_routing_overview.md`).
 
 ## Environment specifics (this machine)
 
