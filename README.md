@@ -31,7 +31,7 @@ not a big-bang build of the full spec:
 | 0 | Domain model + Architecture Decision Records | ✅ done |
 | 1 | Headless solver MVP: multi-school crew scheduling (spec §5) | ✅ done, hardened (capacity, real-routing estimator, observability) |
 | 2 | Persistence + RBAC skeleton | ✅ done — see services/api |
-| 3 | Dispatcher console (web) | not started |
+| 3 | Dispatcher console (web) | 🚧 MVP shipped — login + schedule view, see services/web |
 | 4 | Driver app | not started |
 | 5 | Parent/student app + demand-based routing | not started |
 | 6 | Dynamic rerouting, substitute coverage, historical learning | not started |
@@ -53,6 +53,7 @@ docs/
 services/
   solver/               Python/OR-Tools CP-SAT scheduling & routing engine
   api/                   FastAPI persistence + RBAC + HTTP layer (Phase 2)
+  web/                   React/TypeScript dispatcher console (Phase 3, MVP)
 ```
 
 ## Stack
@@ -60,7 +61,7 @@ services/
 - Solver: Python + Google OR-Tools (CP-SAT)
 - API: Python + FastAPI, SQLAlchemy 2.0, Alembic migrations
 - Data: SQLite (dev/test, used in this environment), PostgreSQL + PostGIS (production target — see ADR 0006)
-- Dispatcher console (Phase 3+): React + TypeScript
+- Dispatcher console (Phase 3, MVP shipped): React + TypeScript + Vite, oxlint + Prettier, Vitest + React Testing Library
 - Deployment: containerized, cloud-agnostic
 
 ## Getting started (solver)
@@ -97,6 +98,27 @@ fine for development. For anything beyond that, set
 `ISD_API_ENVIRONMENT=production` with a real `ISD_API_JWT_SECRET_KEY`
 (the app refuses to start in production with the default dev secret).
 
+## Getting started (web)
+
+The dispatcher console (Phase 3 MVP: log in, view/run a date's
+schedule, lock/unlock or delete an assignment — see
+`docs/architecture.md` for what's in and out of scope for this slice).
+Needs the api running first (previous section) — the dev server is
+configured to talk to it at `http://localhost:8000`.
+
+```bash
+cd services/web
+npm install
+npm run dev     # http://localhost:5173
+```
+
+Log in with any `dispatcher` or `transportation_admin` user created
+via `scripts/bootstrap_admin.py` or `POST /users`. Sessions use an
+httpOnly cookie (never touched by this frontend's own code — see
+`isd_api.security`) with a sliding 30-minute inactivity timeout and a
+12-hour absolute cap, so a page refresh doesn't require logging in
+again but leaving the tab idle eventually does.
+
 ## Development
 
 Each service is linted and type-checked independently (they're
@@ -111,7 +133,17 @@ mypy                 # type-check the package source (src/)
 pytest               # run that service's test suite
 ```
 
-CI (once set up) will run all four for both services on every PR —
+`services/web` uses the JS-ecosystem equivalents — run from inside it:
+
+```bash
+npm run lint          # oxlint
+npm run format         # prettier --write
+npm run format:check   # prettier --check
+npm run build          # tsc -b && vite build (type-checks + bundles)
+npm run test           # vitest run
+```
+
+CI (once set up) will run these for all three services on every PR —
 run them locally before pushing.
 
 ## Non-negotiables (carried from spec)

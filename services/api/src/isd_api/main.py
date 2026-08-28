@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from isd_api.config import settings
 from isd_api.db import Base, engine
@@ -32,6 +33,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="isd-bus-routing API", version="0.1.0", lifespan=lifespan)
+
+# allow_credentials=True is required for the Phase 3 dispatcher console's
+# session cookie to cross the dev-server/API origin boundary — combined
+# with an explicit allow-list (never a wildcard; browsers reject that
+# combination with credentials anyway) this is the actual CORS security
+# boundary. See isd_api.security and the Phase 3 plan for the rest of
+# the cookie's protections (httponly, SameSite=Lax).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(auth.router)
 app.include_router(users.router)

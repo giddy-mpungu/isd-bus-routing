@@ -14,11 +14,11 @@ map; the ADRs are the reasoning; the domain model is the data.
 
 ```mermaid
 graph TB
-    subgraph clients["Role-scoped clients (Phase 3+)"]
-        Dispatcher["Dispatcher console\n(web, React/TS)"]
-        DriverApp["Driver app\n(tablet)"]
-        ParentApp["Parent/student app"]
-        AdminConsole["Transportation admin console\n(web)"]
+    subgraph clients["Role-scoped clients"]
+        Dispatcher["Dispatcher console\n(services/web, React/TS)\nMVP: login + schedule view\nbuilt"]
+        DriverApp["Driver app\n(tablet, Phase 4+)"]
+        ParentApp["Parent/student app\n(Phase 5+)"]
+        AdminConsole["Transportation admin console\n(web, Phase 3+, beyond MVP)"]
     end
 
     subgraph core["Core services (built)"]
@@ -51,12 +51,12 @@ graph TB
     API -.future.-> Maint
 ```
 
-Today, only `services/solver` and `services/api` exist and are wired
-together (the API's `POST /schedule` endpoint calls the solver against
-persisted crews/runs and stores the result with an audit entry). Every
-other box is planned, not built — this diagram is deliberately drawn
-with the end-state boundaries so client and integration work slots in
-without redrawing the map.
+`services/solver`, `services/api`, and now `services/web` (Phase 3
+MVP: login, view/run a date's schedule, lock/unlock or delete a single
+assignment — dispatcher/transportation_admin only) exist and are wired
+together end to end. Every other client box is planned, not built —
+this diagram is deliberately drawn with the end-state boundaries so
+client and integration work slots in without redrawing the map.
 
 ## Phase-to-spec mapping
 
@@ -67,7 +67,7 @@ Spec section numbers refer to `Bus Program Specifications Document.docx`.
 | 0 — Domain model + ADRs | §1, §2 (terminology, hard/soft constraint split) | Done |
 | 1 — Headless solver MVP | §5 (multi-school crew scheduling), §15 (capacity/qualification), §16 (buffers), §21 (explanations) | Done, hardened (ADR 0005) |
 | 2 — Persistence + RBAC | §17 (6 RBAC roles), §21 (audit trail), partial §11 (permanent vs. daily assignment distinction in the data model) | Done (ADR 0006) — see known gaps below |
-| 3 — Dispatcher console (web) | §9 (ops visibility), §14 (dispatch), §21 (human override UI) | Not started — unblocked (mutation endpoints exist), needs a scoping conversation before starting: new frontend service, client-side auth-token-storage decisions |
+| 3 — Dispatcher console (web) | §9 (ops visibility), §14 (dispatch), §21 (human override UI) | 🚧 MVP shipped (`services/web`): login, schedule view (run/re-run the solver, view assignments joined to school/driver/vehicle), lock/unlock, delete. Not yet: crew-reassignment UI (PATCH endpoint supports it, this slice's UI doesn't expose it), other roles, any deployment config |
 | 4 — Driver app | §9 (driver-facing nav/assignments), §14 (dispatch queue) | Not started |
 | 5 — Parent/student app + demand routing | §3 (student/stop assignment), §4 (ridership status), §18 (parent app scope) | Not started |
 | 6 — Dynamic rerouting + substitutes + learning | §6/§7 (bus-legal routing, turn/dead-end rules), §8 (district geo knowledge), §10 (dynamic rerouting), §12 (field trips), §13 (absences/substitutes), §20 (historical learning) | Not started |
