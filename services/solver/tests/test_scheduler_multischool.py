@@ -96,9 +96,7 @@ def test_single_crew_infeasible_when_deadhead_exceeds_gap():
 
 def test_two_crews_recover_feasibility_when_one_crew_cannot_chain_all_three():
     jobs = _spec_section5_jobs()
-    result = solve_multi_school_schedule(
-        jobs, [_crew("C1"), _crew("C2")], _fixed_deadhead(15)
-    )
+    result = solve_multi_school_schedule(jobs, [_crew("C1"), _crew("C2")], _fixed_deadhead(15))
 
     assert isinstance(result, SchedulingResult)
     assert result.crews_used == 2

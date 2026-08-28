@@ -9,25 +9,39 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from isd_solver import (
+    Crew as SolverCrew,
+)
+from isd_solver import (
+    Driver as SolverDriver,
+)
+from isd_solver import (
+    InfeasibleResult,
+    SchedulingResult,
+    solve_multi_school_schedule,
+    straight_line_deadhead_estimator,
+)
+from isd_solver import (
+    Job as SolverJob,
+)
+from isd_solver import (
+    Location as SolverLocation,
+)
+from isd_solver import (
+    TimeWindow as SolverTimeWindow,
+)
+from isd_solver import (
+    Vehicle as SolverVehicle,
+)
 from sqlalchemy.orm import Session
 
 from isd_api.audit import record as record_audit
 from isd_api.db import get_db
-from isd_api.models import Assignment, Crew as DBCrew, Role, Run as DBRun, User
+from isd_api.models import Assignment, Role, User
+from isd_api.models import Crew as DBCrew
+from isd_api.models import Run as DBRun
 from isd_api.schemas import AssignmentRead, ScheduleRequest, ScheduleResult
 from isd_api.security import get_current_user, require_role
-from isd_solver import (
-    Crew as SolverCrew,
-    Driver as SolverDriver,
-    InfeasibleResult,
-    Job as SolverJob,
-    Location as SolverLocation,
-    SchedulingResult,
-    TimeWindow as SolverTimeWindow,
-    Vehicle as SolverVehicle,
-    solve_multi_school_schedule,
-    straight_line_deadhead_estimator,
-)
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
 
@@ -122,17 +136,18 @@ def run_schedule(
     db.flush()
 
     created: list[Assignment] = []
-    for a in result.assignments:
+    for solver_assignment in result.assignments:
+        explanation = solver_assignment.explanation
         assignment = Assignment(
-            run_id=int(a.job_id),
-            crew_id=int(a.crew_id),
-            start_minute=a.start_minute,
-            end_minute=a.end_minute,
-            explanation_text=a.explanation.text(),
+            run_id=int(solver_assignment.job_id),
+            crew_id=int(solver_assignment.crew_id),
+            start_minute=solver_assignment.start_minute,
+            end_minute=solver_assignment.end_minute,
+            explanation_text=explanation.text(),
             explanation_json={
-                "hard_constraints_checked": list(a.explanation.hard_constraints_checked),
-                "buffer_minutes_to_next_job": a.explanation.buffer_minutes_to_next_job,
-                "next_job_id": a.explanation.next_job_id,
+                "hard_constraints_checked": list(explanation.hard_constraints_checked),
+                "buffer_minutes_to_next_job": explanation.buffer_minutes_to_next_job,
+                "next_job_id": explanation.next_job_id,
             },
         )
         db.add(assignment)

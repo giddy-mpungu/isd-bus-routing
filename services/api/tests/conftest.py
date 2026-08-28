@@ -44,7 +44,9 @@ def client(db_session):
     app.dependency_overrides.clear()
 
 
-def make_user(db_session, *, email: str, role: Role, password: str = "password123", **kwargs) -> User:
+def make_user(
+    db_session, *, email: str, role: Role, password: str = "password123", **kwargs
+) -> User:
     user = User(
         email=email,
         hashed_password=hash_password(password),
