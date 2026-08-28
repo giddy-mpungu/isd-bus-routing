@@ -4,6 +4,7 @@ import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AppLayout } from './layout/AppLayout'
 import { LoginPage } from './pages/LoginPage'
 import { SchedulePage } from './pages/SchedulePage'
+import { SetupPage } from './pages/SetupPage'
 
 function App() {
   return (
@@ -16,6 +17,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['dispatcher', 'transportation_admin']}>
                 <SchedulePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/setup"
+            element={
+              <ProtectedRoute allowedRoles={['dispatcher', 'transportation_admin']}>
+                <SetupPage />
               </ProtectedRoute>
             }
           />

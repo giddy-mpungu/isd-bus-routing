@@ -22,14 +22,28 @@ export interface School {
   location_lon: number
 }
 
+export type QualificationKind = 'license' | 'vehicle_capability'
+
+export interface Qualification {
+  id: number
+  code: string
+  kind: QualificationKind
+  description: string | null
+}
+
 export interface Driver {
   id: number
   full_name: string
+  max_continuous_minutes: number | null
+  qualifications: Qualification[]
 }
 
 export interface Vehicle {
   id: number
   label: string
+  nominal_capacity: number | null
+  effective_capacity: number | null
+  qualifications: Qualification[]
 }
 
 export interface Run {
@@ -72,4 +86,29 @@ export interface AssignmentPatch {
   start_minute?: number
   end_minute?: number
   locked?: boolean
+}
+
+export interface SchoolCreate {
+  name: string
+  location_lat: number
+  location_lon: number
+}
+
+export interface QualificationCreate {
+  code: string
+  kind: QualificationKind
+  description?: string
+}
+
+export interface DriverCreate {
+  full_name: string
+  max_continuous_minutes?: number
+  qualification_codes: string[]
+}
+
+export interface VehicleCreate {
+  label: string
+  nominal_capacity?: number
+  effective_capacity?: number
+  qualification_codes: string[]
 }
