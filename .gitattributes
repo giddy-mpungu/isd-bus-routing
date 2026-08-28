@@ -1,0 +1,8 @@
+# Force LF line endings for everything git treats as text, regardless
+# of core.autocrlf on any given machine. Without this, a Windows
+# checkout (core.autocrlf=true, common default on Git for Windows)
+# gets CRLF on disk while the repo stores LF — harmless for most tools,
+# but prettier's --check (services/web) correctly flags that mismatch
+# as "unformatted" even though nothing is actually wrong, which made
+# `npm run format:check` fail on every file on a fresh Windows clone.
+* text=auto eol=lf
