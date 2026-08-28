@@ -1,8 +1,11 @@
-"""Bridges the persisted domain (schools/runs/crews) to isd_solver and
-back. This is Phase 2's proof point: the Phase 1 solver, running
-behind an authenticated, RBAC-checked, audited HTTP endpoint against
-real persisted data — not a standalone script anymore.
-"""
+"""spec section 21: the solver-driven schedule endpoints, plus the
+human-override endpoints (PATCH/DELETE on a single assignment) that
+let transportation personnel reassign a crew, adjust a time, or lock
+an assignment against a future re-solve. Every manual override still
+re-checks the same hard constraints the solver enforces (qualification,
+capacity, no overlap, window bounds) — human override supersedes the
+solver's *optimization choices*, never the safety-critical hard
+constraints (README "Non-negotiables carried from spec")."""
 
 from __future__ import annotations
 
@@ -40,7 +43,7 @@ from isd_api.db import get_db
 from isd_api.models import Assignment, Role, User
 from isd_api.models import Crew as DBCrew
 from isd_api.models import Run as DBRun
-from isd_api.schemas import AssignmentRead, ScheduleRequest, ScheduleResult
+from isd_api.schemas import AssignmentRead, AssignmentUpdate, ScheduleRequest, ScheduleResult
 from isd_api.security import get_current_user, require_role
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
@@ -89,41 +92,136 @@ def _to_solver_inputs(
     return db_runs, db_crews, jobs, crews
 
 
+def _hard_constraint_violation(
+    db: Session,
+    run: DBRun,
+    crew: DBCrew,
+    start_minute: int,
+    end_minute: int,
+    *,
+    exclude_assignment_id: int | None,
+) -> str | None:
+    """Re-checks the same hard constraints solve_multi_school_schedule
+    enforces, against a single proposed (run, crew, start, end) — used
+    by the manual PATCH endpoint, which doesn't go through the solver.
+    Returns a human-readable violation reason, or None if valid."""
+    if crew.service_date != run.service_date:
+        return (
+            f"Crew {crew.id} is for service_date={crew.service_date}, but "
+            f"run {run.id} is for service_date={run.service_date}"
+        )
+
+    required_codes = {q.code for q in run.required_qualifications}
+    crew_codes = {q.code for q in crew.vehicle.qualifications}
+    if not required_codes.issubset(crew_codes):
+        missing = sorted(required_codes - crew_codes)
+        return f"Crew {crew.id}'s vehicle is missing required qualification(s): {missing}"
+
+    if run.passenger_count > 0:
+        capacity = crew.vehicle.allowable_capacity()
+        if capacity is None or capacity < run.passenger_count:
+            return (
+                f"Crew {crew.id}'s vehicle capacity ({capacity}) is insufficient for "
+                f"{run.passenger_count} expected passenger(s)"
+            )
+
+    if start_minute > end_minute:
+        return f"start_minute ({start_minute}) must be <= end_minute ({end_minute})"
+    if not (run.window_earliest <= start_minute and end_minute <= run.window_latest):
+        return (
+            f"[{start_minute}, {end_minute}] falls outside run {run.id}'s required "
+            f"window [{run.window_earliest}, {run.window_latest}]"
+        )
+    if not (
+        crew.available_window_earliest <= start_minute
+        and end_minute <= crew.available_window_latest
+    ):
+        return (
+            f"[{start_minute}, {end_minute}] falls outside crew {crew.id}'s available "
+            f"window [{crew.available_window_earliest}, {crew.available_window_latest}]"
+        )
+
+    others = db.query(Assignment).filter(Assignment.crew_id == crew.id)
+    for other in others:
+        if other.id == exclude_assignment_id:
+            continue
+        if start_minute < other.end_minute and other.start_minute < end_minute:
+            return (
+                f"Crew {crew.id} already has overlapping assignment {other.id} "
+                f"({other.start_minute}-{other.end_minute})"
+            )
+
+    return None
+
+
 @router.post("", response_model=ScheduleResult)
 def run_schedule(
     payload: ScheduleRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN, Role.DISPATCHER)),
 ) -> ScheduleResult:
-    db_runs, _db_crews, jobs, crews = _to_solver_inputs(db, payload.service_date)
+    db_runs, db_crews, jobs, crews = _to_solver_inputs(db, payload.service_date)
 
-    if not jobs:
+    if not db_runs:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"No runs exist for service_date={payload.service_date}",
         )
-    if not crews:
+    if not db_crews:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"No crews exist for service_date={payload.service_date}",
         )
 
+    run_ids = [r.id for r in db_runs]
+    existing = db.query(Assignment).filter(Assignment.run_id.in_(run_ids)).all()
+    locked_assignments = [a for a in existing if a.locked]
+    unlocked_assignments = [a for a in existing if not a.locked]
+    locked_run_ids = {a.run_id for a in locked_assignments}
+    locked_crew_ids = {a.crew_id for a in locked_assignments}
+
+    # A locked assignment's run is already fixed (not re-optimized).
+    # Its crew is treated as fully committed for the day: the solver's
+    # Crew model has one whole-day availability window with no
+    # partial-busy-interval support, so partially freeing a locked
+    # crew's remaining hours isn't representable yet — a real future
+    # enhancement (see docs/architecture.md), not silently assumed away.
+    unlocked_jobs = [j for j in jobs if int(j.id) not in locked_run_ids]
+    solvable_crews = [c for c in crews if int(c.id) not in locked_crew_ids]
+
+    if not unlocked_jobs:
+        # Everything for this date is already locked — nothing to
+        # solve; return the existing schedule unchanged, not an error.
+        return ScheduleResult(
+            crews_used=len({a.crew_id for a in locked_assignments}),
+            assignments=[AssignmentRead.model_validate(a) for a in locked_assignments],
+        )
+
+    if not solvable_crews:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                f"All available crews for service_date={payload.service_date} are "
+                "committed to locked assignments; no crew remains to schedule the "
+                "unlocked runs."
+            ),
+        )
+
     estimator = straight_line_deadhead_estimator(
         average_speed_kmh=payload.average_deadhead_speed_kmh
     )
-    result = solve_multi_school_schedule(jobs, crews, estimator)
+    result = solve_multi_school_schedule(unlocked_jobs, solvable_crews, estimator)
 
     if isinstance(result, InfeasibleResult):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=result.reason)
 
     assert isinstance(result, SchedulingResult)
 
-    # Re-running schedule for a date replaces any prior assignments for
-    # that date's runs — audited as explicit delete+create, not a
-    # silent overwrite (spec section 14).
-    run_ids = [r.id for r in db_runs]
-    existing = db.query(Assignment).filter(Assignment.run_id.in_(run_ids)).all()
-    for old in existing:
+    # Replace only the unlocked assignments for this date — locked ones
+    # are left untouched (spec section 21: a lock must survive a
+    # re-solve), audited as explicit delete+create, not a silent
+    # overwrite (spec section 14).
+    for old in unlocked_assignments:
         record_audit(
             db,
             entity_type="assignment",
@@ -170,11 +268,118 @@ def run_schedule(
     db.commit()
     for a in created:
         db.refresh(a)
+    for a in locked_assignments:
+        db.refresh(a)
 
+    all_assignments = locked_assignments + created
     return ScheduleResult(
-        crews_used=result.crews_used,
-        assignments=[AssignmentRead.model_validate(a) for a in created],
+        crews_used=len({a.crew_id for a in all_assignments}),
+        assignments=[AssignmentRead.model_validate(a) for a in all_assignments],
     )
+
+
+@router.patch("/assignments/{assignment_id}", response_model=AssignmentRead)
+def update_assignment(
+    assignment_id: int,
+    payload: AssignmentUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN, Role.DISPATCHER)),
+) -> Assignment:
+    """spec section 21 human override: reassign a crew, adjust a time,
+    and/or lock/unlock a single assignment. A crew/time change is
+    re-validated against every hard constraint the solver enforces
+    (_hard_constraint_violation) before it's written — human override
+    supersedes the solver's optimization choices, never a hard
+    constraint."""
+    assignment = db.get(Assignment, assignment_id)
+    if assignment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
+
+    before_state = {
+        "run_id": assignment.run_id,
+        "crew_id": assignment.crew_id,
+        "start_minute": assignment.start_minute,
+        "end_minute": assignment.end_minute,
+        "locked": assignment.locked,
+    }
+
+    new_crew_id = payload.crew_id if payload.crew_id is not None else assignment.crew_id
+    new_start = (
+        payload.start_minute if payload.start_minute is not None else assignment.start_minute
+    )
+    new_end = payload.end_minute if payload.end_minute is not None else assignment.end_minute
+
+    if (
+        new_crew_id != assignment.crew_id
+        or new_start != assignment.start_minute
+        or new_end != assignment.end_minute
+    ):
+        crew = db.get(DBCrew, new_crew_id)
+        if crew is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=f"Crew {new_crew_id} not found"
+            )
+        violation = _hard_constraint_violation(
+            db, assignment.run, crew, new_start, new_end, exclude_assignment_id=assignment.id
+        )
+        if violation is not None:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=violation)
+        assignment.crew_id = new_crew_id
+        assignment.start_minute = new_start
+        assignment.end_minute = new_end
+
+    if payload.locked is not None:
+        assignment.locked = payload.locked
+
+    db.flush()
+    record_audit(
+        db,
+        entity_type="assignment",
+        entity_id=assignment.id,
+        action="updated",
+        actor=current_user,
+        before_state=before_state,
+        after_state={
+            "run_id": assignment.run_id,
+            "crew_id": assignment.crew_id,
+            "start_minute": assignment.start_minute,
+            "end_minute": assignment.end_minute,
+            "locked": assignment.locked,
+        },
+    )
+    db.commit()
+    db.refresh(assignment)
+    return assignment
+
+
+@router.delete("/assignments/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_assignment(
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN, Role.DISPATCHER)),
+) -> None:
+    """spec section 21 human override: remove a single assignment
+    (e.g. cancel a run's crew assignment) without a full re-solve."""
+    assignment = db.get(Assignment, assignment_id)
+    if assignment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
+
+    record_audit(
+        db,
+        entity_type="assignment",
+        entity_id=assignment.id,
+        action="deleted",
+        actor=current_user,
+        before_state={
+            "run_id": assignment.run_id,
+            "crew_id": assignment.crew_id,
+            "start_minute": assignment.start_minute,
+            "end_minute": assignment.end_minute,
+            "locked": assignment.locked,
+        },
+    )
+    db.delete(assignment)
+    db.commit()
 
 
 @router.get("/{service_date}/assignments", response_model=list[AssignmentRead])

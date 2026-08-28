@@ -79,15 +79,23 @@ These are real, self-identified gaps — not urgent enough to block this
 session's git/lint/DB-refactor work, but they should be the first thing
 picked up when Phase 3 starts.
 
-1. **No mutation endpoints.** `services/api` has only `POST`/`GET`
-   routes — no `PUT`/`PATCH`/`DELETE` anywhere. Spec §21 requires
-   transportation personnel to modify stop locations, reassign
-   students/buses/drivers, override recommendations, and lock specific
-   routes or assignments. Today the only way to change an assignment
-   is a full re-solve via `POST /schedule` (which replaces *all*
-   assignments for the date, per `test_schedule_end_to_end.py`) — there
-   is no single-assignment edit. The dispatcher console (Phase 3)
-   cannot be built usefully until these exist.
+1. ~~**No mutation endpoints.**~~ **Closed.** `PATCH`/`DELETE
+   /schedule/assignments/{id}` let a dispatcher/admin reassign a
+   crew, adjust a time, lock/unlock, or remove a single assignment
+   without a full re-solve — every hard constraint the solver enforces
+   (qualification, capacity, no overlap, window bounds) is re-checked
+   server-side first (`_hard_constraint_violation` in
+   `routers/schedule.py`), and every change is audited. `POST
+   /schedule` now excludes locked assignments' runs and crews from
+   re-solving, so a lock survives a re-schedule. Remaining sub-gap:
+   locking a crew's assignment removes that crew from the *entire*
+   day's solve, since the solver's `Crew` model has one whole-day
+   availability window with no partial-busy-interval support —
+   partial-day availability (free a locked crew for the rest of its
+   day) is a real future enhancement, not yet built. Still not covered
+   by this: stop locations, student reassignment (no Student entity
+   yet — spec §3, Phase 5), and route-sequence edits beyond
+   crew/time/lock on a single assignment.
 2. **No integrations boundary.** Spec §19 lists five external systems
    (SIS, HR/absence, SSO, GPS/AVL, fleet maintenance) that should be
    sources of truth rather than duplicated. Nothing in the codebase yet
