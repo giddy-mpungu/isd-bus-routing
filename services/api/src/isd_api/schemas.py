@@ -4,7 +4,7 @@ from datetime import date
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from isd_api.models import QualificationKind, Role
+from isd_api.models import AssignmentStatus, QualificationKind, Role
 
 
 class Token(BaseModel):
@@ -154,6 +154,31 @@ class AssignmentUpdate(BaseModel):
     start_minute: int | None = Field(default=None, ge=0, lt=1440)
     end_minute: int | None = Field(default=None, ge=0, lt=1440)
     locked: bool | None = None
+
+
+class AssignmentStatusUpdate(BaseModel):
+    """Driver-reported progress on their own assignment (Phase 4) —
+    distinct from AssignmentUpdate, which is the dispatcher-only
+    scheduling override."""
+
+    status: AssignmentStatus
+
+
+class DriverAssignmentRead(BaseModel):
+    """Denormalized view of an assignment for the driver who's working
+    it — resolved school/vehicle names instead of raw ids, since a
+    driver has no other endpoint available to look those up (spec
+    section 17 least-privilege; see routers/schedule.py)."""
+
+    id: int
+    run_id: int
+    service_date: date
+    school_name: str
+    vehicle_label: str
+    start_minute: int
+    end_minute: int
+    status: AssignmentStatus
+    locked: bool
 
 
 class ScheduleRequest(BaseModel):

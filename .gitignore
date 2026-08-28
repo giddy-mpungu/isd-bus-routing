@@ -15,3 +15,6 @@ node_modules/
 *.tsbuildinfo
 coverage/
 npm-debug.log*
+*.log
+
+.claude/
