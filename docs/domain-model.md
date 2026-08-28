@@ -97,10 +97,35 @@ See `scheduler.py` and `explain.py` docstrings — these are the solver
 *outputs*, not inputs, so they're defined next to the code that
 produces them rather than duplicated here.
 
+## Phase 5 entities (`services/api/src/isd_api/models.py`, persistence only — not part of the solver domain)
+
+- **Stop**: a manually-created boarding/alighting location (spec §3).
+  `label`, `location_lat`/`location_lon`. No automated stop-generation
+  yet — see "Not yet implemented" below.
+- **Student**: `full_name`, `school_id`, optional `stop_id`,
+  `default_ridership` (spec §4.1: `rides` or `does_not_ride`).
+  Deliberately minimal — no address/geocoding field, since nothing
+  consumes it yet (same PII-minimalism precedent as `Driver`).
+- **student_guardians**: many-to-many join between `Student` and
+  `User` (a parent's access to their children, spec §17) — distinct
+  from `User.student_id`, which is a student's *own* login.
+- **RidershipOverride**: a per-day, per-leg (`direction`: `am`/`pm`)
+  override of a student's default ridership (spec §4.2), keyed by
+  `(student_id, service_date, direction)`. Deliberately keyed by date
+  rather than a specific `Run` row — `Run` rows are per-service-date
+  (no recurring `Route` template table exists, despite ADR 0001 having
+  named that intention — see "Not yet implemented" below), so a
+  student's standing assignment can't point at one without needing
+  re-linking every day. Also spec §4.5's "late request to ride" — same
+  mechanism, no separate code path.
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
-- Student, Stop entities and student-to-stop/route assignment (spec §3) — Phase 2+
+- Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)
+- Wiring ridership declarations into the solver (dropping empty stops, recalculating ETAs, spec §4.3) — `Run.passenger_count` is still a static admin-entered int; a natural follow-up to the Phase 5 MVP, not part of it
+- Ridership reporting cutoff / route-lock configuration (spec §4.4)
+- A recurring `route` (template) table distinct from dated `run` instances — ADR 0001 named this intention for Phase 2+, never built; Phase 5 worked around its absence rather than building it (see RidershipOverride above)
 - Field trips / Trip conflict detection (spec §12) — Phase 2/6
 - Driver absence and substitute ranking (spec §13) — Phase 6
-- Ridership-status-driven dynamic stop removal (spec §4) — Phase 5/6
 - Bus-legal road-network routing and turn penalties (spec §6/7) — Phase 6, requires a routing graph/profile aware of bus dimensions and restrictions, not either estimator above
+- Live GPS bus location, delay/substitution/route-change notifications (spec §18) — Phase 6+, no live-tracking or notification infrastructure exists yet

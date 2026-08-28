@@ -19,13 +19,19 @@ import type {
   Driver,
   DriverAssignment,
   DriverCreate,
+  FamilyMember,
   Qualification,
   QualificationCreate,
+  RidershipOverrideUpdate,
   Run,
   RunCreate,
   School,
   SchoolCreate,
   ScheduleResult,
+  Stop,
+  StopCreate,
+  Student,
+  StudentCreate,
   Vehicle,
   VehicleCreate,
 } from './types'
@@ -168,4 +174,35 @@ export async function updateAssignmentStatus(
     `/schedule/assignments/${id}/status`,
     jsonInit('PATCH', { status }),
   )
+}
+
+export async function getStops(): Promise<Stop[]> {
+  return request<Stop[]>('/stops')
+}
+
+export async function createStop(payload: StopCreate): Promise<Stop> {
+  return request<Stop>('/stops', jsonInit('POST', payload))
+}
+
+export async function getStudents(): Promise<Student[]> {
+  return request<Student[]>('/students')
+}
+
+export async function createStudent(payload: StudentCreate): Promise<Student> {
+  return request<Student>('/students', jsonInit('POST', payload))
+}
+
+export async function linkGuardian(studentId: number, userId: number): Promise<void> {
+  await request<void>(`/students/${studentId}/guardians`, jsonInit('POST', { user_id: userId }))
+}
+
+export async function getMyFamily(serviceDate: string): Promise<FamilyMember[]> {
+  return request<FamilyMember[]>(`/students/my-family?service_date=${serviceDate}`)
+}
+
+export async function updateRidership(
+  studentId: number,
+  override: RidershipOverrideUpdate,
+): Promise<void> {
+  await request<void>(`/students/${studentId}/ridership`, jsonInit('PATCH', override))
 }

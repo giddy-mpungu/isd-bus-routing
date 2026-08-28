@@ -248,3 +248,41 @@ td {
   font-size: 1.1rem;
   padding: 0.75rem 1.25rem;
 }
+
+/* Family page (spec section 18): general responsive card style, not
+   the driver app's oversized-touch-target style — section 9's
+   large-controls/audible-instructions language is scoped to the
+   driver app specifically, section 18 doesn't repeat it. */
+.family-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.family-card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+}
+
+.family-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.family-school,
+.family-stop {
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+.family-leg {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}

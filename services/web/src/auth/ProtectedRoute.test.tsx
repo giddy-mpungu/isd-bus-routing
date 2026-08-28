@@ -39,6 +39,7 @@ const dispatcherUser: CurrentUser = {
   is_active: true,
   driver_id: null,
   school_id: null,
+  student_id: null,
 }
 
 describe('ProtectedRoute', () => {

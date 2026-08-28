@@ -4,7 +4,13 @@ from datetime import date
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from isd_api.models import AssignmentStatus, QualificationKind, Role
+from isd_api.models import (
+    AssignmentStatus,
+    QualificationKind,
+    RideDirection,
+    RidershipDefault,
+    Role,
+)
 
 
 class Token(BaseModel):
@@ -19,6 +25,7 @@ class UserCreate(BaseModel):
     role: Role
     driver_id: int | None = None
     school_id: int | None = None
+    student_id: int | None = None
 
 
 class UserRead(BaseModel):
@@ -30,6 +37,7 @@ class UserRead(BaseModel):
     is_active: bool
     driver_id: int | None = None
     school_id: int | None = None
+    student_id: int | None = None
 
 
 class QualificationCreate(BaseModel):
@@ -201,3 +209,70 @@ class ScheduleResult(BaseModel):
 class ScheduleInfeasible(BaseModel):
     feasible: bool = False
     reason: str
+
+
+class StopCreate(BaseModel):
+    label: str
+    location_lat: float = Field(ge=-90, le=90)
+    location_lon: float = Field(ge=-180, le=180)
+
+
+class StopRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    label: str
+    location_lat: float
+    location_lon: float
+
+
+class StudentCreate(BaseModel):
+    full_name: str
+    school_id: int
+    stop_id: int | None = None
+    default_ridership: RidershipDefault = RidershipDefault.RIDES
+
+
+class StudentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    full_name: str
+    school_id: int
+    stop_id: int | None
+    default_ridership: RidershipDefault
+
+
+class StudentUpdate(BaseModel):
+    """Partial update — only fields provided are changed."""
+
+    stop_id: int | None = None
+    default_ridership: RidershipDefault | None = None
+
+
+class GuardianLink(BaseModel):
+    user_id: int
+
+
+class RidershipOverrideUpdate(BaseModel):
+    """spec section 4.2 daily override / section 4.5 late request to
+    ride — both use this same shape, upserted by (student_id,
+    service_date, direction)."""
+
+    service_date: date
+    direction: RideDirection
+    is_riding: bool
+
+
+class FamilyMemberRead(BaseModel):
+    """Denormalized view of one linked child for a student/parent's own
+    'my family' read — resolved names instead of raw ids, mirroring
+    DriverAssignmentRead's reasoning (spec section 18 least-privilege:
+    a student/parent has no other endpoint to look these up, and must
+    never see another family's data)."""
+
+    student_id: int
+    full_name: str
+    school_name: str
+    stop_label: str | None
+    service_date: date
+    riding_am: bool
+    riding_pm: bool
