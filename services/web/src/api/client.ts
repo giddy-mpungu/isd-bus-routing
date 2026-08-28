@@ -12,10 +12,12 @@
 import type {
   Assignment,
   AssignmentPatch,
+  AssignmentStatus,
   Crew,
   CrewCreate,
   CurrentUser,
   Driver,
+  DriverAssignment,
   DriverCreate,
   Qualification,
   QualificationCreate,
@@ -152,4 +154,18 @@ export async function updateAssignment(id: number, patch: AssignmentPatch): Prom
 
 export async function deleteAssignment(id: number): Promise<void> {
   await request<void>(`/schedule/assignments/${id}`, { method: 'DELETE' })
+}
+
+export async function getMyAssignments(serviceDate: string): Promise<DriverAssignment[]> {
+  return request<DriverAssignment[]>(`/schedule/${serviceDate}/my-assignments`)
+}
+
+export async function updateAssignmentStatus(
+  id: number,
+  status: AssignmentStatus,
+): Promise<DriverAssignment> {
+  return request<DriverAssignment>(
+    `/schedule/assignments/${id}/status`,
+    jsonInit('PATCH', { status }),
+  )
 }

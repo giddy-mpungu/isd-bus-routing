@@ -9,10 +9,15 @@ export function AppLayout({ children }: { children: ReactNode }) {
     <div className="app-shell">
       <header className="app-header">
         <span className="brand">isd-bus-routing</span>
-        {user && (
+        {user && (user.role === 'dispatcher' || user.role === 'transportation_admin') && (
           <nav className="app-nav">
             <NavLink to="/schedule">Schedule</NavLink>
             <NavLink to="/setup">Setup</NavLink>
+          </nav>
+        )}
+        {user && user.role === 'driver' && (
+          <nav className="app-nav">
+            <NavLink to="/driver">My Runs</NavLink>
           </nav>
         )}
         {user && (

@@ -88,6 +88,20 @@ export interface AssignmentPatch {
   locked?: boolean
 }
 
+export type AssignmentStatus = 'scheduled' | 'in_progress' | 'completed' | 'no_show'
+
+export interface DriverAssignment {
+  id: number
+  run_id: number
+  service_date: string
+  school_name: string
+  vehicle_label: string
+  start_minute: number
+  end_minute: number
+  status: AssignmentStatus
+  locked: boolean
+}
+
 export interface SchoolCreate {
   name: string
   location_lat: number

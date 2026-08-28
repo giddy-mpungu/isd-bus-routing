@@ -201,3 +201,50 @@ td {
   margin-top: 1.5rem;
   color: var(--muted);
 }
+
+/* Driver page (spec section 9): large touch targets, high-contrast
+   cards, minimal reading required per card — deliberately not the
+   dispatcher console's dense-table style. */
+.driver-run-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.driver-run-card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+}
+
+.driver-run-time {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.driver-run-school {
+  font-size: 1.15rem;
+  margin-top: 0.25rem;
+}
+
+.driver-run-vehicle,
+.driver-run-status {
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
+
+.driver-run-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.driver-run-actions button {
+  font-size: 1.1rem;
+  padding: 0.75rem 1.25rem;
+}

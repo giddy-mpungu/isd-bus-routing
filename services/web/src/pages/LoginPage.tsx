@@ -12,7 +12,10 @@ export function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   if (user) {
-    return <Navigate to="/schedule" replace />
+    // Let the "/" route's role-aware redirect decide the destination
+    // (dispatcher/admin -> /schedule, driver -> /driver) rather than
+    // hardcoding one role's landing page here.
+    return <Navigate to="/" replace />
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -21,7 +24,7 @@ export function LoginPage() {
     setIsSubmitting(true)
     try {
       await login(email, password)
-      navigate('/schedule')
+      navigate('/')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Login failed.')
     } finally {
