@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
 
+    # Connection pool settings — only applied to non-SQLite (i.e.
+    # production PostgreSQL, ADR 0003) engines; see isd_api.db.make_engine.
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_recycle_seconds: int = 1800
+
     def require_production_ready(self) -> None:
         if self.environment == "production" and self.jwt_secret_key == _INSECURE_DEV_JWT_SECRET:
             raise RuntimeError(
