@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { Driver, Qualification, QualificationKind, School, Vehicle } from '../api/types'
+import type {
+  Driver,
+  Qualification,
+  QualificationKind,
+  RidershipDefault,
+  School,
+  Stop,
+  Student,
+  Vehicle,
+} from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 
 // Creating a school/qualification/driver/vehicle is transportation_admin
@@ -21,21 +30,28 @@ export function SetupPage() {
   const [qualifications, setQualifications] = useState<Qualification[]>([])
   const [drivers, setDrivers] = useState<Driver[]>([])
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
+  const [stops, setStops] = useState<Stop[]>([])
+  const [students, setStudents] = useState<Student[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const loadAll = useCallback(async () => {
     setErrorMessage(null)
     try {
-      const [schoolsData, qualificationsData, driversData, vehiclesData] = await Promise.all([
-        api.getSchools(),
-        api.getQualifications(),
-        api.getDrivers(),
-        api.getVehicles(),
-      ])
+      const [schoolsData, qualificationsData, driversData, vehiclesData, stopsData, studentsData] =
+        await Promise.all([
+          api.getSchools(),
+          api.getQualifications(),
+          api.getDrivers(),
+          api.getVehicles(),
+          api.getStops(),
+          api.getStudents(),
+        ])
       setSchools(schoolsData)
       setQualifications(qualificationsData)
       setDrivers(driversData)
       setVehicles(vehiclesData)
+      setStops(stopsData)
+      setStudents(studentsData)
     } catch (err) {
       setErrorMessage(err instanceof ApiError ? err.message : 'Failed to load setup data.')
     }
@@ -185,6 +201,68 @@ export function SetupPage() {
       setIsSavingVehicle(false)
     }
   }
+
+  // --- Stops ---
+  const [stopLabel, setStopLabel] = useState('')
+  const [stopLat, setStopLat] = useState('')
+  const [stopLon, setStopLon] = useState('')
+  const [stopError, setStopError] = useState<string | null>(null)
+  const [isSavingStop, setIsSavingStop] = useState(false)
+
+  async function handleCreateStop(event: FormEvent) {
+    event.preventDefault()
+    setStopError(null)
+    setIsSavingStop(true)
+    try {
+      await api.createStop({
+        label: stopLabel,
+        location_lat: Number(stopLat),
+        location_lon: Number(stopLon),
+      })
+      setStopLabel('')
+      setStopLat('')
+      setStopLon('')
+      await loadAll()
+    } catch (err) {
+      setStopError(err instanceof ApiError ? err.message : 'Failed to create stop.')
+    } finally {
+      setIsSavingStop(false)
+    }
+  }
+
+  // --- Students ---
+  const [studentName, setStudentName] = useState('')
+  const [studentSchoolId, setStudentSchoolId] = useState('')
+  const [studentStopId, setStudentStopId] = useState('')
+  const [studentDefaultRidership, setStudentDefaultRidership] = useState<RidershipDefault>('rides')
+  const [studentError, setStudentError] = useState<string | null>(null)
+  const [isSavingStudent, setIsSavingStudent] = useState(false)
+
+  async function handleCreateStudent(event: FormEvent) {
+    event.preventDefault()
+    setStudentError(null)
+    setIsSavingStudent(true)
+    try {
+      await api.createStudent({
+        full_name: studentName,
+        school_id: Number(studentSchoolId),
+        stop_id: studentStopId ? Number(studentStopId) : undefined,
+        default_ridership: studentDefaultRidership,
+      })
+      setStudentName('')
+      setStudentSchoolId('')
+      setStudentStopId('')
+      setStudentDefaultRidership('rides')
+      await loadAll()
+    } catch (err) {
+      setStudentError(err instanceof ApiError ? err.message : 'Failed to create student.')
+    } finally {
+      setIsSavingStudent(false)
+    }
+  }
+
+  const schoolsById = new Map(schools.map((s) => [s.id, s]))
+  const stopsById = new Map(stops.map((s) => [s.id, s]))
 
   return (
     <main className="setup-page">
@@ -401,6 +479,125 @@ export function SetupPage() {
             )}
             <button type="submit" disabled={isSavingVehicle}>
               {isSavingVehicle ? 'Saving…' : 'Add vehicle'}
+            </button>
+          </form>
+        )}
+      </section>
+
+      <section>
+        <h2>Stops</h2>
+        <ul>
+          {stops.map((s) => (
+            <li key={s.id}>
+              {s.label} ({s.location_lat}, {s.location_lon})
+            </li>
+          ))}
+        </ul>
+        {canCreate && (
+          <form onSubmit={(event) => void handleCreateStop(event)}>
+            <label htmlFor="stop-label">Stop label</label>
+            <input
+              id="stop-label"
+              value={stopLabel}
+              onChange={(event) => setStopLabel(event.target.value)}
+              required
+            />
+            <label htmlFor="stop-lat">Stop latitude</label>
+            <input
+              id="stop-lat"
+              type="number"
+              step="any"
+              value={stopLat}
+              onChange={(event) => setStopLat(event.target.value)}
+              required
+            />
+            <label htmlFor="stop-lon">Stop longitude</label>
+            <input
+              id="stop-lon"
+              type="number"
+              step="any"
+              value={stopLon}
+              onChange={(event) => setStopLon(event.target.value)}
+              required
+            />
+            {stopError && (
+              <p role="alert" className="error">
+                {stopError}
+              </p>
+            )}
+            <button type="submit" disabled={isSavingStop}>
+              {isSavingStop ? 'Saving…' : 'Add stop'}
+            </button>
+          </form>
+        )}
+      </section>
+
+      <section>
+        <h2>Students</h2>
+        <ul>
+          {students.map((s) => (
+            <li key={s.id}>
+              {s.full_name} — {schoolsById.get(s.school_id)?.name ?? `School ${s.school_id}`}
+              {s.stop_id != null && ` (${stopsById.get(s.stop_id)?.label ?? `Stop ${s.stop_id}`})`}
+              {' — default: '}
+              {s.default_ridership === 'rides' ? 'rides' : 'does not ride'}
+            </li>
+          ))}
+        </ul>
+        {canCreate && (
+          <form onSubmit={(event) => void handleCreateStudent(event)}>
+            <label htmlFor="student-name">Student name</label>
+            <input
+              id="student-name"
+              value={studentName}
+              onChange={(event) => setStudentName(event.target.value)}
+              required
+            />
+            <label htmlFor="student-school">School</label>
+            <select
+              id="student-school"
+              value={studentSchoolId}
+              onChange={(event) => setStudentSchoolId(event.target.value)}
+              required
+            >
+              <option value="">Select a school</option>
+              {schools.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="student-stop">Stop (optional)</label>
+            <select
+              id="student-stop"
+              value={studentStopId}
+              onChange={(event) => setStudentStopId(event.target.value)}
+            >
+              <option value="">Not yet assigned</option>
+              {stops.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="student-default-ridership">Default ridership</label>
+            <select
+              id="student-default-ridership"
+              value={studentDefaultRidership}
+              onChange={(event) =>
+                setStudentDefaultRidership(event.target.value as RidershipDefault)
+              }
+            >
+              <option value="rides">Rides every school day</option>
+              <option value="does_not_ride">Does not ride unless requested</option>
+            </select>
+            {studentError && (
+              <p role="alert" className="error">
+                {studentError}
+              </p>
+            )}
+            <button type="submit" disabled={isSavingStudent}>
+              {isSavingStudent ? 'Saving…' : 'Add student'}
             </button>
           </form>
         )}

@@ -20,6 +20,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <NavLink to="/driver">My Runs</NavLink>
           </nav>
         )}
+        {user && (user.role === 'student' || user.role === 'parent') && (
+          <nav className="app-nav">
+            <NavLink to="/family">My Family</NavLink>
+          </nav>
+        )}
         {user && (
           <div className="user-info">
             <span>
