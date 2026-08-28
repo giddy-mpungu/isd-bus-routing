@@ -76,7 +76,11 @@ python examples/run_worked_example.py   # runs the spec section 5 example and pr
 ## Getting started (api)
 
 ```bash
-cd services/api
+# api imports the solver directly and doesn't declare it as a
+# dependency (see the comment in services/api/pyproject.toml) — it
+# must be installed first.
+cd services/solver && pip install -e .
+cd ../api
 pip install -e ".[dev]"
 
 # First-time setup: create the DB schema.
