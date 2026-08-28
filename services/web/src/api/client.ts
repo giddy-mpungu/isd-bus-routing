@@ -13,12 +13,14 @@ import type {
   Assignment,
   AssignmentPatch,
   Crew,
+  CrewCreate,
   CurrentUser,
   Driver,
   DriverCreate,
   Qualification,
   QualificationCreate,
   Run,
+  RunCreate,
   School,
   SchoolCreate,
   ScheduleResult,
@@ -126,6 +128,14 @@ export async function getRuns(serviceDate: string): Promise<Run[]> {
 
 export async function getCrews(serviceDate: string): Promise<Crew[]> {
   return request<Crew[]>(`/crews?service_date=${serviceDate}`)
+}
+
+export async function createCrew(payload: CrewCreate): Promise<Crew> {
+  return request<Crew>('/crews', jsonInit('POST', payload))
+}
+
+export async function createRun(payload: RunCreate): Promise<Run> {
+  return request<Run>('/runs', jsonInit('POST', payload))
 }
 
 export async function getAssignments(serviceDate: string): Promise<Assignment[]> {

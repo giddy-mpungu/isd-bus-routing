@@ -93,7 +93,8 @@ td {
   color: var(--muted);
 }
 
-.setup-page section {
+.setup-page section,
+.add-forms > div {
   background: white;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -101,7 +102,18 @@ td {
   margin-bottom: 1.25rem;
 }
 
-.setup-page form {
+.add-forms {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.add-forms > div {
+  flex: 1 1 320px;
+}
+
+.setup-page form,
+.add-forms form {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
@@ -109,12 +121,14 @@ td {
   margin-top: 0.75rem;
 }
 
-.setup-page label {
+.setup-page label,
+.add-forms label {
   font-size: 0.85rem;
   color: var(--muted);
 }
 
-.setup-page fieldset {
+.setup-page fieldset,
+.add-forms fieldset {
   border: 1px solid var(--border);
   border-radius: 6px;
   margin: 0.25rem 0;

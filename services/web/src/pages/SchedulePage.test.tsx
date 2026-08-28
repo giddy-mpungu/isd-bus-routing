@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { Assignment, Crew, Driver, Run, School, Vehicle } from '../api/types'
+import type { Assignment, Crew, Driver, Qualification, Run, School, Vehicle } from '../api/types'
 import { SchedulePage } from './SchedulePage'
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -15,10 +15,13 @@ vi.mock('../api/client', async (importOriginal) => {
     getSchools: vi.fn(),
     getDrivers: vi.fn(),
     getVehicles: vi.fn(),
+    getQualifications: vi.fn(),
     getAssignments: vi.fn(),
     runSchedule: vi.fn(),
     updateAssignment: vi.fn(),
     deleteAssignment: vi.fn(),
+    createCrew: vi.fn(),
+    createRun: vi.fn(),
   }
 })
 
@@ -85,12 +88,20 @@ const assignment: Assignment = {
   locked: false,
 }
 
+const vehicleQual: Qualification = {
+  id: 1,
+  code: 'lift',
+  kind: 'vehicle_capability',
+  description: 'Wheelchair lift',
+}
+
 function mockLoad() {
   vi.mocked(api.getRuns).mockResolvedValue([run])
   vi.mocked(api.getCrews).mockResolvedValue([crew, otherCrew])
   vi.mocked(api.getSchools).mockResolvedValue([school])
   vi.mocked(api.getDrivers).mockResolvedValue([driverRecord, otherDriver])
   vi.mocked(api.getVehicles).mockResolvedValue([vehicle, otherVehicle])
+  vi.mocked(api.getQualifications).mockResolvedValue([vehicleQual])
   vi.mocked(api.getAssignments).mockResolvedValue([assignment])
 }
 
@@ -102,7 +113,7 @@ describe('SchedulePage', () => {
 
   it('renders the assignment row with joined school/window/crew names', async () => {
     render(<SchedulePage />)
-    await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
 
     const select = screen.getByRole('combobox', { name: 'Crew' })
     expect(select).toHaveValue(String(crew.id))
@@ -113,7 +124,7 @@ describe('SchedulePage', () => {
   it('reassigning the crew via the dropdown calls the API and reloads', async () => {
     vi.mocked(api.updateAssignment).mockResolvedValue({ ...assignment, crew_id: otherCrew.id })
     render(<SchedulePage />)
-    await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
 
     const select = screen.getByRole('combobox', { name: 'Crew' })
     expect(select).toHaveValue(String(crew.id))
@@ -132,7 +143,7 @@ describe('SchedulePage', () => {
       new ApiError(422, "Crew 21's vehicle is missing required qualification(s): ['lift']"),
     )
     render(<SchedulePage />)
-    await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
 
     const select = screen.getByRole('combobox', { name: 'Crew' })
     const user = userEvent.setup()
@@ -149,7 +160,7 @@ describe('SchedulePage', () => {
   it('locking an assignment calls the API with the toggled state and reloads', async () => {
     vi.mocked(api.updateAssignment).mockResolvedValue({ ...assignment, locked: true })
     render(<SchedulePage />)
-    await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: /^lock$/i }))
@@ -161,11 +172,78 @@ describe('SchedulePage', () => {
   it('running the schedule shows the infeasible reason returned by the API on failure', async () => {
     vi.mocked(api.runSchedule).mockRejectedValue(new ApiError(422, 'No crews supplied'))
     render(<SchedulePage />)
-    await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: /run schedule/i }))
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('No crews supplied'))
+  })
+
+  it('creating a crew calls the API with the selected driver/vehicle and reloads', async () => {
+    vi.mocked(api.createCrew).mockResolvedValue({ ...crew, id: 99 })
+    render(<SchedulePage />)
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByLabelText('Driver'), String(driverRecord.id))
+    await user.selectOptions(screen.getByLabelText('Vehicle'), String(vehicle.id))
+    await user.click(screen.getByRole('button', { name: 'Add crew' }))
+
+    await waitFor(() =>
+      expect(api.createCrew).toHaveBeenCalledWith(
+        expect.objectContaining({
+          driver_id: driverRecord.id,
+          vehicle_id: vehicle.id,
+          available_window_earliest: 0,
+          available_window_latest: 1439,
+        }),
+      ),
+    )
+    expect(api.getCrews).toHaveBeenCalledTimes(2) // initial load + reload after create
+  })
+
+  it('creating a run sends the selected school, window, and required qualifications', async () => {
+    vi.mocked(api.createRun).mockResolvedValue({ ...run, id: 99 })
+    render(<SchedulePage />)
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByLabelText('School'), String(school.id))
+    await user.type(screen.getByLabelText('Window start (minute of day)'), '480')
+    await user.type(screen.getByLabelText('Window end (minute of day)'), '540')
+    await user.type(screen.getByLabelText('Duration (minutes)'), '45')
+    await user.click(screen.getByRole('checkbox', { name: /lift/ }))
+    await user.click(screen.getByRole('button', { name: 'Add run' }))
+
+    await waitFor(() =>
+      expect(api.createRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          school_id: school.id,
+          window_earliest: 480,
+          window_latest: 540,
+          duration_minutes: 45,
+          required_qualification_codes: ['lift'],
+        }),
+      ),
+    )
+    expect(api.getRuns).toHaveBeenCalledTimes(2) // initial load + reload after create
+  })
+
+  it('shows the server error message when creating a run fails validation', async () => {
+    vi.mocked(api.createRun).mockRejectedValue(
+      new ApiError(400, "duration_minutes + buffer_minutes exceeds the run's own window length"),
+    )
+    render(<SchedulePage />)
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByLabelText('School'), String(school.id))
+    await user.type(screen.getByLabelText('Window start (minute of day)'), '480')
+    await user.type(screen.getByLabelText('Window end (minute of day)'), '500')
+    await user.type(screen.getByLabelText('Duration (minutes)'), '45')
+    await user.click(screen.getByRole('button', { name: 'Add run' }))
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/exceeds the run/))
   })
 })
