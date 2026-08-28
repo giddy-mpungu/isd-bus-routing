@@ -327,6 +327,33 @@ def update_assignment(
         assignment.crew_id = new_crew_id
         assignment.start_minute = new_start
         assignment.end_minute = new_end
+        # The prior explanation_text/json came from the solver and
+        # names the *old* crew — leaving it in place after a manual
+        # override would misattribute the decision. Replace it with
+        # what was actually re-checked here (buffer/next-job context
+        # isn't computed for a single manual edit — honestly reported
+        # as unknown rather than reused stale from the old assignment).
+        checks = [
+            "vehicle/driver qualifications are satisfied",
+            "it does not overlap any other job assigned to this crew",
+            "it starts and ends within its required arrival window and the crew's availability",
+        ]
+        if assignment.run.passenger_count > 0:
+            checks.append(
+                "vehicle capacity is sufficient for "
+                f"{assignment.run.passenger_count} expected passengers"
+            )
+        assignment.explanation_text = (
+            f"Crew {new_crew_id} was manually assigned to job {assignment.run_id} by "
+            f"{current_user.full_name} ({current_user.role.value}), overriding the "
+            "previous assignment; " + "; ".join(checks) + "."
+        )
+        assignment.explanation_json = {
+            "hard_constraints_checked": checks,
+            "buffer_minutes_to_next_job": None,
+            "next_job_id": None,
+            "manually_overridden_by": current_user.full_name,
+        }
 
     if payload.locked is not None:
         assignment.locked = payload.locked

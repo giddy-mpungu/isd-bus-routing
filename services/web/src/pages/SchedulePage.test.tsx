@@ -43,6 +43,16 @@ const crew: Crew = {
   available_window_earliest: 0,
   available_window_latest: 1439,
 }
+const otherDriver: Driver = { id: 4, full_name: 'Sam Substitute' }
+const otherVehicle: Vehicle = { id: 5, label: 'Bus 202' }
+const otherCrew: Crew = {
+  id: 21,
+  service_date: '2026-09-01',
+  driver_id: 4,
+  vehicle_id: 5,
+  available_window_earliest: 0,
+  available_window_latest: 1439,
+}
 const assignment: Assignment = {
   id: 100,
   run_id: 10,
@@ -55,10 +65,10 @@ const assignment: Assignment = {
 
 function mockLoad() {
   vi.mocked(api.getRuns).mockResolvedValue([run])
-  vi.mocked(api.getCrews).mockResolvedValue([crew])
+  vi.mocked(api.getCrews).mockResolvedValue([crew, otherCrew])
   vi.mocked(api.getSchools).mockResolvedValue([school])
-  vi.mocked(api.getDrivers).mockResolvedValue([driverRecord])
-  vi.mocked(api.getVehicles).mockResolvedValue([vehicle])
+  vi.mocked(api.getDrivers).mockResolvedValue([driverRecord, otherDriver])
+  vi.mocked(api.getVehicles).mockResolvedValue([vehicle, otherVehicle])
   vi.mocked(api.getAssignments).mockResolvedValue([assignment])
 }
 
@@ -68,11 +78,50 @@ describe('SchedulePage', () => {
     mockLoad()
   })
 
-  it('renders the assignment row with joined school/driver/vehicle names', async () => {
+  it('renders the assignment row with joined school/window/crew names', async () => {
     render(<SchedulePage />)
     await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
-    expect(screen.getByText('Jordan Driver')).toBeInTheDocument()
-    expect(screen.getByText('Bus 101')).toBeInTheDocument()
+
+    const select = screen.getByRole('combobox', { name: 'Crew' })
+    expect(select).toHaveValue(String(crew.id))
+    expect(screen.getByRole('option', { name: 'Jordan Driver — Bus 101' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Sam Substitute — Bus 202' })).toBeInTheDocument()
+  })
+
+  it('reassigning the crew via the dropdown calls the API and reloads', async () => {
+    vi.mocked(api.updateAssignment).mockResolvedValue({ ...assignment, crew_id: otherCrew.id })
+    render(<SchedulePage />)
+    await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
+
+    const select = screen.getByRole('combobox', { name: 'Crew' })
+    expect(select).toHaveValue(String(crew.id))
+
+    const user = userEvent.setup()
+    await user.selectOptions(select, String(otherCrew.id))
+
+    await waitFor(() =>
+      expect(api.updateAssignment).toHaveBeenCalledWith(100, { crew_id: otherCrew.id }),
+    )
+    expect(api.getAssignments).toHaveBeenCalledTimes(2) // initial load + reload after PATCH
+  })
+
+  it('shows the rejection reason and leaves the crew unchanged when reassignment is invalid', async () => {
+    vi.mocked(api.updateAssignment).mockRejectedValue(
+      new ApiError(422, "Crew 21's vehicle is missing required qualification(s): ['lift']"),
+    )
+    render(<SchedulePage />)
+    await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
+
+    const select = screen.getByRole('combobox', { name: 'Crew' })
+    const user = userEvent.setup()
+    await user.selectOptions(select, String(otherCrew.id))
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('missing required qualification'),
+    )
+    // assignments state was never updated, so the control still shows
+    // the original (unchanged) crew rather than the rejected one.
+    expect(select).toHaveValue(String(crew.id))
   })
 
   it('locking an assignment calls the API with the toggled state and reloads', async () => {
