@@ -76,7 +76,11 @@ python examples/run_worked_example.py   # runs the spec section 5 example and pr
 ## Getting started (api)
 
 ```bash
-cd services/api
+# api imports the solver directly and doesn't declare it as a
+# dependency (see the comment in services/api/pyproject.toml) — it
+# must be installed first.
+cd services/solver && pip install -e .
+cd ../api
 pip install -e ".[dev]"
 
 # First-time setup: create the DB schema.
@@ -143,8 +147,9 @@ npm run build          # tsc -b && vite build (type-checks + bundles)
 npm run test           # vitest run
 ```
 
-CI (once set up) will run these for all three services on every PR —
-run them locally before pushing.
+CI (`.github/workflows/ci.yml`) runs all of this for all three
+services on every PR and every push to `main` — run it locally before
+pushing so CI is confirmation, not discovery.
 
 ## Non-negotiables (carried from spec)
 
