@@ -1,0 +1,140 @@
+:root {
+  color-scheme: light;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  --border: #d0d5dd;
+  --text: #1a1f29;
+  --muted: #5b6472;
+  --accent: #2454a8;
+  --danger: #b3261e;
+  --bg: #f7f8fa;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: white;
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+input {
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  background: white;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  font-weight: 600;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--muted);
+}
+
+.app-body {
+  padding: 1.5rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.login-page {
+  display: flex;
+  justify-content: center;
+  padding-top: 4rem;
+}
+
+.login-page form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 320px;
+  background: white;
+  padding: 2rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.login-page label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 0.5rem;
+}
+
+.schedule-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.schedule-toolbar label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.status {
+  color: var(--accent);
+}
+
+.error {
+  color: var(--danger);
+}
+
+.explanation {
+  max-width: 320px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.unassigned {
+  margin-top: 1.5rem;
+  color: var(--muted);
+}

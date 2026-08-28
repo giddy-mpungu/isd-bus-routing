@@ -33,6 +33,23 @@ class Settings(BaseSettings):
     db_max_overflow: int = 10
     db_pool_recycle_seconds: int = 1800
 
+    # Browser session cookie (Phase 3 dispatcher console). Separate
+    # from access_token_expire_minutes, which still governs the
+    # JSON-body bearer token returned to API/script/Swagger consumers.
+    # session_inactivity_minutes is the cookie's Max-Age, renewed on
+    # every authenticated request made via the cookie — an inactive
+    # browser session expires on its own once nothing renews it.
+    # session_absolute_max_hours is the underlying JWT's fixed exp,
+    # unaffected by renewal — a hard ceiling on session length even
+    # under continuous activity.
+    session_inactivity_minutes: int = 30
+    session_absolute_max_hours: int = 12
+
+    # Origins allowed to make credentialed (cookie-bearing) cross-origin
+    # requests to this API — the dispatcher console's dev server by
+    # default. Never wildcard this; see main.py's CORSMiddleware setup.
+    cors_allowed_origins: list[str] = ["http://localhost:5173"]
+
     def require_production_ready(self) -> None:
         if self.environment == "production" and self.jwt_secret_key == _INSECURE_DEV_JWT_SECRET:
             raise RuntimeError(

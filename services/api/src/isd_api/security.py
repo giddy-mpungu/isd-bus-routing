@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -22,7 +22,12 @@ from isd_api.config import settings
 from isd_api.db import get_db
 from isd_api.models import Role, User
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+# auto_error=False: a missing Authorization header must fall through to
+# checking the session cookie (get_current_user below), not hard-fail
+# before that check runs.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
+
+SESSION_COOKIE_NAME = "isd_session"
 
 
 def hash_password(plain_password: str) -> str:
@@ -33,10 +38,38 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
-def create_access_token(*, user_id: int, role: Role) -> str:
-    expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
+def create_access_token(*, user_id: int, role: Role, expires_delta: timedelta | None = None) -> str:
+    delta = expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
+    expire = datetime.now(UTC) + delta
     payload = {"sub": str(user_id), "role": role.value, "exp": expire}
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def create_session_token(*, user_id: int, role: Role) -> str:
+    """A longer-lived token for the browser session cookie (Phase 3).
+    Its exp is the absolute session ceiling — unaffected by the sliding
+    Max-Age renewal set_session_cookie performs on each request."""
+    return create_access_token(
+        user_id=user_id,
+        role=role,
+        expires_delta=timedelta(hours=settings.session_absolute_max_hours),
+    )
+
+
+def set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        max_age=settings.session_inactivity_minutes * 60,
+        httponly=True,
+        samesite="lax",
+        secure=settings.environment == "production",
+        path="/",
+    )
+
+
+def clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
 
 
 def _decode_token(token: str) -> dict:
@@ -50,7 +83,32 @@ def _decode_token(token: str) -> dict:
         ) from exc
 
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+def get_current_user(
+    response: Response,
+    bearer_token: str | None = Depends(oauth2_scheme),
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+    db: Session = Depends(get_db),
+) -> User:
+    """Authenticates via the Authorization header (API/script/Swagger
+    use) or the session cookie (browser use), header taking priority
+    when both are present. A cookie-authenticated request renews the
+    cookie's Max-Age — see set_session_cookie's docstring-equivalent
+    comment above and ADR-level reasoning in the Phase 3 plan: this is
+    what makes an active browser session survive indefinitely while an
+    inactive one expires on its own."""
+    # Header takes priority when both are present — but "renew the
+    # cookie" must only happen when the cookie is actually what
+    # authenticated this request, not whenever one happens to also be
+    # present alongside an unrelated bearer header (e.g. a test client
+    # that carries a stale cookie from an earlier login() call).
+    authenticated_via_cookie = bearer_token is None and session_cookie is not None
+    token = bearer_token or session_cookie
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     payload = _decode_token(token)
     user_id = payload.get("sub")
     if user_id is None:
@@ -60,6 +118,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or inactive user"
         )
+    if authenticated_via_cookie:
+        set_session_cookie(response, token)
     return user
 
 
