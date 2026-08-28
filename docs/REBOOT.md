@@ -182,7 +182,7 @@ PATCH edits that bypass the solver.
 10. #10 `feat/inline-crew-run-creation` — inline crew/run forms on SchedulePage; console now usable with zero raw API calls
 11. #11 `feat/docker-deployment-config` — Dockerfiles, `docker-compose.yml`, CI `docker` job; fixed a volume-permissions bug and a compose env-var footgun (both found by actually running the containers, not just building them)
 12. #12 `feat/partial-day-crew-availability` — `Crew.busy_intervals` (solver) + `routers/schedule.py` populating it from locked assignments instead of excluding the whole crew; replaced two api tests whose assumptions no longer held (one had become a genuine, flaky tie in the solver's own objective — confirmed it happened to pass once anyway, not trusted)
-13. #13 `feat/phase4-driver-app-mvp` — ADR 0008 (driver client platform), `Assignment.status`/`status_updated_at` + migration, `GET /schedule/{date}/my-assignments` + `PATCH .../status` (driver-scoped), `services/web` `/driver` page + role-aware nav/redirect, fixed `LoginPage`'s hardcoded `/schedule` redirect bug — CI green (all 5 checks), merging now
+13. #13 `feat/phase4-driver-app-mvp` — ADR 0008 (driver client platform), `Assignment.status`/`status_updated_at` + migration, `GET /schedule/{date}/my-assignments` + `PATCH .../status` (driver-scoped), `services/web` `/driver` page + role-aware nav/redirect, fixed `LoginPage`'s hardcoded `/schedule` redirect bug
 
 ## Key files (current state, post-PR #13)
 
@@ -209,25 +209,19 @@ PATCH edits that bypass the solver.
 ## Exact next step (as of this checkpoint)
 
 Phase 4's client-platform decision is resolved (ADR 0008: responsive
-web app, user confirmed) and its MVP is built and pushed as
-[PR #13](https://github.com/giddy-mpungu/isd-bus-routing/pull/13)
-(`feat/phase4-driver-app-mvp`), verified locally (47 api tests, 27 web
-tests, migration up/down/up, and a full manual browser pass logged in
-as both a seeded driver and the admin — see PR body for the checklist).
-**CI passed all 5 checks on PR #13** (verified via `gh pr checks 13
---watch`, not just assumed). Merging now: `gh pr merge 13 --merge
---delete-branch`, then sync local `main`. If this file is being read
-because that merge didn't happen yet for some reason, do it first,
-then update this file's PR #13 line and persistent memory
-(`project_isd_bus_routing_overview.md`) the same way every prior
-merged PR was recorded.
+web app, user confirmed) and its MVP is **merged**
+([PR #13](https://github.com/giddy-mpungu/isd-bus-routing/pull/13),
+CI green on all 5 checks, verified locally first — 47 api tests, 27
+web tests, migration up/down/up, and a full manual browser pass logged
+in as both a seeded driver and the admin). Local `main` is synced to
+it (commit `094c93f`).
 
-**After PR #13 lands, no known gap is blocking further work.** What's
-left in `docs/architecture.md`'s gap list is either genuinely deferred
-to a later phase (student/stop entities — Phase 5; field trips/
-absences — Phase 6) or an integrations boundary with nothing concrete
-to build against yet (ADR 0007). Reasonable next candidates, roughly
-in order of how directly they extend what's just shipped:
+**No known gap is currently blocking further work.** What's left in
+`docs/architecture.md`'s gap list is either genuinely deferred to a
+later phase (student/stop entities — Phase 5; field trips/absences —
+Phase 6) or an integrations boundary with nothing concrete to build
+against yet (ADR 0007). Reasonable next candidates, roughly in order
+of how directly they extend what's just shipped:
 
 - Phase 4 follow-ups the MVP intentionally left out (see ADR 0008 /
   architecture.md's Phase 4 row): absence reporting, GPS/live
