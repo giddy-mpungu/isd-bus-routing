@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "isd-api"
+version = "0.1.0"
+description = "Persistence, RBAC, and HTTP API for isd-bus-routing"
+authors = [{name = "Gideon Mpungu"}]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "pyjwt>=2.7",
+    "bcrypt>=4.1",
+    "email-validator>=2.0",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-v --durations=5"
+log_cli = true
+log_cli_level = "INFO"

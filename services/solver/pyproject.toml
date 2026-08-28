@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "isd-solver"
+version = "0.2.0"
+description = "Multi-school crew scheduling and routing solver for isd-bus-routing"
+authors = [{name = "Gideon Mpungu"}]
+requires-python = ">=3.11"
+dependencies = [
+    "ortools>=9.10",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+# -v: show each test's name and outcome, not just dots.
+# --durations=5: show the 5 slowest tests, so a slow test (e.g. one
+#   that forgot to tune num_search_workers down) is easy to spot.
+# log_cli=true: print the solver's own logging.info/warning lines
+#   (job counts, solver status, wall time, why something was infeasible)
+#   to the console while tests run — this is what actually answers
+#   "what happened", beyond pass/fail.
+addopts = "-v --durations=5"
+log_cli = true
+log_cli_level = "INFO"
