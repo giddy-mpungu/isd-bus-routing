@@ -30,10 +30,19 @@ def _fixed_deadhead(minutes: int):
     return estimate
 
 
-def _crew(crew_id: str, earliest: int = 0, latest: int = 1439) -> Crew:
+def _crew(
+    crew_id: str,
+    earliest: int = 0,
+    latest: int = 1439,
+    max_continuous_minutes: int | None = None,
+) -> Crew:
     return Crew(
         id=crew_id,
-        driver=Driver(id=f"driver-{crew_id}", license_qualifications=frozenset({"CDL_B"})),
+        driver=Driver(
+            id=f"driver-{crew_id}",
+            license_qualifications=frozenset({"CDL_B"}),
+            max_continuous_minutes=max_continuous_minutes,
+        ),
         vehicle=Vehicle(id=f"vehicle-{crew_id}"),
         available_window=TimeWindow(earliest=earliest, latest=latest),
     )
@@ -101,6 +110,65 @@ def test_two_crews_recover_feasibility_when_one_crew_cannot_chain_all_three():
     assert isinstance(result, SchedulingResult)
     assert result.crews_used == 2
     assert {a.job_id for a in result.assignments} == {"pre-k-run", "hs-run", "ms-run"}
+
+
+def test_single_crew_infeasible_when_chaining_all_three_exceeds_driver_duty_limit():
+    jobs = _spec_section5_jobs()
+    # Full chain spans exactly 540 - 360 = 180 minutes (pre-k start to
+    # ms end); 170 is deliberately just under that.
+    result = solve_multi_school_schedule(
+        jobs, [_crew("C1", max_continuous_minutes=170)], _fixed_deadhead(5)
+    )
+
+    assert isinstance(result, InfeasibleResult)
+    assert "solver status" in result.reason.lower()
+
+
+def test_single_crew_feasible_when_duty_limit_covers_the_full_chain():
+    jobs = _spec_section5_jobs()
+    # Same 180-minute chain, but the limit now covers it exactly.
+    result = solve_multi_school_schedule(
+        jobs, [_crew("C1", max_continuous_minutes=200)], _fixed_deadhead(5)
+    )
+
+    assert isinstance(result, SchedulingResult)
+    assert result.crews_used == 1
+    by_job = {a.job_id: a for a in result.assignments}
+    assert "continuous-duty limit (200 min)" in by_job["pre-k-run"].explanation.text()
+
+
+def test_two_crews_recover_feasibility_when_duty_limit_blocks_chaining_on_either():
+    jobs = _spec_section5_jobs()
+    # Deadhead(5) fits the gaps fine, but neither crew's driver can
+    # legally cover the full 180-minute chain alone — the scheduler
+    # must split the three jobs across both crews.
+    result = solve_multi_school_schedule(
+        jobs,
+        [_crew("C1", max_continuous_minutes=170), _crew("C2", max_continuous_minutes=170)],
+        _fixed_deadhead(5),
+    )
+
+    assert isinstance(result, SchedulingResult)
+    assert result.crews_used == 2
+    assert {a.job_id for a in result.assignments} == {"pre-k-run", "hs-run", "ms-run"}
+
+
+def test_job_alone_exceeding_every_crews_duty_limit_is_infeasible_with_clear_reason():
+    long_job = Job(
+        id="long-run",
+        school_id="school",
+        window=TimeWindow(earliest=360, latest=600),
+        duration_minutes=200,
+        buffer_minutes=0,
+        location=Location(lat=29.70, lon=-95.40),
+    )
+    result = solve_multi_school_schedule(
+        [long_job], [_crew("C1", max_continuous_minutes=100)], _fixed_deadhead(5)
+    )
+
+    assert isinstance(result, InfeasibleResult)
+    assert "max_continuous_minutes" in result.reason
+    assert "long-run" in result.reason
 
 
 def test_unqualified_crew_is_never_assigned_a_job_requiring_a_qualification():
