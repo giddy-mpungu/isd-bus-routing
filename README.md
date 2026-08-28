@@ -143,8 +143,9 @@ npm run build          # tsc -b && vite build (type-checks + bundles)
 npm run test           # vitest run
 ```
 
-CI (once set up) will run these for all three services on every PR —
-run them locally before pushing.
+CI (`.github/workflows/ci.yml`) runs all of this for all three
+services on every PR and every push to `main` — run it locally before
+pushing so CI is confirmation, not discovery.
 
 ## Non-negotiables (carried from spec)
 
