@@ -112,3 +112,22 @@ export interface VehicleCreate {
   effective_capacity?: number
   qualification_codes: string[]
 }
+
+export interface CrewCreate {
+  service_date: string
+  driver_id: number
+  vehicle_id: number
+  available_window_earliest: number
+  available_window_latest: number
+}
+
+export interface RunCreate {
+  service_date: string
+  school_id: number
+  window_earliest: number
+  window_latest: number
+  duration_minutes: number
+  buffer_minutes: number
+  passenger_count: number
+  required_qualification_codes: string[]
+}
