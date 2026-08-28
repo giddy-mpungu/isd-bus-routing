@@ -65,8 +65,24 @@ reused as a backdoor.
   discipline only.
 - PostGIS migration once there's a real PostgreSQL environment to
   develop against.
-- Rate limiting / login throttling on `POST /auth/login` — not yet
-  implemented; a production deployment needs this before going live.
-- Refresh tokens / token revocation — the current JWT is a single
-  short-lived access token with no revocation list; acceptable for a
-  skeleton, not for production.
+- ~~Rate limiting / login throttling on `POST /auth/login`~~ **Closed.**
+  An in-memory, per-process fixed-window limiter (`security.LoginRateLimiter`)
+  rejects a client IP's login attempts beyond a configurable threshold
+  with 429. Deliberately in-process rather than shared storage — the
+  current deployment (`docker-compose.yml`) is a single uvicorn
+  process with no reverse proxy in front of it; a future multi-worker
+  or behind-a-proxy deployment would need shared storage and
+  `X-Forwarded-For` handling instead.
+- ~~Refresh tokens / token revocation~~ **Revocation closed, refresh
+  tokens deliberately not built.** Every issued JWT (bearer and
+  session) now carries a `jti` claim; `POST /auth/logout` revokes it
+  server-side via a `revoked_tokens` denylist table (`security.revoke_token`),
+  checked on every request in `get_current_user` — closes the actual
+  gap (a captured token staying valid after "logout" until its natural
+  expiry). A separate short-lived-access + long-lived-refresh token
+  *pair* was considered and rejected as redundant: the Phase 3 sliding
+  session cookie (renewed on every authenticated request, capped by an
+  absolute `session_absolute_max_hours`) already does what a refresh
+  token would for the browser session; the bearer-token flow is for
+  scripts/API clients, where a fixed expiry needing re-login is the
+  simpler, expected behavior.
