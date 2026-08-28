@@ -19,7 +19,9 @@ def create_qualification(
 ) -> Qualification:
     if db.query(Qualification).filter(Qualification.code == payload.code).one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Code already exists")
-    qualification = Qualification(code=payload.code, kind=payload.kind, description=payload.description)
+    qualification = Qualification(
+        code=payload.code, kind=payload.kind, description=payload.description
+    )
     db.add(qualification)
     db.commit()
     db.refresh(qualification)

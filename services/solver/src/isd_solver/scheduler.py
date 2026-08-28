@@ -27,8 +27,8 @@ ride time, etc.) are out of scope for Phase 1 — see docs/domain-model.md.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from ortools.sat.python import cp_model
 
@@ -56,7 +56,8 @@ class Explanation:
     def text(self) -> str:
         parts = [
             f"Crew {self.crew_id} was assigned job {self.job_id} because "
-            + "; ".join(self.hard_constraints_checked) + "."
+            + "; ".join(self.hard_constraints_checked)
+            + "."
         ]
         if self.next_job_id is not None and self.buffer_minutes_to_next_job is not None:
             parts.append(
@@ -100,9 +101,7 @@ def solve_multi_school_schedule(
     small problems (tests, toy examples) a lower value (e.g. 1-2) avoids
     thread-pool startup overhead dominating the runtime.
     """
-    logger.info(
-        "Solving multi-school schedule: %d job(s), %d crew(s)", len(jobs), len(crews)
-    )
+    logger.info("Solving multi-school schedule: %d job(s), %d crew(s)", len(jobs), len(crews))
     if not jobs:
         logger.info("No jobs supplied — nothing to schedule.")
         return SchedulingResult(assignments=(), crews_used=0)
@@ -137,9 +136,7 @@ def solve_multi_school_schedule(
                     f"(checked crews: {unqualified_ids})"
                 )
             else:
-                under_capacity_ids = [
-                    (c.id, c.vehicle.allowable_capacity()) for c in qualified
-                ]
+                under_capacity_ids = [(c.id, c.vehicle.allowable_capacity()) for c in qualified]
                 reasons.append(
                     f"no qualified/available crew has enough vehicle capacity for "
                     f"{job.passenger_count} expected passengers "
@@ -200,20 +197,18 @@ def solve_multi_school_schedule(
             order = model.NewBoolVar(f"order_{job_a.id}_before_{job_b.id}")
             for crew_id in shared_crew_ids:
                 both = [x[job_a.id][crew_id], x[job_b.id][crew_id]]
-                model.Add(
-                    end_vars[job_a.id] + deadhead_ab <= start_vars[job_b.id]
-                ).OnlyEnforceIf(both + [order])
-                model.Add(
-                    end_vars[job_b.id] + deadhead_ba <= start_vars[job_a.id]
-                ).OnlyEnforceIf(both + [order.Not()])
+                model.Add(end_vars[job_a.id] + deadhead_ab <= start_vars[job_b.id]).OnlyEnforceIf(
+                    both + [order]
+                )
+                model.Add(end_vars[job_b.id] + deadhead_ba <= start_vars[job_a.id]).OnlyEnforceIf(
+                    both + [order.Not()]
+                )
 
     # crew_used[c] = 1 if crew c serves at least one job
     all_crew_ids = {crew.id for crew in crews}
     crew_used: dict[str, cp_model.IntVar] = {}
     for crew_id in all_crew_ids:
-        assigned_literals = [
-            x[job.id][crew_id] for job in jobs if crew_id in x[job.id]
-        ]
+        assigned_literals = [x[job.id][crew_id] for job in jobs if crew_id in x[job.id]]
         used = model.NewBoolVar(f"used_{crew_id}")
         if assigned_literals:
             model.AddMaxEquality(used, assigned_literals)
@@ -283,9 +278,7 @@ def solve_multi_school_schedule(
         if next_job is not None:
             deadhead = deadhead_estimator(job.location, next_job.location)
             buffer_to_next = (
-                solver.Value(start_vars[next_job.id])
-                - solver.Value(end_vars[job.id])
-                - deadhead
+                solver.Value(start_vars[next_job.id]) - solver.Value(end_vars[job.id]) - deadhead
             )
 
         assignments.append(

@@ -8,7 +8,12 @@ def test_non_admin_cannot_create_user(client, db_session):
     response = client.post(
         "/users",
         headers=auth_headers(token),
-        json={"email": "x@example.org", "password": "password123", "full_name": "X", "role": "driver"},
+        json={
+            "email": "x@example.org",
+            "password": "password123",
+            "full_name": "X",
+            "role": "driver",
+        },
     )
     assert response.status_code == 403
 
@@ -17,14 +22,24 @@ def test_admin_can_create_user(client, admin_headers):
     response = client.post(
         "/users",
         headers=admin_headers,
-        json={"email": "new@example.org", "password": "password123", "full_name": "New Person", "role": "dispatcher"},
+        json={
+            "email": "new@example.org",
+            "password": "password123",
+            "full_name": "New Person",
+            "role": "dispatcher",
+        },
     )
     assert response.status_code == 201
     assert response.json()["role"] == "dispatcher"
 
 
 def test_creating_duplicate_email_conflicts(client, admin_headers):
-    payload = {"email": "dup@example.org", "password": "password123", "full_name": "Dup", "role": "driver"}
+    payload = {
+        "email": "dup@example.org",
+        "password": "password123",
+        "full_name": "Dup",
+        "role": "driver",
+    }
     first = client.post("/users", headers=admin_headers, json=payload)
     assert first.status_code == 201
     second = client.post("/users", headers=admin_headers, json=payload)
@@ -35,13 +50,19 @@ def test_only_admin_can_create_school(client, db_session):
     make_user(db_session, email="dispatch@example.org", role=Role.DISPATCHER)
     token = login(client, email="dispatch@example.org")
     response = client.post(
-        "/schools", headers=auth_headers(token), json={"name": "Test ES", "location_lat": 29.7, "location_lon": -95.4}
+        "/schools",
+        headers=auth_headers(token),
+        json={"name": "Test ES", "location_lat": 29.7, "location_lon": -95.4},
     )
     assert response.status_code == 403
 
 
 def test_any_authenticated_role_can_list_schools(client, admin_headers, db_session):
-    client.post("/schools", headers=admin_headers, json={"name": "Test ES", "location_lat": 29.7, "location_lon": -95.4})
+    client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": "Test ES", "location_lat": 29.7, "location_lon": -95.4},
+    )
     make_user(db_session, email="driver@example.org", role=Role.DRIVER)
     from tests.conftest import login as _login
 
@@ -69,7 +90,12 @@ def test_vehicle_creation_with_valid_qualification_code(client, admin_headers):
     response = client.post(
         "/vehicles",
         headers=admin_headers,
-        json={"label": "Bus 1", "nominal_capacity": 48, "effective_capacity": 44, "qualification_codes": ["wheelchair"]},
+        json={
+            "label": "Bus 1",
+            "nominal_capacity": 48,
+            "effective_capacity": 44,
+            "qualification_codes": ["wheelchair"],
+        },
     )
     assert response.status_code == 201
     body = response.json()
@@ -78,15 +104,25 @@ def test_vehicle_creation_with_valid_qualification_code(client, admin_headers):
 
 
 def test_vehicle_rejects_effective_capacity_le_zero(client, admin_headers):
-    response = client.post("/vehicles", headers=admin_headers, json={"label": "Bus 1", "effective_capacity": 0})
+    response = client.post(
+        "/vehicles", headers=admin_headers, json={"label": "Bus 1", "effective_capacity": 0}
+    )
     assert response.status_code == 422  # pydantic validation, gt=0
 
 
 def test_school_admin_sees_only_own_school_runs(client, admin_headers, db_session):
-    s1 = client.post("/schools", headers=admin_headers, json={"name": "ES A", "location_lat": 29.70, "location_lon": -95.40}).json()
-    s2 = client.post("/schools", headers=admin_headers, json={"name": "ES B", "location_lat": 29.71, "location_lon": -95.41}).json()
+    s1 = client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": "ES A", "location_lat": 29.70, "location_lon": -95.40},
+    ).json()
+    s2 = client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": "ES B", "location_lat": 29.71, "location_lon": -95.41},
+    ).json()
 
-    for school, wid in ((s1, "run-a"), (s2, "run-b")):
+    for school in (s1, s2):
         client.post(
             "/runs",
             headers=admin_headers,
@@ -100,9 +136,11 @@ def test_school_admin_sees_only_own_school_runs(client, admin_headers, db_sessio
             },
         )
 
-    school_admin = make_user(db_session, email="admin-a@example.org", role=Role.SCHOOL_ADMIN, school_id=s1["id"])
+    make_user(db_session, email="admin-a@example.org", role=Role.SCHOOL_ADMIN, school_id=s1["id"])
     token = login(client, email="admin-a@example.org")
-    response = client.get("/runs", headers=auth_headers(token), params={"service_date": "2026-09-01"})
+    response = client.get(
+        "/runs", headers=auth_headers(token), params={"service_date": "2026-09-01"}
+    )
     assert response.status_code == 200
     runs = response.json()
     assert len(runs) == 1
@@ -110,7 +148,11 @@ def test_school_admin_sees_only_own_school_runs(client, admin_headers, db_sessio
 
 
 def test_school_admin_without_school_link_is_forbidden(client, db_session, admin_headers):
-    school = client.post("/schools", headers=admin_headers, json={"name": "ES A", "location_lat": 29.70, "location_lon": -95.40}).json()
+    school = client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": "ES A", "location_lat": 29.70, "location_lon": -95.40},
+    ).json()
     client.post(
         "/runs",
         headers=admin_headers,
@@ -125,12 +167,18 @@ def test_school_admin_without_school_link_is_forbidden(client, db_session, admin
     )
     make_user(db_session, email="unlinked@example.org", role=Role.SCHOOL_ADMIN)  # no school_id
     token = login(client, email="unlinked@example.org")
-    response = client.get("/runs", headers=auth_headers(token), params={"service_date": "2026-09-01"})
+    response = client.get(
+        "/runs", headers=auth_headers(token), params={"service_date": "2026-09-01"}
+    )
     assert response.status_code == 403
 
 
 def test_driver_role_cannot_list_runs(client, db_session, admin_headers):
-    school = client.post("/schools", headers=admin_headers, json={"name": "ES A", "location_lat": 29.70, "location_lon": -95.40}).json()
+    school = client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": "ES A", "location_lat": 29.70, "location_lon": -95.40},
+    ).json()
     client.post(
         "/runs",
         headers=admin_headers,
@@ -145,5 +193,7 @@ def test_driver_role_cannot_list_runs(client, db_session, admin_headers):
     )
     make_user(db_session, email="driver@example.org", role=Role.DRIVER)
     token = login(client, email="driver@example.org")
-    response = client.get("/runs", headers=auth_headers(token), params={"service_date": "2026-09-01"})
+    response = client.get(
+        "/runs", headers=auth_headers(token), params={"service_date": "2026-09-01"}
+    )
     assert response.status_code == 403

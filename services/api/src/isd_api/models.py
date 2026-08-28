@@ -17,21 +17,23 @@ until that data model exists (see routers/).
 from __future__ import annotations
 
 import enum
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
+    Column,
     Date,
     DateTime,
-    Enum as SAEnum,
     ForeignKey,
     Integer,
-    JSON,
     String,
     Table,
     Text,
     UniqueConstraint,
-    Column,
+)
+from sqlalchemy import (
+    Enum as SAEnum,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -39,10 +41,10 @@ from isd_api.db import Base
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
-class Role(str, enum.Enum):
+class Role(enum.StrEnum):
     DRIVER = "driver"
     STUDENT = "student"
     PARENT = "parent"
@@ -51,7 +53,7 @@ class Role(str, enum.Enum):
     TRANSPORTATION_ADMIN = "transportation_admin"
 
 
-class QualificationKind(str, enum.Enum):
+class QualificationKind(enum.StrEnum):
     LICENSE = "license"
     VEHICLE_CAPABILITY = "vehicle_capability"
 
@@ -116,7 +118,7 @@ class User(Base):
     school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
-    driver: Mapped["Driver | None"] = relationship(back_populates="user")
+    driver: Mapped[Driver | None] = relationship(back_populates="user")
 
 
 class School(Base):
@@ -127,7 +129,7 @@ class School(Base):
     location_lat: Mapped[float] = mapped_column(nullable=False)
     location_lon: Mapped[float] = mapped_column(nullable=False)
 
-    runs: Mapped[list["Run"]] = relationship(back_populates="school")
+    runs: Mapped[list[Run]] = relationship(back_populates="school")
 
 
 class Vehicle(Base):
@@ -139,10 +141,14 @@ class Vehicle(Base):
     effective_capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     qualifications: Mapped[list[Qualification]] = relationship(secondary=vehicle_qualifications)
-    crews: Mapped[list["Crew"]] = relationship(back_populates="vehicle")
+    crews: Mapped[list[Crew]] = relationship(back_populates="vehicle")
 
     def allowable_capacity(self) -> int | None:
-        return self.effective_capacity if self.effective_capacity is not None else self.nominal_capacity
+        return (
+            self.effective_capacity
+            if self.effective_capacity is not None
+            else self.nominal_capacity
+        )
 
 
 class Driver(Base):
@@ -155,7 +161,7 @@ class Driver(Base):
     max_continuous_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     qualifications: Mapped[list[Qualification]] = relationship(secondary=driver_qualifications)
-    crews: Mapped[list["Crew"]] = relationship(back_populates="driver")
+    crews: Mapped[list[Crew]] = relationship(back_populates="driver")
     user: Mapped[User | None] = relationship(back_populates="driver")
 
 
@@ -177,7 +183,7 @@ class Crew(Base):
 
     driver: Mapped[Driver] = relationship(back_populates="crews")
     vehicle: Mapped[Vehicle] = relationship(back_populates="crews")
-    assignments: Mapped[list["Assignment"]] = relationship(back_populates="crew")
+    assignments: Mapped[list[Assignment]] = relationship(back_populates="crew")
 
 
 class Run(Base):
@@ -199,7 +205,7 @@ class Run(Base):
     required_qualifications: Mapped[list[Qualification]] = relationship(
         secondary=run_required_qualifications
     )
-    assignment: Mapped["Assignment | None"] = relationship(back_populates="run", uselist=False)
+    assignment: Mapped[Assignment | None] = relationship(back_populates="run", uselist=False)
 
 
 class Assignment(Base):

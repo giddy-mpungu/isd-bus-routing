@@ -1,16 +1,27 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from isd_api.config import settings
 from isd_api.db import Base, engine
-from isd_api.routers import auth, crews, drivers, qualifications, runs, schedule, schools, users, vehicles
+from isd_api.routers import (
+    auth,
+    crews,
+    drivers,
+    qualifications,
+    runs,
+    schedule,
+    schools,
+    users,
+    vehicles,
+)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings.require_production_ready()
     if settings.environment != "production":
         # Convenience for dev/test only. Production schema changes go

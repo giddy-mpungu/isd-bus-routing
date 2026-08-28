@@ -25,6 +25,8 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "httpx>=0.27",
+    "ruff>=0.6",
+    "mypy>=1.10",
 ]
 
 [tool.setuptools.packages.find]
@@ -34,3 +36,21 @@ where = ["src"]
 addopts = "-v --durations=5"
 log_cli = true
 log_cli_level = "INFO"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
+# B008: FastAPI's Depends(...)/require_role(...) call-in-default is the
+# documented, required dependency-injection pattern, not a bug.
+ignore = ["B008"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+packages = ["isd_api"]
+disallow_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true

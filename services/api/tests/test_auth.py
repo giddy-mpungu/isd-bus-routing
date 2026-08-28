@@ -3,27 +3,43 @@ from tests.conftest import auth_headers, login, make_user
 
 
 def test_login_succeeds_with_correct_credentials(client, db_session):
-    make_user(db_session, email="a@example.org", role=Role.TRANSPORTATION_ADMIN, password="correct-horse")
-    response = client.post("/auth/login", data={"username": "a@example.org", "password": "correct-horse"})
+    make_user(
+        db_session, email="a@example.org", role=Role.TRANSPORTATION_ADMIN, password="correct-horse"
+    )
+    response = client.post(
+        "/auth/login", data={"username": "a@example.org", "password": "correct-horse"}
+    )
     assert response.status_code == 200
     assert response.json()["token_type"] == "bearer"
     assert response.json()["access_token"]
 
 
 def test_login_fails_with_wrong_password(client, db_session):
-    make_user(db_session, email="a@example.org", role=Role.TRANSPORTATION_ADMIN, password="correct-horse")
+    make_user(
+        db_session, email="a@example.org", role=Role.TRANSPORTATION_ADMIN, password="correct-horse"
+    )
     response = client.post("/auth/login", data={"username": "a@example.org", "password": "wrong"})
     assert response.status_code == 401
 
 
 def test_login_fails_for_unknown_user(client):
-    response = client.post("/auth/login", data={"username": "nobody@example.org", "password": "whatever1"})
+    response = client.post(
+        "/auth/login", data={"username": "nobody@example.org", "password": "whatever1"}
+    )
     assert response.status_code == 401
 
 
 def test_login_fails_for_inactive_user(client, db_session):
-    make_user(db_session, email="a@example.org", role=Role.TRANSPORTATION_ADMIN, password="correct-horse", is_active=False)
-    response = client.post("/auth/login", data={"username": "a@example.org", "password": "correct-horse"})
+    make_user(
+        db_session,
+        email="a@example.org",
+        role=Role.TRANSPORTATION_ADMIN,
+        password="correct-horse",
+        is_active=False,
+    )
+    response = client.post(
+        "/auth/login", data={"username": "a@example.org", "password": "correct-horse"}
+    )
     assert response.status_code == 401
 
 

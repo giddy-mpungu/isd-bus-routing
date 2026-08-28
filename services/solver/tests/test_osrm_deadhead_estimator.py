@@ -75,7 +75,9 @@ def test_http_failure_raises_without_fallback():
     def failing_http_get(url: str, timeout_seconds: float) -> dict:
         raise TimeoutError("simulated network timeout")
 
-    estimate = osrm_deadhead_estimator(base_url="https://example-osrm.test", http_get=failing_http_get)
+    estimate = osrm_deadhead_estimator(
+        base_url="https://example-osrm.test", http_get=failing_http_get
+    )
     with pytest.raises(DeadheadEstimationError):
         estimate(Location(lat=29.70, lon=-95.40), Location(lat=29.72, lon=-95.42))
 
