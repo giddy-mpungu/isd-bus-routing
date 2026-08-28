@@ -294,7 +294,13 @@ def test_patch_assignment_reassigns_to_qualified_crew_and_audits(client, admin_h
         json={"crew_id": crew2["id"]},
     )
     assert response.status_code == 200, response.text
-    assert response.json()["crew_id"] == crew2["id"]
+    body = response.json()
+    assert body["crew_id"] == crew2["id"]
+    # The stale solver-generated explanation (naming crew1) must not
+    # survive a manual reassignment — it would misattribute the decision.
+    assert f"Crew {crew2['id']} was manually assigned" in body["explanation_text"]
+    assert f"Crew {crew1['id']} was assigned" not in body["explanation_text"]
+    assert "admin" in body["explanation_text"]  # admin_headers' full_name, from make_user
 
     entries = (
         db_session.query(AuditLogEntry)
