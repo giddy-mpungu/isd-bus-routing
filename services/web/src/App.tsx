@@ -3,19 +3,26 @@ import { AuthProvider, useAuth } from './auth/AuthContext'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AppLayout } from './layout/AppLayout'
 import { DriverPage } from './pages/DriverPage'
+import { FamilyPage } from './pages/FamilyPage'
 import { LoginPage } from './pages/LoginPage'
 import { SchedulePage } from './pages/SchedulePage'
 import { SetupPage } from './pages/SetupPage'
 
 function RoleHome() {
-  // A driver has no reason to land on the dispatcher console (and
-  // ProtectedRoute would just block them there) — route each role to
-  // the page it's actually built for.
+  // No role has a reason to land on the dispatcher console by default
+  // (and ProtectedRoute would just block them there) — route each
+  // role to the page it's actually built for.
   const { user, isLoading } = useAuth()
   if (isLoading) {
     return <p>Loading…</p>
   }
-  return <Navigate to={user?.role === 'driver' ? '/driver' : '/schedule'} replace />
+  if (user?.role === 'driver') {
+    return <Navigate to="/driver" replace />
+  }
+  if (user?.role === 'student' || user?.role === 'parent') {
+    return <Navigate to="/family" replace />
+  }
+  return <Navigate to="/schedule" replace />
 }
 
 function App() {
@@ -51,6 +58,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['driver']} deniedMessage="the driver app">
                 <DriverPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/family"
+            element={
+              <ProtectedRoute allowedRoles={['student', 'parent']} deniedMessage="the family app">
+                <FamilyPage />
               </ProtectedRoute>
             }
           />
