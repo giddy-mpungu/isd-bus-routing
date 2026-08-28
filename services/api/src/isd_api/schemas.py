@@ -140,6 +140,20 @@ class AssignmentRead(BaseModel):
     start_minute: int
     end_minute: int
     explanation_text: str
+    locked: bool
+
+
+class AssignmentUpdate(BaseModel):
+    """Partial update — only fields provided are changed. Every hard
+    constraint the solver enforces (qualification, capacity, no
+    overlap, window bounds) is re-checked server-side regardless of
+    which fields are provided (spec section 21 human override must
+    still respect true hard constraints — see routers/schedule.py)."""
+
+    crew_id: int | None = None
+    start_minute: int | None = Field(default=None, ge=0, lt=1440)
+    end_minute: int | None = Field(default=None, ge=0, lt=1440)
+    locked: bool | None = None
 
 
 class ScheduleRequest(BaseModel):
