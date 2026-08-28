@@ -100,18 +100,43 @@ Monorepo, 3 services, each separately installed:
    back to its own default — broke login with a 500
    ("HMAC key must not be empty"). Fix: don't list a compose env var
    at all when the intent is "let the app's own default apply."
+6. **Windows: a `uvicorn` dev server started via the Bash tool can
+   become an unkillable "ghost"** — `netstat -ano`/PowerShell's
+   `Get-NetTCPConnection` both still report it LISTENING on its port,
+   but `taskkill //PID <pid>` reports success without actually freeing
+   the port, and `Get-CimInstance Win32_Process`/`Get-Process` (native
+   Windows, PowerShell tool) can't find that PID *or any python.exe at
+   all* — the process is apparently invisible to native Win32 process
+   enumeration from this environment, likely a sandbox/namespace
+   artifact of how the Bash tool's background processes are hosted.
+   Happened once already (Phase 4 → auth-hardening session boundary).
+   **Don't burn time hunting the PID down** — just start the next dev
+   server on a different port (e.g. 8001) and a different SQLite file
+   (e.g. `verify_dev.db` instead of `isd_api_dev.db`, which the ghost
+   process may also still hold open, causing `rm`/`del` to fail with
+   "Device or resource busy") for that verification pass instead.
 
-**Auth (revised mid-session — see PR #6):** httpOnly, `SameSite=Lax`
-session cookie (`isd_session`), sliding 30-min inactivity renewal
-(`get_current_user` renews Max-Age on every cookie-authenticated
-request), 12h absolute cap (JWT `exp` fixed at login, unaffected by
-renewal). Separate from the still-unchanged bearer-token JSON response
-(60min, used by tests/Swagger/scripts) — additive, not a replacement.
-Frontend **never** touches the token — auth state is just "did
-`GET /users/me` succeed". CORS: explicit origin allowlist (never
-wildcard) + `allow_credentials=True`. Original plan was an in-memory
-token; user required refresh-survival + inactivity-logout, cookie
-approach is the (more secure) resolution.
+**Auth (revised mid-session — see PR #6, hardened in PR #14):** httpOnly,
+`SameSite=Lax` session cookie (`isd_session`), sliding 30-min
+inactivity renewal (`get_current_user` renews Max-Age on every
+cookie-authenticated request), 12h absolute cap (JWT `exp` fixed at
+login, unaffected by renewal). Separate from the still-unchanged
+bearer-token JSON response (60min, used by tests/Swagger/scripts) —
+additive, not a replacement. Frontend **never** touches the token —
+auth state is just "did `GET /users/me` succeed". CORS: explicit
+origin allowlist (never wildcard) + `allow_credentials=True`. Original
+plan was an in-memory token; user required refresh-survival +
+inactivity-logout, cookie approach is the (more secure) resolution.
+**PR #14 closed both remaining ADR 0006 follow-ups**: `POST
+/auth/login` is rate-limited (in-memory per-IP fixed window,
+`security.LoginRateLimiter`, 429 past threshold); every issued JWT
+carries a `jti`, and `POST /auth/logout` now revokes it server-side
+via a `revoked_tokens` denylist table (`security.revoke_token`),
+checked in `get_current_user` — closes the real gap where a captured
+token stayed valid until natural expiry even after "logout." A
+refresh-token pair was deliberately not built (see ADR 0006's updated
+"Consequences" section for why — the sliding cookie already does that
+job for browser sessions).
 
 **DB:** SQLite dev (`services/api/isd_api_dev.db`, gitignored),
 PostgreSQL+PostGIS is the stated production target (unused so far — no
@@ -164,9 +189,12 @@ PATCH edits that bypass the solver.
   offline support.
 - **Phases 5–6** — Not started (parent/student app, dynamic
   rerouting/substitutes/field trips/historical learning).
+- **Auth hardening** (PR #14) — **Done.** Both ADR 0006 follow-ups
+  closed: login rate limiting, logout token revocation. See "Auth"
+  under Architecture above for detail.
 - **CI**: `.github/workflows/ci.yml`, 4 jobs (solver/api/web/docker),
-  runs on every push to `main` and every PR. PR #13 pushed; watch for
-  green before merging (see "Exact next step").
+  runs on every push to `main` and every PR. Currently green (verified
+  via `gh pr checks --watch` on PR #14, not just assumed).
 
 ## PRs merged this session (chronological)
 
@@ -183,13 +211,15 @@ PATCH edits that bypass the solver.
 11. #11 `feat/docker-deployment-config` — Dockerfiles, `docker-compose.yml`, CI `docker` job; fixed a volume-permissions bug and a compose env-var footgun (both found by actually running the containers, not just building them)
 12. #12 `feat/partial-day-crew-availability` — `Crew.busy_intervals` (solver) + `routers/schedule.py` populating it from locked assignments instead of excluding the whole crew; replaced two api tests whose assumptions no longer held (one had become a genuine, flaky tie in the solver's own objective — confirmed it happened to pass once anyway, not trusted)
 13. #13 `feat/phase4-driver-app-mvp` — ADR 0008 (driver client platform), `Assignment.status`/`status_updated_at` + migration, `GET /schedule/{date}/my-assignments` + `PATCH .../status` (driver-scoped), `services/web` `/driver` page + role-aware nav/redirect, fixed `LoginPage`'s hardcoded `/schedule` redirect bug
+14. #14 `feat/auth-hardening-rate-limit-revocation` — `security.LoginRateLimiter` (per-IP, in-memory) on `POST /auth/login`; `jti` claim on every issued JWT + `revoked_tokens` denylist table + `security.revoke_token`, called from `POST /auth/logout`, checked in `get_current_user`; closed both ADR 0006 follow-ups, updated that ADR's "Consequences" section
 
-## Key files (current state, post-PR #13)
+## Key files (current state, post-PR #14)
 
-- `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal)
-- `services/api/src/isd_api/routers/auth.py` — login sets cookie + returns bearer token; `POST /auth/logout` (no auth required)
+- `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal + revocation check), `LoginRateLimiter`/`login_rate_limiter`, `revoke_token`
+- `services/api/src/isd_api/routers/auth.py` — login rate-limited + sets cookie + returns bearer token; `POST /auth/logout` (still no auth required — a no-op if nothing to revoke, but revokes the current token if one is present)
 - `services/api/src/isd_api/routers/schedule.py` — `POST /schedule` (lock-aware), `PATCH`/`DELETE /schedule/assignments/{id}`, `GET /schedule/{date}/assignments`, `GET /schedule/{date}/my-assignments` + `PATCH /schedule/assignments/{id}/status` (driver-scoped, Phase 4), `_hard_constraint_violation` helper
-- `services/api/src/isd_api/config.py` — `session_inactivity_minutes=30`, `session_absolute_max_hours=12`, `cors_allowed_origins`, DB pool settings
+- `services/api/src/isd_api/config.py` — `session_inactivity_minutes=30`, `session_absolute_max_hours=12`, `cors_allowed_origins`, `login_rate_limit_attempts=10`/`login_rate_limit_window_seconds=300`, DB pool settings
+- `services/api/src/isd_api/models.py` — `RevokedToken` (jti denylist), `Assignment.status`/`AssignmentStatus`
 - `services/api/src/isd_api/main.py` — `CORSMiddleware` config
 - `services/solver/src/isd_solver/scheduler.py` — CP-SAT model, duty-limit pairwise constraints, busy-interval constraints
 - `services/solver/src/isd_solver/domain.py` — `Crew.busy_intervals` (validated within `available_window`)
@@ -208,13 +238,9 @@ PATCH edits that bypass the solver.
 
 ## Exact next step (as of this checkpoint)
 
-Phase 4's client-platform decision is resolved (ADR 0008: responsive
-web app, user confirmed) and its MVP is **merged**
-([PR #13](https://github.com/giddy-mpungu/isd-bus-routing/pull/13),
-CI green on all 5 checks, verified locally first — 47 api tests, 27
-web tests, migration up/down/up, and a full manual browser pass logged
-in as both a seeded driver and the admin). Local `main` is synced to
-it (commit `094c93f`).
+Phase 4 MVP (PR #13) and auth hardening (PR #14, both ADR 0006
+follow-ups — login rate limiting, logout revocation) are both
+**merged**, CI green on both, local `main` synced (commit `86cd3a3`).
 
 **No known gap is currently blocking further work.** What's left in
 `docs/architecture.md`'s gap list is either genuinely deferred to a
@@ -223,21 +249,26 @@ Phase 6) or an integrations boundary with nothing concrete to build
 against yet (ADR 0007). Reasonable next candidates, roughly in order
 of how directly they extend what's just shipped:
 
+- Phase 5 (parent/student app) — the next actual phase in the roadmap,
+  needs its own scoping pass the way this session did for Phase 3 and
+  Phase 4 (`EnterPlanMode`, an Explore pass over existing patterns,
+  then a scoped-first-slice plan) before any code — this is the most
+  substantial of the candidates, involving new domain entities
+  (Student/Guardian, spec §3) that don't exist yet.
 - Phase 4 follow-ups the MVP intentionally left out (see ADR 0008 /
   architecture.md's Phase 4 row): absence reporting, GPS/live
   position (would need ADR 0007's "streamed telemetry" shape built for
   real), offline support.
-- Phase 5 (parent/student app) — a new phase, needs its own scoping
-  pass the way this session did for Phase 3 and Phase 4 (see the
-  `EnterPlanMode` plan this PR was built from as a template for that
-  process).
-- The minor, non-blocking polish items noted since PR #12 and still
-  true: no SQLAlchemy 2.0 mypy plugin (ORM constructor kwargs aren't
-  strictly type-checked); no rate limiting on `POST /auth/login`; no
-  refresh-token/revocation mechanism (ADR 0006 follow-ups).
+- The one remaining minor, non-blocking polish item: `services/api`
+  doesn't use the SQLAlchemy 2.0 mypy plugin, so ORM constructor
+  kwargs (e.g. `Assignment(run_id=...)`) aren't strictly type-checked
+  against column types — noticed once during earlier mypy work, not
+  investigated further, genuinely low priority.
 
 None of these were asked for — don't start one without checking
-whether the user actually wants it over continuing toward Phase 5.
+whether the user actually wants it over continuing toward Phase 5,
+which is the natural next phase in the roadmap if no other direction
+is given.
 
 ## Environment specifics (this machine)
 
@@ -257,16 +288,18 @@ whether the user actually wants it over continuing toward Phase 5.
   `computer` `left_click` with a `ref` for buttons (works once the tab
   is fronted via `tabs_select` if the pane was hidden) → `tabs_close` +
   `TaskStop` cleanup at the end.
-- Local dev DB was reset during Phase 4 work (`rm isd_api_dev.db` +
-  `alembic upgrade head` + `bootstrap_admin.py`) — the Phase 3-era
-  seed users/data noted in earlier revisions of this file no longer
-  exist. Current dev DB has: admin `admin@example.org` /
-  `adminpass123` (`transportation_admin`); driver login
-  `driver1@example.org` / `driverpass123` (linked to a seeded `Driver`
-  row); one school ("Riverside Elementary"), one crew, one run/
-  assignment for the day this was seeded — used for the Phase 4
-  manual verification pass. Treat this as scratch data, not a fixture
-  to build on; reseed or reset as needed.
+- `isd_api_dev.db` (default dev DB path) got wedged behind the
+  "ghost process" gotcha above during the Phase 4 → auth-hardening
+  session boundary — a stale uvicorn instance kept it locked
+  (`rm`/`del` fails with "Device or resource busy") without being
+  killable by any available tool. The auth-hardening verification pass
+  used a throwaway `verify_dev.db` + port 8001 instead and cleaned
+  both up after. If `isd_api_dev.db` is still locked when this file is
+  next read, don't fight it — use a differently-named scratch DB file
+  again rather than losing time on process archaeology. Whatever state
+  `isd_api_dev.db` itself is in (Phase 3-era seed data, Phase 4's
+  driver/crew/run seed, or untouched) should be treated as scratch,
+  not a fixture to build on — reseed or reset as needed.
 - `.claude/launch.json` (gitignored, not repo-tracked) has an
   `isd-web` entry pointing at `http://localhost:5173` for the Browser
   tool's `preview_start` — if a Vite dev server is already running on
