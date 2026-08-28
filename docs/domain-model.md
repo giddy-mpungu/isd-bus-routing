@@ -54,7 +54,13 @@ route window). Trips (spec §12) will extend this in a later phase.
 - `max_continuous_minutes`: district-configured limit on continuous
   driving/duty time before a break is required. **This is a
   configuration value the district supplies — this codebase makes no
-  claim about what any specific driver-hour law requires.**
+  claim about what any specific driver-hour law requires.** Enforced
+  by the scheduler as a hard constraint (`scheduler.py`): a crew's
+  driver never has a duty span (first assigned job's start to last
+  assigned job's end) exceeding this limit. Phase 1 approximation: the
+  whole span counts as one continuous duty period — a gap between two
+  jobs isn't yet recognized as a qualifying break that would reset the
+  limit. Real break-aware modeling is a future enhancement.
 
 ### Crew
 - `id`

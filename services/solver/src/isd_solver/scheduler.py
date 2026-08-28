@@ -18,6 +18,14 @@ per ADR 0002):
   - A job must start and finish inside its own required arrival window
     (spec section 2.1) and inside its assigned crew's availability
     window.
+  - A crew's driver never exceeds their configured max_continuous_minutes
+    (spec section 2.1: "driver scheduling or work-hour rules"; section
+    16: operational time). Modeled as one continuous duty span from a
+    crew's first assigned job start to its last assigned job end — a
+    Phase 1 approximation that doesn't yet recognize a gap between jobs
+    as a qualifying break (see docs/domain-model.md). This is a
+    district-configured value; this codebase makes no claim about what
+    any specific driver-hour law requires.
 
 Soft objective implemented here: minimize the number of distinct crews
 used (spec section 2.2, objective 1). Other soft objectives (mileage,
@@ -120,8 +128,17 @@ def solve_multi_school_schedule(
         ]
         qualified = [crew for crew in window_ok if crew.is_qualified_for(job)]
         capacity_ok = [crew for crew in qualified if crew.has_capacity_for(job)]
+        # A job that, on its own, already exceeds a crew's driver's
+        # continuous-duty limit can never be assigned to that crew —
+        # no chaining is even involved yet.
+        duty_ok = [
+            crew
+            for crew in capacity_ok
+            if crew.driver.max_continuous_minutes is None
+            or job.total_occupied_minutes <= crew.driver.max_continuous_minutes
+        ]
 
-        if not capacity_ok:
+        if not duty_ok:
             reasons: list[str] = []
             if not window_ok:
                 reasons.append(
@@ -135,22 +152,29 @@ def solve_multi_school_schedule(
                     f"{sorted(job.required_vehicle_qualifications) or '(license only)'} "
                     f"(checked crews: {unqualified_ids})"
                 )
-            else:
+            elif not capacity_ok:
                 under_capacity_ids = [(c.id, c.vehicle.allowable_capacity()) for c in qualified]
                 reasons.append(
                     f"no qualified/available crew has enough vehicle capacity for "
                     f"{job.passenger_count} expected passengers "
                     f"(checked crews and their allowable capacity: {under_capacity_ids})"
                 )
+            else:
+                over_limit_ids = [(c.id, c.driver.max_continuous_minutes) for c in capacity_ok]
+                reasons.append(
+                    f"this job alone ({job.total_occupied_minutes} min) exceeds every "
+                    "otherwise-eligible crew's driver's max_continuous_minutes limit "
+                    f"(checked crews and their limits: {over_limit_ids})"
+                )
             reason = f"Job {job.id}: " + "; ".join(reasons) + "."
             logger.warning(reason)
             return InfeasibleResult(reason)
 
-        candidate_crews[job.id] = capacity_ok
+        candidate_crews[job.id] = duty_ok
         logger.debug(
-            "Job %s: %d candidate crew(s) after qualification/availability/capacity filtering",
+            "Job %s: %d candidate crew(s) after qualification/availability/capacity/duty filtering",
             job.id,
-            len(capacity_ok),
+            len(duty_ok),
         )
 
     model = cp_model.CpModel()
@@ -181,8 +205,15 @@ def solve_multi_school_schedule(
         # exactly one crew per job
         model.AddExactlyOne(list(x[job.id].values()))
 
+    crew_by_id = {crew.id: crew for crew in crews}
+
     # Pairwise ordering when two jobs share a crew: whichever comes
-    # first must finish, plus deadhead travel time, before the other starts.
+    # first must finish, plus deadhead travel time, before the other
+    # starts. Also, if that crew's driver has a continuous-duty limit,
+    # the span from the earlier job's start to the later job's end must
+    # not exceed it — applied to every pair (not just adjacent ones in
+    # a chain), which is what makes it correctly bound the full span
+    # for a crew working any number of jobs in a day, not just two.
     job_list = list(jobs)
     for i in range(len(job_list)):
         for j in range(i + 1, len(job_list)):
@@ -203,6 +234,14 @@ def solve_multi_school_schedule(
                 model.Add(end_vars[job_b.id] + deadhead_ba <= start_vars[job_a.id]).OnlyEnforceIf(
                     both + [order.Not()]
                 )
+                max_continuous = crew_by_id[crew_id].driver.max_continuous_minutes
+                if max_continuous is not None:
+                    model.Add(
+                        end_vars[job_b.id] - start_vars[job_a.id] <= max_continuous
+                    ).OnlyEnforceIf(both + [order])
+                    model.Add(
+                        end_vars[job_a.id] - start_vars[job_b.id] <= max_continuous
+                    ).OnlyEnforceIf(both + [order.Not()])
 
     # crew_used[c] = 1 if crew c serves at least one job
     all_crew_ids = {crew.id for crew in crews}
@@ -273,6 +312,11 @@ def solve_multi_school_schedule(
         if job.passenger_count > 0:
             checks.append(
                 f"vehicle capacity is sufficient for {job.passenger_count} expected passengers"
+            )
+        max_continuous = crew_by_id[crew_id].driver.max_continuous_minutes
+        if max_continuous is not None:
+            checks.append(
+                f"the driver's continuous-duty limit ({max_continuous} min) is not exceeded"
             )
         buffer_to_next = None
         if next_job is not None:
