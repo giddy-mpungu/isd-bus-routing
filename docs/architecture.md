@@ -103,11 +103,14 @@ picked up when Phase 3 starts.
    ownership per entity, sync vs. webhook vs. polling per source)
    before any Phase 4+ work touches student, absence, or SSO data —
    otherwise integration code will get bolted on ad hoc.
-3. **`Driver.max_continuous_minutes` is modeled but unenforced.** The
-   field exists in both the solver domain model and the `drivers`
-   table, but `scheduler.py` never reads it. Needs a CP-SAT constraint
-   (or an explicit ADR deferring it) before driver-hour rules are
-   relied on for anything real.
+3. ~~**`Driver.max_continuous_minutes` is modeled but unenforced.**~~
+   **Closed.** `scheduler.py` now enforces it as a hard CP-SAT
+   constraint: a crew's driver never has a duty span exceeding the
+   limit, and a single job that alone exceeds it is filtered out of
+   candidacy before the model even runs. Phase 1 approximation
+   (documented in `docs/domain-model.md`): the whole span from a
+   crew's first job to its last counts as one continuous duty period —
+   a gap between jobs isn't yet recognized as a qualifying break.
 
 ## Service boundaries (ADR 0003)
 
