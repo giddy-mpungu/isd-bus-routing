@@ -114,7 +114,27 @@ Monorepo, 3 services, each separately installed:
    server on a different port (e.g. 8001) and a different SQLite file
    (e.g. `verify_dev.db` instead of `isd_api_dev.db`, which the ghost
    process may also still hold open, causing `rm`/`del` to fail with
-   "Device or resource busy") for that verification pass instead.
+   "Device or resource busy") for that verification pass instead. This
+   worked cleanly a second time for Phase 5's manual verification
+   (`phase5_verify.db` + port 8001) — the same ghost PID from the
+   Phase 4 → auth-hardening boundary was *still* squatting on port
+   8000 at the start of the Phase 5 session, confirming this isn't a
+   one-off: expect it, don't re-diagnose it each time.
+7. **A new nullable FK on `User` (or any model) must be wired in
+   *three* places, not two** — the SQLAlchemy column, the Pydantic
+   schema, **and** the router's ORM constructor call that actually
+   builds the object from the schema. Added `User.student_id` (Phase
+   5) and `UserCreate.student_id`/`UserRead.student_id` correctly, but
+   `routers/users.py`'s `create_user()` builds `User(...)` with an
+   explicit kwarg list (`email=`, `driver_id=`, `school_id=`, ...) —
+   forgetting to add `student_id=payload.student_id` there meant the
+   field was accepted by the API, validated, echoed as `null` in the
+   response, and silently discarded. Compiled fine, all existing tests
+   passed (nothing exercised the new field), only caught by manually
+   creating a student login and checking the response body. If a
+   future field addition to `User` (or similar) doesn't show up where
+   expected, check the router's constructor call first, not just the
+   model/schema.
 
 **Auth (revised mid-session — see PR #6, hardened in PR #14):** httpOnly,
 `SameSite=Lax` session cookie (`isd_session`), sliding 30-min
@@ -187,14 +207,34 @@ PATCH edits that bypass the solver.
   of catching real bugs this way). Not yet: parent/student views (Phase
   5), absence reporting, GPS/live position (ADR 0007, Phase 6+),
   offline support.
-- **Phases 5–6** — Not started (parent/student app, dynamic
-  rerouting/substitutes/field trips/historical learning).
+- **Phase 5** (parent/student app) — **MVP done** (PR #15). Scoped
+  directly from the source spec document (`Bus Program Specifications
+  Document.docx`, still present in `C:\Users\gmbug\Downloads\` — not
+  repo-tracked; read it directly for §3/§4/§17/§18 rather than relying
+  on this file's paraphrases) rather than secondhand paraphrases, the
+  way every earlier plan this session had to. New `Student`/`Stop`/
+  `RidershipOverride` entities + `student_guardians` M2M, manual entry
+  only (ADR 0007 precedent, no SIS sync). `/family` page (student/
+  parent roles): each linked child's school/stop and today's AM/PM
+  ridership (`GET /students/my-family`), declare/override per leg
+  (`PATCH /students/{id}/ridership` — also spec §4.5's "late request
+  to ride", same mechanism). `/setup` gained Students/Stops sections.
+  Ridership overrides are keyed by `(student, service_date, direction)`,
+  **not** a `Run` row — there's no recurring `Route` template table
+  (ADR 0001 named that intent, never built), so this keeps the whole
+  slice out of `Run`/`Assignment`/the solver entirely; see "Gotchas"
+  above for a real bug this shipped with and fixed. Not yet: automated
+  stop generation (§3.1, needs GIS), wiring ridership into the
+  solver's re-optimization (§4.3), cutoff/lock rules (§4.4), live
+  GPS/ETA and notifications (§18, Phase 6+).
+- **Phase 6** — Not started (dynamic rerouting, substitutes, field
+  trips, historical learning).
 - **Auth hardening** (PR #14) — **Done.** Both ADR 0006 follow-ups
   closed: login rate limiting, logout token revocation. See "Auth"
   under Architecture above for detail.
 - **CI**: `.github/workflows/ci.yml`, 4 jobs (solver/api/web/docker),
   runs on every push to `main` and every PR. Currently green (verified
-  via `gh pr checks --watch` on PR #14, not just assumed).
+  via `gh pr checks --watch` on PR #15, not just assumed).
 
 ## PRs merged this session (chronological)
 
@@ -212,15 +252,18 @@ PATCH edits that bypass the solver.
 12. #12 `feat/partial-day-crew-availability` — `Crew.busy_intervals` (solver) + `routers/schedule.py` populating it from locked assignments instead of excluding the whole crew; replaced two api tests whose assumptions no longer held (one had become a genuine, flaky tie in the solver's own objective — confirmed it happened to pass once anyway, not trusted)
 13. #13 `feat/phase4-driver-app-mvp` — ADR 0008 (driver client platform), `Assignment.status`/`status_updated_at` + migration, `GET /schedule/{date}/my-assignments` + `PATCH .../status` (driver-scoped), `services/web` `/driver` page + role-aware nav/redirect, fixed `LoginPage`'s hardcoded `/schedule` redirect bug
 14. #14 `feat/auth-hardening-rate-limit-revocation` — `security.LoginRateLimiter` (per-IP, in-memory) on `POST /auth/login`; `jti` claim on every issued JWT + `revoked_tokens` denylist table + `security.revoke_token`, called from `POST /auth/logout`, checked in `get_current_user`; closed both ADR 0006 follow-ups, updated that ADR's "Consequences" section
+15. #15 `feat/phase5-student-ridership-mvp` — `Student`/`Stop`/`RidershipOverride`/`student_guardians` (manual entry, scoped from the real spec doc — see "Phase 5" above), `GET /students/my-family` + `PATCH /students/{id}/ridership`, `services/web` `/family` page + `/setup` Students/Stops sections; fixed a real bug where `POST /users` silently dropped `student_id` (see "Gotchas" above)
 
-## Key files (current state, post-PR #14)
+## Key files (current state, post-PR #15)
 
 - `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal + revocation check), `LoginRateLimiter`/`login_rate_limiter`, `revoke_token`
 - `services/api/src/isd_api/routers/auth.py` — login rate-limited + sets cookie + returns bearer token; `POST /auth/logout` (still no auth required — a no-op if nothing to revoke, but revokes the current token if one is present)
 - `services/api/src/isd_api/routers/schedule.py` — `POST /schedule` (lock-aware), `PATCH`/`DELETE /schedule/assignments/{id}`, `GET /schedule/{date}/assignments`, `GET /schedule/{date}/my-assignments` + `PATCH /schedule/assignments/{id}/status` (driver-scoped, Phase 4), `_hard_constraint_violation` helper
 - `services/api/src/isd_api/config.py` — `session_inactivity_minutes=30`, `session_absolute_max_hours=12`, `cors_allowed_origins`, `login_rate_limit_attempts=10`/`login_rate_limit_window_seconds=300`, DB pool settings
-- `services/api/src/isd_api/models.py` — `RevokedToken` (jti denylist), `Assignment.status`/`AssignmentStatus`
-- `services/api/src/isd_api/main.py` — `CORSMiddleware` config
+- `services/api/src/isd_api/models.py` — `RevokedToken` (jti denylist), `Assignment.status`/`AssignmentStatus`, `Student`/`Stop`/`RidershipOverride`/`student_guardians` (Phase 5), `User.student_id`
+- `services/api/src/isd_api/routers/students.py` — `POST`/`GET`/`PATCH /students`, `POST /students/{id}/guardians`, `GET /students/my-family`, `PATCH /students/{id}/ridership` — all the Phase 5 RBAC ownership-check logic lives here
+- `services/api/src/isd_api/routers/stops.py` — `POST`/`GET /stops`, admin/dispatcher only
+- `services/api/src/isd_api/main.py` — `CORSMiddleware` config, router registration (check here first if a new router's routes 404 — it needs an `app.include_router(...)` call too, not just existing as a file)
 - `services/solver/src/isd_solver/scheduler.py` — CP-SAT model, duty-limit pairwise constraints, busy-interval constraints
 - `services/solver/src/isd_solver/domain.py` — `Crew.busy_intervals` (validated within `available_window`)
 - `services/web/src/api/client.ts` — hand-written typed fetch wrapper, `credentials: 'include'` everywhere, `ApiError` class
@@ -230,43 +273,52 @@ PATCH edits that bypass the solver.
 - `services/web/src/pages/SchedulePage.tsx` — main dispatcher view
 - `services/web/src/pages/SetupPage.tsx` — schools/quals/drivers/vehicles create+list
 - `services/web/src/pages/DriverPage.tsx` — Phase 4 driver view (`/driver`): run cards, status buttons, read-aloud
-- `services/web/src/layout/AppLayout.tsx` — header, role-conditional nav (Schedule/Setup for dispatcher/admin, My Runs for driver), logout
-- `services/web/src/App.tsx` — routes + `RoleHome` (role-aware `/` redirect: driver → `/driver`, else → `/schedule`)
+- `services/web/src/pages/FamilyPage.tsx` — Phase 5 student/parent view (`/family`): per-child cards, AM/PM ridership toggles
+- `services/web/src/layout/AppLayout.tsx` — header, role-conditional nav (Schedule/Setup for dispatcher/admin, My Runs for driver, My Family for student/parent), logout
+- `services/web/src/App.tsx` — routes + `RoleHome` (role-aware `/` redirect: driver → `/driver`, student/parent → `/family`, else → `/schedule`)
 - `services/api/Dockerfile`, `services/web/Dockerfile`, `services/web/nginx.conf`, `docker-compose.yml`, `.dockerignore` (root, api's build context) / `services/web/.dockerignore`
 - `docs/architecture.md` — system diagram + phase table + known gaps — **keep updated per PR**
 - `docs/adr/0001`–`0008` — architecture decision records
 
 ## Exact next step (as of this checkpoint)
 
-Phase 4 MVP (PR #13) and auth hardening (PR #14, both ADR 0006
-follow-ups — login rate limiting, logout revocation) are both
-**merged**, CI green on both, local `main` synced (commit `86cd3a3`).
+Phase 4 MVP (PR #13), auth hardening (PR #14), and Phase 5 MVP
+(PR #15) are all **merged**, CI green on all three, local `main`
+synced (commit `f920dcb`). Phases 0–5 are now each at least MVP-done.
 
-**No known gap is currently blocking further work.** What's left in
-`docs/architecture.md`'s gap list is either genuinely deferred to a
-later phase (student/stop entities — Phase 5; field trips/absences —
-Phase 6) or an integrations boundary with nothing concrete to build
-against yet (ADR 0007). Reasonable next candidates, roughly in order
-of how directly they extend what's just shipped:
+**No known gap is currently blocking further work, and no phase has
+an unstarted MVP left except Phase 6.** Reasonable next candidates,
+roughly in order of how directly they extend what's just shipped:
 
-- Phase 5 (parent/student app) — the next actual phase in the roadmap,
-  needs its own scoping pass the way this session did for Phase 3 and
-  Phase 4 (`EnterPlanMode`, an Explore pass over existing patterns,
-  then a scoped-first-slice plan) before any code — this is the most
-  substantial of the candidates, involving new domain entities
-  (Student/Guardian, spec §3) that don't exist yet.
-- Phase 4 follow-ups the MVP intentionally left out (see ADR 0008 /
-  architecture.md's Phase 4 row): absence reporting, GPS/live
-  position (would need ADR 0007's "streamed telemetry" shape built for
-  real), offline support.
+- **Phase 6** (dynamic rerouting, substitutes, field trips, historical
+  learning) — the next actual phase in the roadmap. Large and
+  genuinely harder to slice than Phases 3–5 were: §6/§7 (bus-legal
+  routing) needs a real GIS/road-network provider this project has
+  never integrated with, so *some* sub-slice of Phase 6 (driver
+  absence + substitute ranking, spec §13, which only needs data
+  already modeled — `Driver`, `Crew`, qualifications — not GIS) is a
+  more realistic first cut than the routing-heavy parts. Needs its own
+  scoping pass (`EnterPlanMode`, Explore, then a plan) before any code
+  — don't assume §13 is definitely the right first slice without
+  re-reading the actual spec sections first, the way Phase 5's
+  planning did.
+- Follow-ups intentionally left out of Phases 4/5's own MVPs: wiring
+  ridership overrides into the solver's `passenger_count`/re-solve
+  (spec §4.3 — wasn't part of Phase 5's own scope, see that entry
+  above), GPS/live position + notifications (§9/§18, needs a real
+  telemetry integration, ADR 0007), absence reporting from the driver
+  app.
 - The one remaining minor, non-blocking polish item: `services/api`
   doesn't use the SQLAlchemy 2.0 mypy plugin, so ORM constructor
-  kwargs (e.g. `Assignment(run_id=...)`) aren't strictly type-checked
-  against column types — noticed once during earlier mypy work, not
-  investigated further, genuinely low priority.
+  kwargs aren't strictly type-checked against column types — the
+  Phase 5 `student_id` bug (see "Gotchas") is exactly the class of
+  mistake that plugin would have caught at type-check time instead of
+  requiring manual testing to find. Worth reconsidering given it just
+  caused a real (if quickly caught) bug, not just a theoretical one
+  anymore.
 
 None of these were asked for — don't start one without checking
-whether the user actually wants it over continuing toward Phase 5,
+whether the user actually wants it over continuing toward Phase 6,
 which is the natural next phase in the roadmap if no other direction
 is given.
 
@@ -288,18 +340,17 @@ is given.
   `computer` `left_click` with a `ref` for buttons (works once the tab
   is fronted via `tabs_select` if the pane was hidden) → `tabs_close` +
   `TaskStop` cleanup at the end.
-- `isd_api_dev.db` (default dev DB path) got wedged behind the
-  "ghost process" gotcha above during the Phase 4 → auth-hardening
-  session boundary — a stale uvicorn instance kept it locked
-  (`rm`/`del` fails with "Device or resource busy") without being
-  killable by any available tool. The auth-hardening verification pass
-  used a throwaway `verify_dev.db` + port 8001 instead and cleaned
-  both up after. If `isd_api_dev.db` is still locked when this file is
-  next read, don't fight it — use a differently-named scratch DB file
-  again rather than losing time on process archaeology. Whatever state
-  `isd_api_dev.db` itself is in (Phase 3-era seed data, Phase 4's
-  driver/crew/run seed, or untouched) should be treated as scratch,
-  not a fixture to build on — reseed or reset as needed.
+- `isd_api_dev.db` (default dev DB path) has been avoided entirely
+  since the Phase 4 → auth-hardening boundary, because it's wedged
+  behind the "ghost process" gotcha above (`rm`/`del` fails with
+  "Device or resource busy", port 8000 stays LISTENING under an
+  unkillable PID). Both the auth-hardening and Phase 5 verification
+  passes used a fresh, differently-named scratch DB + port 8001
+  instead (`verify_dev.db`, then `phase5_verify.db`), cleaned up after
+  each. This pattern is now proven twice — keep using it rather than
+  re-attempting to free port 8000 or `isd_api_dev.db`. Whatever state
+  `isd_api_dev.db` itself is actually in by now is unknown and
+  irrelevant — don't build on it as a fixture.
 - `.claude/launch.json` (gitignored, not repo-tracked) has an
   `isd-web` entry pointing at `http://localhost:5173` for the Browser
   tool's `preview_start` — if a Vite dev server is already running on
