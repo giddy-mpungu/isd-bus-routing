@@ -9,7 +9,8 @@ ships), so calling bcrypt directly is the more reliable choice here.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 import jwt
@@ -33,7 +34,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(*, user_id: int, role: Role) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
+    expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
     payload = {"sub": str(user_id), "role": role.value, "exp": expire}
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
@@ -49,20 +50,20 @@ def _decode_token(token: str) -> dict:
         ) from exc
 
 
-def get_current_user(
-    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
-) -> User:
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     payload = _decode_token(token)
     user_id = payload.get("sub")
     if user_id is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     user = db.get(User, int(user_id))
     if user is None or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or inactive user")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or inactive user"
+        )
     return user
 
 
-def require_role(*allowed_roles: Role):
+def require_role(*allowed_roles: Role) -> Callable[[User], User]:
     """Dependency factory: 403s unless the current user's role is in
     allowed_roles. Each router applies this per-endpoint against the
     exact access list spec section 17 defines for that role, rather

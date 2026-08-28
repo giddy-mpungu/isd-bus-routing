@@ -11,17 +11,21 @@ from tests.conftest import auth_headers, login, make_user
 
 def _seed_spec_section5_scenario(client, admin_headers):
     school = client.post(
-        "/schools", headers=admin_headers, json={"name": "Multi-level campus", "location_lat": 29.70, "location_lon": -95.40}
+        "/schools",
+        headers=admin_headers,
+        json={"name": "Multi-level campus", "location_lat": 29.70, "location_lon": -95.40},
     ).json()
 
-    client.post(
-        "/qualifications", headers=admin_headers, json={"code": "CDL_B", "kind": "license"}
-    )
+    client.post("/qualifications", headers=admin_headers, json={"code": "CDL_B", "kind": "license"})
     driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Jordan Driver", "qualification_codes": ["CDL_B"]}
+        "/drivers",
+        headers=admin_headers,
+        json={"full_name": "Jordan Driver", "qualification_codes": ["CDL_B"]},
     ).json()
     vehicle = client.post(
-        "/vehicles", headers=admin_headers, json={"label": "Bus 101", "nominal_capacity": 48, "effective_capacity": 44}
+        "/vehicles",
+        headers=admin_headers,
+        json={"label": "Bus 101", "nominal_capacity": 48, "effective_capacity": 44},
     ).json()
     crew = client.post(
         "/crews",
@@ -60,7 +64,9 @@ def _seed_spec_section5_scenario(client, admin_headers):
     return school, driver, vehicle, crew, runs
 
 
-def test_full_schedule_flow_persists_assignments_with_explanations(client, admin_headers, db_session):
+def test_full_schedule_flow_persists_assignments_with_explanations(
+    client, admin_headers, db_session
+):
     _school, _driver, _vehicle, crew, runs = _seed_spec_section5_scenario(client, admin_headers)
 
     response = client.post(
@@ -77,9 +83,7 @@ def test_full_schedule_flow_persists_assignments_with_explanations(client, admin
         assert "qualifications" in assignment["explanation_text"]
 
     # Persisted, not just returned: fetch again via the read endpoint.
-    read_back = client.get(
-        "/schedule/2026-09-01/assignments", headers=admin_headers
-    )
+    read_back = client.get("/schedule/2026-09-01/assignments", headers=admin_headers)
     assert read_back.status_code == 200
     assert {a["run_id"] for a in read_back.json()} == {r["id"] for r in runs}
 
@@ -96,7 +100,9 @@ def test_schedule_endpoint_requires_dispatcher_or_admin_role(client, db_session,
 
 def test_schedule_endpoint_reports_infeasible_clearly(client, admin_headers):
     school = client.post(
-        "/schools", headers=admin_headers, json={"name": "S", "location_lat": 29.70, "location_lon": -95.40}
+        "/schools",
+        headers=admin_headers,
+        json={"name": "S", "location_lat": 29.70, "location_lon": -95.40},
     ).json()
     driver = client.post("/drivers", headers=admin_headers, json={"full_name": "D"}).json()
     vehicle = client.post("/vehicles", headers=admin_headers, json={"label": "V"}).json()
@@ -113,7 +119,9 @@ def test_schedule_endpoint_reports_infeasible_clearly(client, admin_headers):
     )
     # A run requiring a qualification no crew has.
     client.post(
-        "/qualifications", headers=admin_headers, json={"code": "lift", "kind": "vehicle_capability"}
+        "/qualifications",
+        headers=admin_headers,
+        json={"code": "lift", "kind": "vehicle_capability"},
     )
     client.post(
         "/runs",
@@ -177,7 +185,9 @@ def test_rescheduling_replaces_prior_assignments_and_audits_both(client, admin_h
     assert len(current) == 3
     assert len({a["run_id"] for a in current}) == 3
 
-    entries = db_session.query(AuditLogEntry).filter(AuditLogEntry.entity_type == "assignment").all()
+    entries = (
+        db_session.query(AuditLogEntry).filter(AuditLogEntry.entity_type == "assignment").all()
+    )
     actions = [e.action for e in entries]
     assert actions.count("created") == 6  # 3 from first run + 3 from second
     assert actions.count("deleted") == 3  # the first run's assignments, replaced by the second

@@ -27,5 +27,7 @@ def create_school(
 
 
 @router.get("", response_model=list[SchoolRead])
-def list_schools(db: Session = Depends(get_db), _: User = Depends(get_current_user)) -> list[School]:
+def list_schools(
+    db: Session = Depends(get_db), _: User = Depends(get_current_user)
+) -> list[School]:
     return list(db.query(School).order_by(School.id).all())

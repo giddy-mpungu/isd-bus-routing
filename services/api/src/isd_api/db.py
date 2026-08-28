@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Generator
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from isd_api.config import settings
@@ -21,7 +22,7 @@ class Base(DeclarativeBase):
     pass
 
 
-def _make_engine():
+def _make_engine() -> Engine:
     connect_args = {}
     if settings.database_url.startswith("sqlite"):
         # Needed for SQLite + FastAPI's threaded test client / request handling.

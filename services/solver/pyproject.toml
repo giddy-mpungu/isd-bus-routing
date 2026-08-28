@@ -15,10 +15,39 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+packages = ["isd_solver"]
+disallow_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = "ortools.*"
+ignore_missing_imports = true
+
+# ortools' bundled type stub only declares the newer snake_case CP-SAT
+# API (new_int_var, add, ...); scheduler.py uses the still-supported
+# PascalCase aliases (NewIntVar, Add, ...), which the stub doesn't
+# know about. This is a stub gap, not a real type error.
+[[tool.mypy.overrides]]
+module = "isd_solver.scheduler"
+disable_error_code = ["attr-defined"]
 
 [tool.pytest.ini_options]
 # -v: show each test's name and outcome, not just dots.
