@@ -73,3 +73,23 @@ jobs:
       - run: npm run format:check
       - run: npm run build
       - run: npm run test
+
+  docker:
+    name: docker build (api, web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build api image
+        run: docker build -f services/api/Dockerfile -t isd-api:ci .
+      - name: Build web image
+        run: docker build -f services/web/Dockerfile -t isd-web:ci services/web
+      - name: Smoke-test the api image starts and answers /health
+        run: |
+          docker run -d --name isd-api-ci -p 8000:8000 isd-api:ci
+          for i in $(seq 1 15); do
+            curl -sf http://127.0.0.1:8000/health && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8000/health
+          docker logs isd-api-ci
+          docker rm -f isd-api-ci
