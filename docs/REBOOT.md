@@ -41,6 +41,9 @@ this is a living operational document, not a feature).
     it achieves.
   - As of 2026-08-28: work continuously, no pausing for check-ins,
     until the project is done or the user says stop.
+  - Always read this file and persistent memory at the start of every
+    session/context reset — confirmed standing practice, not
+    optional, not just something to write to.
 
 ## Architecture (condensed — full reasoning in docs/adr/0001–0007)
 
@@ -143,12 +146,27 @@ PATCH edits that bypass the solver.
   images build+run+pass a CI smoke test). "Other roles" is *not* a
   Phase 3 gap — driver app is Phase 4, parent/student is Phase 5, each
   its own phase in the original roadmap.
-- **Phases 4–6** — Not started (driver app, parent/student app,
-  dynamic rerouting/substitutes/field trips/historical learning).
-  **Phase 4 has an open decision the user needs to make** — see "Next
-  step" below.
+- **Phase 4** (driver app) — **MVP done** (PR #13, ADR 0008: responsive
+  web app in `services/web`, not native — see ADR 0008 for the full
+  reasoning, including why this doesn't foreclose a native client
+  later). `/driver` page: today's own runs with resolved school/vehicle
+  names (`GET /schedule/{date}/my-assignments`, denormalized/driver-
+  scoped rather than broadening the admin-only `/runs`,`/crews`,
+  `/drivers` endpoints), mark started/completed/no-show (`PATCH
+  /schedule/assignments/{id}/status`, audited), native `SpeechSynthesis`
+  "read aloud" (spec §9). Role-aware nav (`AppLayout`) and root-redirect
+  (`RoleHome` in `App.tsx`). **Along the way fixed a real bug**:
+  `LoginPage.tsx` hardcoded its post-login redirect to `/schedule` —
+  broke for a driver login now that one exists (found via manual
+  browser testing, not by inspection — see the project's own precedent
+  of catching real bugs this way). Not yet: parent/student views (Phase
+  5), absence reporting, GPS/live position (ADR 0007, Phase 6+),
+  offline support.
+- **Phases 5–6** — Not started (parent/student app, dynamic
+  rerouting/substitutes/field trips/historical learning).
 - **CI**: `.github/workflows/ci.yml`, 4 jobs (solver/api/web/docker),
-  runs on every push to `main` and every PR. Currently green.
+  runs on every push to `main` and every PR. PR #13 pushed; watch for
+  green before merging (see "Exact next step").
 
 ## PRs merged this session (chronological)
 
@@ -164,12 +182,13 @@ PATCH edits that bypass the solver.
 10. #10 `feat/inline-crew-run-creation` — inline crew/run forms on SchedulePage; console now usable with zero raw API calls
 11. #11 `feat/docker-deployment-config` — Dockerfiles, `docker-compose.yml`, CI `docker` job; fixed a volume-permissions bug and a compose env-var footgun (both found by actually running the containers, not just building them)
 12. #12 `feat/partial-day-crew-availability` — `Crew.busy_intervals` (solver) + `routers/schedule.py` populating it from locked assignments instead of excluding the whole crew; replaced two api tests whose assumptions no longer held (one had become a genuine, flaky tie in the solver's own objective — confirmed it happened to pass once anyway, not trusted)
+13. #13 `feat/phase4-driver-app-mvp` — ADR 0008 (driver client platform), `Assignment.status`/`status_updated_at` + migration, `GET /schedule/{date}/my-assignments` + `PATCH .../status` (driver-scoped), `services/web` `/driver` page + role-aware nav/redirect, fixed `LoginPage`'s hardcoded `/schedule` redirect bug — CI green (all 5 checks), merging now
 
-## Key files (current state, post-PR #12)
+## Key files (current state, post-PR #13)
 
 - `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal)
 - `services/api/src/isd_api/routers/auth.py` — login sets cookie + returns bearer token; `POST /auth/logout` (no auth required)
-- `services/api/src/isd_api/routers/schedule.py` — `POST /schedule` (lock-aware), `PATCH`/`DELETE /schedule/assignments/{id}`, `GET /schedule/{date}/assignments`, `_hard_constraint_violation` helper
+- `services/api/src/isd_api/routers/schedule.py` — `POST /schedule` (lock-aware), `PATCH`/`DELETE /schedule/assignments/{id}`, `GET /schedule/{date}/assignments`, `GET /schedule/{date}/my-assignments` + `PATCH /schedule/assignments/{id}/status` (driver-scoped, Phase 4), `_hard_constraint_violation` helper
 - `services/api/src/isd_api/config.py` — `session_inactivity_minutes=30`, `session_absolute_max_hours=12`, `cors_allowed_origins`, DB pool settings
 - `services/api/src/isd_api/main.py` — `CORSMiddleware` config
 - `services/solver/src/isd_solver/scheduler.py` — CP-SAT model, duty-limit pairwise constraints, busy-interval constraints
@@ -180,51 +199,51 @@ PATCH edits that bypass the solver.
 - `services/web/src/auth/ProtectedRoute.tsx` — role-gated route wrapper
 - `services/web/src/pages/SchedulePage.tsx` — main dispatcher view
 - `services/web/src/pages/SetupPage.tsx` — schools/quals/drivers/vehicles create+list
-- `services/web/src/layout/AppLayout.tsx` — header, nav (Schedule/Setup links), logout
+- `services/web/src/pages/DriverPage.tsx` — Phase 4 driver view (`/driver`): run cards, status buttons, read-aloud
+- `services/web/src/layout/AppLayout.tsx` — header, role-conditional nav (Schedule/Setup for dispatcher/admin, My Runs for driver), logout
+- `services/web/src/App.tsx` — routes + `RoleHome` (role-aware `/` redirect: driver → `/driver`, else → `/schedule`)
 - `services/api/Dockerfile`, `services/web/Dockerfile`, `services/web/nginx.conf`, `docker-compose.yml`, `.dockerignore` (root, api's build context) / `services/web/.dockerignore`
 - `docs/architecture.md` — system diagram + phase table + known gaps — **keep updated per PR**
-- `docs/adr/0001`–`0007` — architecture decision records
+- `docs/adr/0001`–`0008` — architecture decision records
 
 ## Exact next step (as of this checkpoint)
 
-Phase 3 is done. Partial-day crew availability (the last flagged
-mutation-endpoints sub-gap) is done. **No remaining known gaps are
-blocking further backend/console work** — what's left in
-`docs/architecture.md`'s gap list is either genuinely deferred to a
-later phase (student/stop entities — Phase 5; field trips/absences —
-Phase 6) or an integrations boundary with nothing concrete to build
-against yet (ADR 0007 — no Phase 4+ work has actually started that
-would need SIS/HR/SSO/GPS/fleet-maintenance integration).
+Phase 4's client-platform decision is resolved (ADR 0008: responsive
+web app, user confirmed) and its MVP is built and pushed as
+[PR #13](https://github.com/giddy-mpungu/isd-bus-routing/pull/13)
+(`feat/phase4-driver-app-mvp`), verified locally (47 api tests, 27 web
+tests, migration up/down/up, and a full manual browser pass logged in
+as both a seeded driver and the admin — see PR body for the checklist).
+**CI passed all 5 checks on PR #13** (verified via `gh pr checks 13
+--watch`, not just assumed). Merging now: `gh pr merge 13 --merge
+--delete-branch`, then sync local `main`. If this file is being read
+because that merge didn't happen yet for some reason, do it first,
+then update this file's PR #13 line and persistent memory
+(`project_isd_bus_routing_overview.md`) the same way every prior
+merged PR was recorded.
 
-**Real next decision point**: Phase 4 (driver app) needs a
-client-platform choice ADR 0003 explicitly deferred ("Mobile clients
-(Phase 4+): decision deferred — evaluate React Native vs. Flutter...
-once we're building it" — that's now). Recommendation given to the
-user this checkpoint: reuse the existing React+TS+Vite stack as a
-responsive web app rather than adopting a new native framework — keeps
-one toolchain/skillset/CI pattern, and spec §9's "large controls,
-minimal typing, audible instructions" doesn't require native/app-store
-distribution. Alternatives offered: React Native, Flutter. **Check the
-conversation above this file for the user's answer before starting
-Phase 4** — do not assume the recommendation was accepted just because
-it was the one offered first.
+**After PR #13 lands, no known gap is blocking further work.** What's
+left in `docs/architecture.md`'s gap list is either genuinely deferred
+to a later phase (student/stop entities — Phase 5; field trips/
+absences — Phase 6) or an integrations boundary with nothing concrete
+to build against yet (ADR 0007). Reasonable next candidates, roughly
+in order of how directly they extend what's just shipped:
 
-If Phase 4 hasn't been started and no other explicit direction exists
-when this file is next read: minor, non-blocking items worth a look
-if searching for something to do — none of these are known bugs, just
-polish: (1) `services/api` doesn't use the SQLAlchemy 2.0 mypy plugin,
-so ORM model constructor kwargs (e.g. `Assignment(run_id=...)`) aren't
-strictly type-checked against column types — noticed once while
-sanity-testing a mypy fix this session, not investigated further; (2)
-no rate limiting on `POST /auth/login` (flagged since ADR 0006, still
-true); (3) no refresh-token/revocation mechanism (also ADR 0006,
-still true — the sliding-cookie design mitigates but doesn't replace
-this). None of these were asked for — don't start one without
-checking whether the user actually wants it over continuing toward
-Phase 4.
+- Phase 4 follow-ups the MVP intentionally left out (see ADR 0008 /
+  architecture.md's Phase 4 row): absence reporting, GPS/live
+  position (would need ADR 0007's "streamed telemetry" shape built for
+  real), offline support.
+- Phase 5 (parent/student app) — a new phase, needs its own scoping
+  pass the way this session did for Phase 3 and Phase 4 (see the
+  `EnterPlanMode` plan this PR was built from as a template for that
+  process).
+- The minor, non-blocking polish items noted since PR #12 and still
+  true: no SQLAlchemy 2.0 mypy plugin (ORM constructor kwargs aren't
+  strictly type-checked); no rate limiting on `POST /auth/login`; no
+  refresh-token/revocation mechanism (ADR 0006 follow-ups).
 
-After whichever lands: update this file, update persistent memory
-(`project_isd_bus_routing_overview.md`).
+None of these were asked for — don't start one without checking
+whether the user actually wants it over continuing toward Phase 5.
 
 ## Environment specifics (this machine)
 
@@ -244,11 +263,21 @@ After whichever lands: update this file, update persistent memory
   `computer` `left_click` with a `ref` for buttons (works once the tab
   is fronted via `tabs_select` if the pane was hidden) → `tabs_close` +
   `TaskStop` cleanup at the end.
-- Local dev DB already has: admin user `dispatcher@example.org` /
-  `phase3-testing` (`transportation_admin`); a real dispatcher-role
-  test user `realdispatcher@example.org` / `dispatcher123`; a school,
-  a few drivers/vehicles, and seed runs/crews for `2026-08-31` from
-  manual testing.
+- Local dev DB was reset during Phase 4 work (`rm isd_api_dev.db` +
+  `alembic upgrade head` + `bootstrap_admin.py`) — the Phase 3-era
+  seed users/data noted in earlier revisions of this file no longer
+  exist. Current dev DB has: admin `admin@example.org` /
+  `adminpass123` (`transportation_admin`); driver login
+  `driver1@example.org` / `driverpass123` (linked to a seeded `Driver`
+  row); one school ("Riverside Elementary"), one crew, one run/
+  assignment for the day this was seeded — used for the Phase 4
+  manual verification pass. Treat this as scratch data, not a fixture
+  to build on; reseed or reset as needed.
+- `.claude/launch.json` (gitignored, not repo-tracked) has an
+  `isd-web` entry pointing at `http://localhost:5173` for the Browser
+  tool's `preview_start` — if a Vite dev server is already running on
+  that port from a prior turn, `preview_start` attaches to it instead
+  of starting a new one (`"url"` config, no `runtimeExecutable`).
 
 ## Memory system
 
