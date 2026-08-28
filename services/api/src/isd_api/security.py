@@ -9,6 +9,9 @@ ships), so calling bcrypt directly is the more reliable choice here.
 
 from __future__ import annotations
 
+import threading
+import uuid
+from collections import defaultdict
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
@@ -20,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from isd_api.config import settings
 from isd_api.db import get_db
-from isd_api.models import Role, User
+from isd_api.models import RevokedToken, Role, User
 
 # auto_error=False: a missing Authorization header must fall through to
 # checking the session cookie (get_current_user below), not hard-fail
@@ -41,7 +44,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def create_access_token(*, user_id: int, role: Role, expires_delta: timedelta | None = None) -> str:
     delta = expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
     expire = datetime.now(UTC) + delta
-    payload = {"sub": str(user_id), "role": role.value, "exp": expire}
+    # jti (JWT ID): a unique identifier for this specific token, distinct
+    # from its content — lets revoke_token() invalidate one issued token
+    # by identity rather than needing to enumerate/compare its claims.
+    payload = {"sub": str(user_id), "role": role.value, "exp": expire, "jti": str(uuid.uuid4())}
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
@@ -83,6 +89,78 @@ def _decode_token(token: str) -> dict:
         ) from exc
 
 
+def revoke_token(db: Session, token: str) -> None:
+    """Invalidates one already-issued token server-side (POST
+    /auth/logout) — clearing the browser's cookie alone doesn't stop a
+    captured token from remaining valid until its natural expiry.
+    Decodes leniently: a missing/garbage/already-expired token is a
+    no-op, not an error, since logout must stay callable with no
+    session at all (its existing, still-true contract)."""
+    try:
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+    except jwt.PyJWTError:
+        return
+    jti = payload.get("jti")
+    exp = payload.get("exp")
+    if jti is None or exp is None:
+        return
+    if db.get(RevokedToken, jti) is None:
+        db.add(RevokedToken(jti=jti, expires_at=datetime.fromtimestamp(exp, tz=UTC)))
+    # Opportunistic cleanup: a revoked token past its own natural expiry
+    # no longer needs a denylist entry (get_current_user would already
+    # reject it as expired) — keeps this table from growing unbounded
+    # without a separate scheduled job.
+    db.query(RevokedToken).filter(RevokedToken.expires_at < datetime.now(UTC)).delete()
+    db.commit()
+
+
+class LoginRateLimiter:
+    """In-memory, per-process fixed-window limiter for POST /auth/login
+    (ADR 0006 follow-up: brute-force/credential-stuffing protection).
+    Counts all attempts — success or failure — per key within the
+    window; simpler than fail-only counting and still stops a
+    hammering script.
+
+    Deliberately in-process, not shared storage: this project's current
+    deployment (docker-compose.yml) runs a single uvicorn process with
+    no reverse proxy in front of it, so per-process state and
+    `request.client.host` both reflect the real caller. A future
+    multi-worker or behind-a-proxy deployment would need shared storage
+    and X-Forwarded-For handling — out of scope until that's real.
+    """
+
+    def __init__(self, max_attempts: int, window_seconds: int) -> None:
+        self._max_attempts = max_attempts
+        self._window = timedelta(seconds=window_seconds)
+        self._attempts: dict[str, list[datetime]] = defaultdict(list)
+        self._lock = threading.Lock()
+
+    def check(self, key: str) -> None:
+        now = datetime.now(UTC)
+        with self._lock:
+            recent = [t for t in self._attempts[key] if now - t < self._window]
+            if len(recent) >= self._max_attempts:
+                self._attempts[key] = recent
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Too many login attempts. Try again later.",
+                )
+            recent.append(now)
+            self._attempts[key] = recent
+
+    def reset(self) -> None:
+        """Test-only hook — this is process-global state, so tests must
+        clear it between runs (see conftest.py's autouse fixture)."""
+        with self._lock:
+            self._attempts.clear()
+
+
+login_rate_limiter = LoginRateLimiter(
+    max_attempts=settings.login_rate_limit_attempts,
+    window_seconds=settings.login_rate_limit_window_seconds,
+)
+
+
 def get_current_user(
     response: Response,
     bearer_token: str | None = Depends(oauth2_scheme),
@@ -110,6 +188,14 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     payload = _decode_token(token)
+    # A token issued before this claim existed has no "jti" — skip the
+    # check rather than treating a missing claim as automatically
+    # revoked, so already-issued sessions don't break on deploy.
+    jti = payload.get("jti")
+    if jti is not None and db.get(RevokedToken, jti) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked"
+        )
     user_id = payload.get("sub")
     if user_id is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")

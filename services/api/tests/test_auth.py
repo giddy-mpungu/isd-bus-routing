@@ -114,6 +114,62 @@ def test_logout_clears_the_session_cookie(client, db_session):
     assert response.status_code == 401
 
 
+def test_login_rate_limits_after_too_many_attempts(client, db_session):
+    make_user(db_session, email="a@example.org", role=Role.DISPATCHER, password="correct-horse")
+
+    from isd_api.config import settings
+
+    for _ in range(settings.login_rate_limit_attempts):
+        response = client.post(
+            "/auth/login", data={"username": "a@example.org", "password": "correct-horse"}
+        )
+        assert response.status_code == 200
+
+    # One more within the same window, even with fully correct
+    # credentials, must be rejected as too many attempts, not logged in.
+    over_limit = client.post(
+        "/auth/login", data={"username": "a@example.org", "password": "correct-horse"}
+    )
+    assert over_limit.status_code == 429
+
+
+def test_login_under_the_limit_is_unaffected(client, db_session):
+    make_user(db_session, email="a@example.org", role=Role.DISPATCHER, password="correct-horse")
+    response = client.post(
+        "/auth/login", data={"username": "a@example.org", "password": "correct-horse"}
+    )
+    assert response.status_code == 200
+
+
+def test_logout_revokes_the_token_server_side_not_just_the_cookie(client, db_session):
+    """Distinct from test_logout_clears_the_session_cookie: that test
+    reuses the same client/cookie-jar, so it can't tell "cookie cleared
+    client-side" apart from "token actually revoked server-side." This
+    test captures the raw token value before logout and presents it
+    directly afterwards — the only way to prove revocation happened."""
+    make_user(db_session, email="a@example.org", role=Role.DISPATCHER, password="correct-horse")
+    login_response = client.post(
+        "/auth/login", data={"username": "a@example.org", "password": "correct-horse"}
+    )
+    captured_session_cookie = login_response.cookies["isd_session"]
+
+    logout_response = client.post("/auth/logout")
+    assert logout_response.status_code == 204
+
+    # Present the captured (pre-logout) token directly as a bearer
+    # token — bypasses the client's own (now-cleared) cookie jar
+    # entirely, so this can only succeed if the token itself is still
+    # valid server-side.
+    replayed = client.get("/users/me", headers=auth_headers(captured_session_cookie))
+    assert replayed.status_code == 401
+    assert "revoked" in replayed.json()["detail"].lower()
+
+
+def test_logout_with_no_session_still_succeeds(client):
+    response = client.post("/auth/logout")
+    assert response.status_code == 204
+
+
 def test_bearer_header_takes_priority_over_a_stale_cookie(client, db_session):
     """A client carrying an old session cookie alongside an explicit
     Authorization header for a *different* user must be authenticated

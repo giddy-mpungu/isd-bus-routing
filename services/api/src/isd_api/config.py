@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     # default. Never wildcard this; see main.py's CORSMiddleware setup.
     cors_allowed_origins: list[str] = ["http://localhost:5173"]
 
+    # POST /auth/login brute-force protection (ADR 0006 follow-up).
+    # In-memory, per-process — see security.LoginRateLimiter's docstring
+    # for why that's a deliberate, honestly-scoped limitation today.
+    login_rate_limit_attempts: int = 10
+    login_rate_limit_window_seconds: int = 300
+
     def require_production_ready(self) -> None:
         if self.environment == "production" and self.jwt_secret_key == _INSECURE_DEV_JWT_SECRET:
             raise RuntimeError(
