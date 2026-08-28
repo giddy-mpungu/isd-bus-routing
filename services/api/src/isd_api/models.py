@@ -223,6 +223,11 @@ class Assignment(Base):
     # Structured form of the same explanation (ADR 0004) — kept so a
     # UI can render it without re-parsing the text.
     explanation_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    # spec section 21: transportation personnel must be able to "lock
+    # specific routes or assignments" — a locked assignment survives a
+    # re-POST /schedule for its date untouched, and its crew is
+    # excluded from that re-solve (see routers/schedule.py).
+    locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
