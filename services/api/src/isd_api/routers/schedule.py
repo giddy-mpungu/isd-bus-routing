@@ -9,6 +9,7 @@ constraints (README "Non-negotiables carried from spec")."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -178,16 +179,29 @@ def run_schedule(
     locked_assignments = [a for a in existing if a.locked]
     unlocked_assignments = [a for a in existing if not a.locked]
     locked_run_ids = {a.run_id for a in locked_assignments}
-    locked_crew_ids = {a.crew_id for a in locked_assignments}
 
     # A locked assignment's run is already fixed (not re-optimized).
-    # Its crew is treated as fully committed for the day: the solver's
-    # Crew model has one whole-day availability window with no
-    # partial-busy-interval support, so partially freeing a locked
-    # crew's remaining hours isn't representable yet — a real future
-    # enhancement (see docs/architecture.md), not silently assumed away.
+    # Its crew is NOT excluded from the re-solve — instead, the locked
+    # assignment's time range becomes a busy_interval on that crew, so
+    # the rest of its day stays usable for unlocked runs (spec section
+    # 21: a lock protects the specific assignment, not the crew's
+    # whole day). A crew with no locked assignments gets an empty
+    # tuple, a no-op.
+    locked_by_crew_id: dict[int, list[Assignment]] = {}
+    for a in locked_assignments:
+        locked_by_crew_id.setdefault(a.crew_id, []).append(a)
+
     unlocked_jobs = [j for j in jobs if int(j.id) not in locked_run_ids]
-    solvable_crews = [c for c in crews if int(c.id) not in locked_crew_ids]
+    solvable_crews = [
+        replace(
+            c,
+            busy_intervals=tuple(
+                SolverTimeWindow(earliest=a.start_minute, latest=a.end_minute)
+                for a in locked_by_crew_id.get(int(c.id), [])
+            ),
+        )
+        for c in crews
+    ]
 
     if not unlocked_jobs:
         # Everything for this date is already locked — nothing to
@@ -195,16 +209,6 @@ def run_schedule(
         return ScheduleResult(
             crews_used=len({a.crew_id for a in locked_assignments}),
             assignments=[AssignmentRead.model_validate(a) for a in locked_assignments],
-        )
-
-    if not solvable_crews:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=(
-                f"All available crews for service_date={payload.service_date} are "
-                "committed to locked assignments; no crew remains to schedule the "
-                "unlocked runs."
-            ),
         )
 
     estimator = straight_line_deadhead_estimator(

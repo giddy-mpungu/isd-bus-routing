@@ -470,20 +470,21 @@ def test_delete_assignment_removes_it_and_audits(client, admin_headers, db_sessi
     assert entries[0].actor_user_id is not None
 
 
-def test_reschedule_preserves_locked_assignment_and_uses_different_crew_for_rest(
-    client, admin_headers
-):
+def test_reschedule_uses_a_locked_crews_remaining_free_time_for_other_runs(client, admin_headers):
+    """A lock protects the specific assignment, not the crew's whole
+    day (spec section 21) — only crew1 exists in this scenario, so
+    this only passes if its non-busy time (everything except the
+    locked run's [360,410] slot) is still usable for the other two
+    runs. Deterministic (unlike a two-crew version of this test would
+    be): the solver has no other crew to choose, so there's no tie for
+    CP-SAT's objective to break arbitrarily between."""
     _school, _driver, _vehicle, crew1, runs = _seed_spec_section5_scenario(client, admin_headers)
 
-    # Only crew1 exists yet, so this first solve is forced onto it —
-    # crew2 is added afterward, so it can't have been an equally-valid
-    # alternative the solver happened to pick instead.
     first = client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
     assert first.status_code == 200
     assignments = first.json()["assignments"]
-    assert all(a["crew_id"] == crew1["id"] for a in assignments)  # only crew available, spec5
+    assert all(a["crew_id"] == crew1["id"] for a in assignments)
 
-    crew2 = _add_crew(client, admin_headers, label="B")
     locked_run_id = runs[0]["id"]
     locked_assignment = next(a for a in assignments if a["run_id"] == locked_run_id)
     lock_response = client.patch(
@@ -497,13 +498,13 @@ def test_reschedule_preserves_locked_assignment_and_uses_different_crew_for_rest
     assert second.status_code == 200, second.text
     body = second.json()
     assert len(body["assignments"]) == 3
-    assert body["crews_used"] == 2
+    assert body["crews_used"] == 1
 
     by_run = {a["run_id"]: a for a in body["assignments"]}
     assert by_run[locked_run_id]["id"] == locked_assignment["id"]
     assert by_run[locked_run_id]["crew_id"] == crew1["id"]
     for run in runs[1:]:
-        assert by_run[run["id"]]["crew_id"] == crew2["id"]
+        assert by_run[run["id"]]["crew_id"] == crew1["id"]
 
 
 def test_reschedule_when_everything_locked_is_a_noop(client, admin_headers, db_session):
@@ -532,15 +533,58 @@ def test_reschedule_when_everything_locked_is_a_noop(client, admin_headers, db_s
     assert audit_count_after == audit_count_before  # nothing changed, nothing audited
 
 
-def test_reschedule_infeasible_when_only_crew_is_locked_elsewhere(client, admin_headers):
-    _seed_spec_section5_scenario(client, admin_headers)  # single crew
+def test_reschedule_still_infeasible_when_a_locked_busy_interval_blocks_the_only_crew(
+    client, admin_headers
+):
+    """Partial-day availability frees up a locked crew's *other* time —
+    it doesn't make locking meaningless. If the only remaining crew's
+    free time genuinely can't fit an unlocked run, that must still be
+    reported as infeasible, just via the solver's own CP-SAT
+    infeasibility (busy_intervals constraint) rather than the old
+    up-front "crew list is empty" check this scenario used to hit."""
+    school = client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": "S", "location_lat": 29.70, "location_lon": -95.40},
+    ).json()
+    client.post(
+        "/runs",
+        headers=admin_headers,
+        json={
+            "service_date": "2026-09-01",
+            "school_id": school["id"],
+            "window_earliest": 360,
+            "window_latest": 410,
+            "duration_minutes": 40,
+            "buffer_minutes": 10,
+        },
+    )
+    _add_crew(client, admin_headers, label="A")  # only crew
+
     first = client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
-    locked = first.json()["assignments"][0]
+    assert first.status_code == 200
+    assignment = first.json()["assignments"][0]
     lock_response = client.patch(
-        f"/schedule/assignments/{locked['id']}", headers=admin_headers, json={"locked": True}
+        f"/schedule/assignments/{assignment['id']}",
+        headers=admin_headers,
+        json={"locked": True},
     )
     assert lock_response.status_code == 200
 
+    # Added after locking: its only possible window ([400,450])
+    # overlaps run_a's now-busy [360,410] slot on the only crew.
+    client.post(
+        "/runs",
+        headers=admin_headers,
+        json={
+            "service_date": "2026-09-01",
+            "school_id": school["id"],
+            "window_earliest": 400,
+            "window_latest": 450,
+            "duration_minutes": 40,
+            "buffer_minutes": 10,
+        },
+    )
+
     second = client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
     assert second.status_code == 422
-    assert "locked" in second.json()["detail"].lower()

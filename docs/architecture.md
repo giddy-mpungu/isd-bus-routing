@@ -85,16 +85,20 @@ the history of what was found and fixed stays visible.
    (qualification, capacity, no overlap, window bounds) is re-checked
    server-side first (`_hard_constraint_violation` in
    `routers/schedule.py`), and every change is audited. `POST
-   /schedule` now excludes locked assignments' runs and crews from
-   re-solving, so a lock survives a re-schedule. Remaining sub-gap:
-   locking a crew's assignment removes that crew from the *entire*
-   day's solve, since the solver's `Crew` model has one whole-day
-   availability window with no partial-busy-interval support —
-   partial-day availability (free a locked crew for the rest of its
-   day) is a real future enhancement, not yet built. Still not covered
-   by this: stop locations, student reassignment (no Student entity
-   yet — spec §3, Phase 5), and route-sequence edits beyond
-   crew/time/lock on a single assignment.
+   /schedule` now excludes locked assignments' runs from re-solving
+   (fixed, not re-optimized) and, per the sub-gap below being closed,
+   only the *specific locked time range* — not the whole crew — from
+   the rest of that crew's day. ~~Remaining sub-gap: locking a crew's
+   assignment removes that crew from the entire day's solve...~~
+   **Also closed**: `Crew.busy_intervals` (solver domain) +
+   `routers/schedule.py` populating it from a crew's other locked
+   assignments on a re-solve, instead of excluding the whole crew —
+   verified with a deterministic single-crew test proving the same
+   crew gets reused for its free time, and a genuine-infeasibility
+   test proving a truly-blocked scenario still correctly fails. Still
+   not covered by this: stop locations, student reassignment (no
+   Student entity yet — spec §3, Phase 5), and route-sequence edits
+   beyond crew/time/lock on a single assignment.
 2. ~~**No integrations boundary.**~~ **Decision made, not yet built.**
    ADR 0007 establishes the authoritative data source and integration
    shape (federated identity / synced read-model / synced operational
