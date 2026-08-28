@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from isd_api.db import Base, get_db
+from isd_api.db import Base, get_db, make_engine
 from isd_api.main import app
 from isd_api.models import Role, User
 from isd_api.security import hash_password
@@ -16,10 +14,9 @@ from isd_api.security import hash_password
 def db_session():
     """A fresh in-memory SQLite DB per test, shared across the whole
     test's connections via StaticPool (needed because FastAPI's
-    TestClient and the fixture itself both need to see the same DB)."""
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
+    TestClient and the fixture itself both need to see the same DB) —
+    make_engine("sqlite://") applies StaticPool automatically."""
+    engine = make_engine("sqlite://")
     Base.metadata.create_all(bind=engine)
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     session = TestingSessionLocal()
