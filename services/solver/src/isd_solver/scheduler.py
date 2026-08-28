@@ -1,0 +1,314 @@
+"""Multi-school crew scheduling solver (spec section 5, Phase 1).
+
+Given a set of Jobs (one per school bell-window run) and a set of
+Crews (driver+vehicle pairs), determine whether crews can be chained
+across multiple schools' bell windows without violating any hard
+constraint (spec section 2.1), and if so, the assignment that uses the
+fewest crews (spec section 2.2, objective 1).
+
+Hard constraints implemented here (each traceable to a spec section,
+per ADR 0002):
+  - A job is only assignable to a crew qualified for it (spec section 1,
+    15: driver/vehicle qualification).
+  - A crew cannot be assigned two overlapping jobs, and when a crew
+    serves two jobs at different schools, there must be enough time
+    between them for deadhead travel (spec section 5: "travel between
+    assignments", spec section 2.1: "assigns one driver or vehicle to
+    overlapping assignments").
+  - A job must start and finish inside its own required arrival window
+    (spec section 2.1) and inside its assigned crew's availability
+    window.
+
+Soft objective implemented here: minimize the number of distinct crews
+used (spec section 2.2, objective 1). Other soft objectives (mileage,
+ride time, etc.) are out of scope for Phase 1 — see docs/domain-model.md.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from typing import Sequence
+
+from ortools.sat.python import cp_model
+
+from isd_solver.domain import Crew, DeadheadEstimator, Job
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Explanation:
+    """Structured explanation for one assignment (spec section 21).
+
+    text() renders this into the human-readable form shown in the
+    spec's example. Kept structured (not just a string) per ADR 0004
+    so the explanation can't claim anything the solver didn't actually
+    check.
+    """
+
+    job_id: str
+    crew_id: str
+    hard_constraints_checked: tuple[str, ...]
+    buffer_minutes_to_next_job: int | None
+    next_job_id: str | None
+
+    def text(self) -> str:
+        parts = [
+            f"Crew {self.crew_id} was assigned job {self.job_id} because "
+            + "; ".join(self.hard_constraints_checked) + "."
+        ]
+        if self.next_job_id is not None and self.buffer_minutes_to_next_job is not None:
+            parts.append(
+                f"{self.buffer_minutes_to_next_job} minutes of operational buffer "
+                f"remain before its next job ({self.next_job_id})."
+            )
+        return " ".join(parts)
+
+
+@dataclass(frozen=True)
+class Assignment:
+    job_id: str
+    crew_id: str
+    start_minute: int
+    end_minute: int
+    explanation: Explanation
+
+
+@dataclass(frozen=True)
+class SchedulingResult:
+    assignments: tuple[Assignment, ...]
+    crews_used: int
+
+
+@dataclass(frozen=True)
+class InfeasibleResult:
+    reason: str
+
+
+def solve_multi_school_schedule(
+    jobs: Sequence[Job],
+    crews: Sequence[Crew],
+    deadhead_estimator: DeadheadEstimator,
+    time_limit_seconds: float = 10.0,
+    num_search_workers: int = 8,
+) -> SchedulingResult | InfeasibleResult:
+    """Solve the multi-school crew scheduling problem (spec section 5).
+
+    num_search_workers controls CP-SAT's internal parallel search
+    threads. 8 is a reasonable default for real problem sizes; for
+    small problems (tests, toy examples) a lower value (e.g. 1-2) avoids
+    thread-pool startup overhead dominating the runtime.
+    """
+    logger.info(
+        "Solving multi-school schedule: %d job(s), %d crew(s)", len(jobs), len(crews)
+    )
+    if not jobs:
+        logger.info("No jobs supplied — nothing to schedule.")
+        return SchedulingResult(assignments=(), crews_used=0)
+    if not crews:
+        logger.warning("No crews supplied — cannot schedule any job.")
+        return InfeasibleResult("No crews supplied — cannot schedule any job.")
+
+    # --- Precompute which crews can even legally take each job ---
+    candidate_crews: dict[str, list[Crew]] = {}
+    for job in jobs:
+        window_ok = [
+            crew
+            for crew in crews
+            if crew.available_window.earliest <= job.window.earliest
+            and crew.available_window.latest >= job.window.latest
+        ]
+        qualified = [crew for crew in window_ok if crew.is_qualified_for(job)]
+        capacity_ok = [crew for crew in qualified if crew.has_capacity_for(job)]
+
+        if not capacity_ok:
+            reasons: list[str] = []
+            if not window_ok:
+                reasons.append(
+                    "no crew's availability window covers this job's required "
+                    f"window [{job.window.earliest}, {job.window.latest}]"
+                )
+            elif not qualified:
+                unqualified_ids = [c.id for c in window_ok]
+                reasons.append(
+                    "no available crew is qualified for this job's requirements "
+                    f"{sorted(job.required_vehicle_qualifications) or '(license only)'} "
+                    f"(checked crews: {unqualified_ids})"
+                )
+            else:
+                under_capacity_ids = [
+                    (c.id, c.vehicle.allowable_capacity()) for c in qualified
+                ]
+                reasons.append(
+                    f"no qualified/available crew has enough vehicle capacity for "
+                    f"{job.passenger_count} expected passengers "
+                    f"(checked crews and their allowable capacity: {under_capacity_ids})"
+                )
+            reason = f"Job {job.id}: " + "; ".join(reasons) + "."
+            logger.warning(reason)
+            return InfeasibleResult(reason)
+
+        candidate_crews[job.id] = capacity_ok
+        logger.debug(
+            "Job %s: %d candidate crew(s) after qualification/availability/capacity filtering",
+            job.id,
+            len(capacity_ok),
+        )
+
+    model = cp_model.CpModel()
+
+    start_vars: dict[str, cp_model.IntVar] = {}
+    end_vars: dict[str, cp_model.IntVar] = {}
+    for job in jobs:
+        latest_start = job.window.latest - job.total_occupied_minutes
+        start = model.NewIntVar(job.window.earliest, latest_start, f"start_{job.id}")
+        end = model.NewIntVar(
+            job.window.earliest + job.total_occupied_minutes,
+            job.window.latest,
+            f"end_{job.id}",
+        )
+        model.Add(end == start + job.total_occupied_minutes)
+        start_vars[job.id] = start
+        end_vars[job.id] = end
+
+    # x[job.id][crew.id] = 1 if that crew serves that job
+    x: dict[str, dict[str, cp_model.IntVar]] = {}
+    for job in jobs:
+        x[job.id] = {}
+        for crew in candidate_crews[job.id]:
+            var = model.NewBoolVar(f"x_{job.id}_{crew.id}")
+            x[job.id][crew.id] = var
+            model.Add(start_vars[job.id] >= crew.available_window.earliest).OnlyEnforceIf(var)
+            model.Add(end_vars[job.id] <= crew.available_window.latest).OnlyEnforceIf(var)
+        # exactly one crew per job
+        model.AddExactlyOne(list(x[job.id].values()))
+
+    # Pairwise ordering when two jobs share a crew: whichever comes
+    # first must finish, plus deadhead travel time, before the other starts.
+    job_list = list(jobs)
+    for i in range(len(job_list)):
+        for j in range(i + 1, len(job_list)):
+            job_a, job_b = job_list[i], job_list[j]
+            shared_crew_ids = {c.id for c in candidate_crews[job_a.id]} & {
+                c.id for c in candidate_crews[job_b.id]
+            }
+            if not shared_crew_ids:
+                continue
+            deadhead_ab = deadhead_estimator(job_a.location, job_b.location)
+            deadhead_ba = deadhead_estimator(job_b.location, job_a.location)
+            order = model.NewBoolVar(f"order_{job_a.id}_before_{job_b.id}")
+            for crew_id in shared_crew_ids:
+                both = [x[job_a.id][crew_id], x[job_b.id][crew_id]]
+                model.Add(
+                    end_vars[job_a.id] + deadhead_ab <= start_vars[job_b.id]
+                ).OnlyEnforceIf(both + [order])
+                model.Add(
+                    end_vars[job_b.id] + deadhead_ba <= start_vars[job_a.id]
+                ).OnlyEnforceIf(both + [order.Not()])
+
+    # crew_used[c] = 1 if crew c serves at least one job
+    all_crew_ids = {crew.id for crew in crews}
+    crew_used: dict[str, cp_model.IntVar] = {}
+    for crew_id in all_crew_ids:
+        assigned_literals = [
+            x[job.id][crew_id] for job in jobs if crew_id in x[job.id]
+        ]
+        used = model.NewBoolVar(f"used_{crew_id}")
+        if assigned_literals:
+            model.AddMaxEquality(used, assigned_literals)
+        else:
+            model.Add(used == 0)
+        crew_used[crew_id] = used
+
+    model.Minimize(sum(crew_used.values()))
+
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = time_limit_seconds
+    solver.parameters.num_search_workers = num_search_workers
+    status = solver.Solve(model)
+    logger.info(
+        "CP-SAT finished: status=%s, wall_time=%.3fs, branches=%d",
+        solver.StatusName(status),
+        solver.WallTime(),
+        solver.NumBranches(),
+    )
+
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        reason = (
+            "No schedule satisfies all hard constraints for the given jobs and "
+            "crews (solver status: "
+            f"{solver.StatusName(status)}, {len(jobs)} job(s), {len(crews)} crew(s), "
+            f"wall_time={solver.WallTime():.3f}s). This usually means more crews are "
+            "needed, or a job's window is too tight given deadhead travel — each "
+            "job individually has a qualified/available/capacity-sufficient crew "
+            "(checked above), so this infeasibility comes from the pairwise "
+            "sequencing constraints (spec section 2.1: overlapping assignments)."
+        )
+        logger.warning(reason)
+        return InfeasibleResult(reason)
+
+    # --- Build assignments + explanations from the solved model ---
+    job_to_crew: dict[str, str] = {}
+    for job in jobs:
+        for crew_id, var in x[job.id].items():
+            if solver.Value(var) == 1:
+                job_to_crew[job.id] = crew_id
+                break
+
+    # Order each crew's jobs by start time to compute next-job buffers.
+    jobs_by_crew: dict[str, list[Job]] = {}
+    for job in jobs:
+        jobs_by_crew.setdefault(job_to_crew[job.id], []).append(job)
+    for crew_jobs in jobs_by_crew.values():
+        crew_jobs.sort(key=lambda j: solver.Value(start_vars[j.id]))
+
+    assignments: list[Assignment] = []
+    for job in jobs:
+        crew_id = job_to_crew[job.id]
+        crew_jobs = jobs_by_crew[crew_id]
+        idx = crew_jobs.index(job)
+        next_job = crew_jobs[idx + 1] if idx + 1 < len(crew_jobs) else None
+
+        checks = [
+            "vehicle/driver qualifications are satisfied",
+            "it does not overlap any other job assigned to this crew",
+            "it starts and ends within its required arrival window and the crew's availability",
+        ]
+        if job.passenger_count > 0:
+            checks.append(
+                f"vehicle capacity is sufficient for {job.passenger_count} expected passengers"
+            )
+        buffer_to_next = None
+        if next_job is not None:
+            deadhead = deadhead_estimator(job.location, next_job.location)
+            buffer_to_next = (
+                solver.Value(start_vars[next_job.id])
+                - solver.Value(end_vars[job.id])
+                - deadhead
+            )
+
+        assignments.append(
+            Assignment(
+                job_id=job.id,
+                crew_id=crew_id,
+                start_minute=solver.Value(start_vars[job.id]),
+                end_minute=solver.Value(end_vars[job.id]),
+                explanation=Explanation(
+                    job_id=job.id,
+                    crew_id=crew_id,
+                    hard_constraints_checked=tuple(checks),
+                    buffer_minutes_to_next_job=buffer_to_next,
+                    next_job_id=next_job.id if next_job else None,
+                ),
+            )
+        )
+
+    crews_used = sum(1 for c in crew_used.values() if solver.Value(c) == 1)
+    logger.info(
+        "Schedule found: %d job(s) assigned using %d crew(s) (of %d available)",
+        len(assignments),
+        crews_used,
+        len(crews),
+    )
+    return SchedulingResult(assignments=tuple(assignments), crews_used=crews_used)
