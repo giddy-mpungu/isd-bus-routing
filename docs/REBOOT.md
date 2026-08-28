@@ -127,9 +127,11 @@ PATCH edits that bypass the solver.
 - **Phase 1** (solver MVP) — Done, hardened. 30/30 tests.
 - **Phase 2** (persistence + RBAC) — Done. Includes mutation endpoints
   (`PATCH`/`DELETE /schedule/assignments/{id}`, `Assignment.locked` +
-  lock-aware re-solve), `Driver.max_continuous_minutes` enforced as a
-  real CP-SAT hard constraint, ADR 0007 (integrations boundary
-  decision, no code yet).
+  lock-aware re-solve with **partial-day crew availability** — locking
+  one assignment only excludes that time range on that crew, not the
+  crew's whole day, via `Crew.busy_intervals`), `Driver.max_continuous_minutes`
+  enforced as a real CP-SAT hard constraint, ADR 0007 (integrations
+  boundary decision, no code yet).
 - **Phase 3** (dispatcher console) — **DONE** for its own defined
   scope: login (cookie session), `/schedule` page (run/re-run solver,
   view assignments joined to school/driver/vehicle, lock/unlock,
@@ -161,15 +163,17 @@ PATCH edits that bypass the solver.
 9. #9 `feat/setup-page-master-data` — `/setup` page (schools/quals/drivers/vehicles)
 10. #10 `feat/inline-crew-run-creation` — inline crew/run forms on SchedulePage; console now usable with zero raw API calls
 11. #11 `feat/docker-deployment-config` — Dockerfiles, `docker-compose.yml`, CI `docker` job; fixed a volume-permissions bug and a compose env-var footgun (both found by actually running the containers, not just building them)
+12. #12 `feat/partial-day-crew-availability` — `Crew.busy_intervals` (solver) + `routers/schedule.py` populating it from locked assignments instead of excluding the whole crew; replaced two api tests whose assumptions no longer held (one had become a genuine, flaky tie in the solver's own objective — confirmed it happened to pass once anyway, not trusted)
 
-## Key files (current state, post-PR #11)
+## Key files (current state, post-PR #12)
 
 - `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal)
 - `services/api/src/isd_api/routers/auth.py` — login sets cookie + returns bearer token; `POST /auth/logout` (no auth required)
 - `services/api/src/isd_api/routers/schedule.py` — `POST /schedule` (lock-aware), `PATCH`/`DELETE /schedule/assignments/{id}`, `GET /schedule/{date}/assignments`, `_hard_constraint_violation` helper
 - `services/api/src/isd_api/config.py` — `session_inactivity_minutes=30`, `session_absolute_max_hours=12`, `cors_allowed_origins`, DB pool settings
 - `services/api/src/isd_api/main.py` — `CORSMiddleware` config
-- `services/solver/src/isd_solver/scheduler.py` — CP-SAT model, duty-limit pairwise constraints
+- `services/solver/src/isd_solver/scheduler.py` — CP-SAT model, duty-limit pairwise constraints, busy-interval constraints
+- `services/solver/src/isd_solver/domain.py` — `Crew.busy_intervals` (validated within `available_window`)
 - `services/web/src/api/client.ts` — hand-written typed fetch wrapper, `credentials: 'include'` everywhere, `ApiError` class
 - `services/web/src/api/types.ts` — hand-written types mirroring backend schemas
 - `services/web/src/auth/AuthContext.tsx` — no token storage, just `GET /users/me` on mount
@@ -183,40 +187,41 @@ PATCH edits that bypass the solver.
 
 ## Exact next step (as of this checkpoint)
 
-Phase 3 is done. Two threads, running in parallel:
+Phase 3 is done. Partial-day crew availability (the last flagged
+mutation-endpoints sub-gap) is done. **No remaining known gaps are
+blocking further backend/console work** — what's left in
+`docs/architecture.md`'s gap list is either genuinely deferred to a
+later phase (student/stop entities — Phase 5; field trips/absences —
+Phase 6) or an integrations boundary with nothing concrete to build
+against yet (ADR 0007 — no Phase 4+ work has actually started that
+would need SIS/HR/SSO/GPS/fleet-maintenance integration).
 
-1. **Blocked on a user decision** (asked this checkpoint, answer may
-   already be in the conversation above this file): Phase 4 (driver
-   app) needs a client-platform choice ADR 0003 explicitly deferred
-   ("Mobile clients (Phase 4+): decision deferred — evaluate React
-   Native vs. Flutter... once we're building it" — that's now).
-   Recommendation given: reuse the existing React+TS+Vite stack as a
-   responsive web app rather than adopting a new native framework —
-   keeps one toolchain/skillset/CI pattern, and spec §9's "large
-   controls, minimal typing, audible instructions" doesn't require
-   native/app-store distribution. Alternatives offered: React Native,
-   Flutter. **Check for the user's answer before starting Phase 4** —
-   do not assume the recommendation was accepted.
-2. **Not blocked, in progress in the meantime**: enforce partial-day
-   crew availability in the solver — closes a documented Phase 1
-   simplification (`docs/domain-model.md`, `docs/architecture.md`'s
-   remaining known-gap item): today, locking one assignment on a crew
-   makes `POST /schedule` treat that crew as fully unavailable for the
-   *entire* day (`routers/schedule.py`'s re-schedule logic excludes
-   the whole crew, not just its locked time window), because the
-   solver's `Crew.available_window` is a single whole-day window with
-   no busy-interval concept. Scope: extend the solver domain (likely a
-   `busy_intervals: tuple[TimeWindow, ...]` on `Crew`, or an
-   equivalent), update `scheduler.py`'s CP-SAT model to exclude those
-   intervals from where a job can be scheduled on that crew (not just
-   filtering the crew out entirely), thread it through from
-   `routers/schedule.py` when building solver inputs for a re-solve
-   (locked assignments' time ranges become the excluded crew's busy
-   intervals, instead of removing the crew from the candidate pool).
-   New solver tests + api tests covering: a crew with one locked
-   assignment can still be given a *different*, non-overlapping job on
-   the same re-solve. Update `docs/architecture.md`/`docs/domain-model.md`
-   once done. Branch: `feat/partial-day-crew-availability` (or similar).
+**Real next decision point**: Phase 4 (driver app) needs a
+client-platform choice ADR 0003 explicitly deferred ("Mobile clients
+(Phase 4+): decision deferred — evaluate React Native vs. Flutter...
+once we're building it" — that's now). Recommendation given to the
+user this checkpoint: reuse the existing React+TS+Vite stack as a
+responsive web app rather than adopting a new native framework — keeps
+one toolchain/skillset/CI pattern, and spec §9's "large controls,
+minimal typing, audible instructions" doesn't require native/app-store
+distribution. Alternatives offered: React Native, Flutter. **Check the
+conversation above this file for the user's answer before starting
+Phase 4** — do not assume the recommendation was accepted just because
+it was the one offered first.
+
+If Phase 4 hasn't been started and no other explicit direction exists
+when this file is next read: minor, non-blocking items worth a look
+if searching for something to do — none of these are known bugs, just
+polish: (1) `services/api` doesn't use the SQLAlchemy 2.0 mypy plugin,
+so ORM model constructor kwargs (e.g. `Assignment(run_id=...)`) aren't
+strictly type-checked against column types — noticed once while
+sanity-testing a mypy fix this session, not investigated further; (2)
+no rate limiting on `POST /auth/login` (flagged since ADR 0006, still
+true); (3) no refresh-token/revocation mechanism (also ADR 0006,
+still true — the sliding-cookie design mitigates but doesn't replace
+this). None of these were asked for — don't start one without
+checking whether the user actually wants it over continuing toward
+Phase 4.
 
 After whichever lands: update this file, update persistent memory
 (`project_isd_bus_routing_overview.md`).
