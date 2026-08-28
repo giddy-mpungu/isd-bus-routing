@@ -76,3 +76,16 @@ def admin_token(client, db_session) -> str:
 @pytest.fixture()
 def admin_headers(admin_token) -> dict:
     return auth_headers(admin_token)
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_rate_limiter():
+    """login_rate_limiter is process-global state (services/api/src/
+    isd_api/security.py) — TestClient requests all share
+    request.client.host == 'testclient', so without a reset between
+    tests, attempts would accumulate across unrelated tests and cause
+    spurious 429s."""
+    from isd_api.security import login_rate_limiter
+
+    login_rate_limiter.reset()
+    yield

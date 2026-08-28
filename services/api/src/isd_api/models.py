@@ -276,3 +276,17 @@ class AuditLogEntry(Base):
     before_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     after_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class RevokedToken(Base):
+    """A JWT `jti` revoked before its natural expiry (ADR 0006 follow-up:
+    POST /auth/logout actually invalidates the token server-side, not
+    just the browser's cookie). `expires_at` mirrors the token's own
+    `exp` claim, so a revoked-and-now-naturally-expired row can be
+    opportunistically pruned (see security.revoke_token) without a
+    separate scheduled job."""
+
+    __tablename__ = "revoked_tokens"
+
+    jti: Mapped[str] = mapped_column(String(36), primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
