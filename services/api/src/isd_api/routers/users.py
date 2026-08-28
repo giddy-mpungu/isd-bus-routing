@@ -30,6 +30,7 @@ def create_user(
         role=payload.role,
         driver_id=payload.driver_id,
         school_id=payload.school_id,
+        student_id=payload.student_id,
     )
     db.add(user)
     db.flush()

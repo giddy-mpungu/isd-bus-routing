@@ -16,10 +16,14 @@ vi.mock('../api/client', async (importOriginal) => {
     getQualifications: vi.fn(),
     getDrivers: vi.fn(),
     getVehicles: vi.fn(),
+    getStops: vi.fn(),
+    getStudents: vi.fn(),
     createSchool: vi.fn(),
     createQualification: vi.fn(),
     createDriver: vi.fn(),
     createVehicle: vi.fn(),
+    createStop: vi.fn(),
+    createStudent: vi.fn(),
   }
 })
 
@@ -31,6 +35,7 @@ const adminUser: CurrentUser = {
   is_active: true,
   driver_id: null,
   school_id: null,
+  student_id: null,
 }
 const dispatcherUser: CurrentUser = { ...adminUser, role: 'dispatcher' }
 
@@ -66,6 +71,8 @@ function mockLoad() {
   vi.mocked(api.getQualifications).mockResolvedValue([licenseQual, vehicleQual])
   vi.mocked(api.getDrivers).mockResolvedValue([driver])
   vi.mocked(api.getVehicles).mockResolvedValue([vehicle])
+  vi.mocked(api.getStops).mockResolvedValue([])
+  vi.mocked(api.getStudents).mockResolvedValue([])
 }
 
 function renderAsRole(user: CurrentUser) {
@@ -86,7 +93,7 @@ describe('SetupPage', () => {
   it('shows create forms for transportation_admin', async () => {
     renderAsRole(adminUser)
     await waitFor(() =>
-      expect(screen.getByText('Riverside Elementary', { exact: false })).toBeInTheDocument(),
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
     expect(screen.getByRole('button', { name: 'Add school' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add qualification' })).toBeInTheDocument()
@@ -97,7 +104,7 @@ describe('SetupPage', () => {
   it('hides create forms for dispatcher, but still shows the lists', async () => {
     renderAsRole(dispatcherUser)
     await waitFor(() =>
-      expect(screen.getByText('Riverside Elementary', { exact: false })).toBeInTheDocument(),
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
     expect(screen.queryByRole('button', { name: 'Add school' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Add driver' })).not.toBeInTheDocument()
@@ -106,7 +113,7 @@ describe('SetupPage', () => {
   it('only offers license qualifications on the driver form and vehicle_capability ones on the vehicle form', async () => {
     renderAsRole(adminUser)
     await waitFor(() =>
-      expect(screen.getByText('Riverside Elementary', { exact: false })).toBeInTheDocument(),
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
     // CDL_B (license) is offered as a driver checkbox but not a vehicle one.
     expect(screen.getAllByText('CDL_B', { exact: false })).toHaveLength(2) // list item + checkbox label
@@ -125,7 +132,7 @@ describe('SetupPage', () => {
     })
     renderAsRole(adminUser)
     await waitFor(() =>
-      expect(screen.getByText('Riverside Elementary', { exact: false })).toBeInTheDocument(),
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
 
     const user = userEvent.setup()
@@ -148,7 +155,7 @@ describe('SetupPage', () => {
     vi.mocked(api.createDriver).mockResolvedValue({ ...driver, id: 2 })
     renderAsRole(adminUser)
     await waitFor(() =>
-      expect(screen.getByText('Riverside Elementary', { exact: false })).toBeInTheDocument(),
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
 
     const user = userEvent.setup()
@@ -169,7 +176,7 @@ describe('SetupPage', () => {
     vi.mocked(api.createSchool).mockRejectedValue(new ApiError(403, 'Not authorized'))
     renderAsRole(adminUser)
     await waitFor(() =>
-      expect(screen.getByText('Riverside Elementary', { exact: false })).toBeInTheDocument(),
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
 
     const user = userEvent.setup()

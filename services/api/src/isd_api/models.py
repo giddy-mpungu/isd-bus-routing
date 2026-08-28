@@ -65,6 +65,22 @@ class AssignmentStatus(enum.StrEnum):
     NO_SHOW = "no_show"
 
 
+class RidershipDefault(enum.StrEnum):
+    """spec section 4.1: a student's configured default ridership state,
+    overridden per-day by RidershipOverride."""
+
+    RIDES = "rides"
+    DOES_NOT_RIDE = "does_not_ride"
+
+
+class RideDirection(enum.StrEnum):
+    """spec section 4.2: AM/PM are independent legs — a student may ride
+    to school but not home, or vice versa."""
+
+    AM = "am"
+    PM = "pm"
+
+
 class Qualification(Base):
     """A tag such as CDL_A/CDL_B/NON_CDL_C (driver license quals, spec
     section 1/15) or wheelchair/lift (vehicle capability quals, spec
@@ -123,9 +139,19 @@ class User(Base):
     # Only meaningful when role == SCHOOL_ADMIN; scopes what that user
     # can see to a single school (spec section 17).
     school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True)
+    # Only meaningful when role == STUDENT; a student's own login,
+    # spec section 17's separate "Student" role (distinct from a
+    # parent/guardian's access via the student_guardians table below —
+    # a parent isn't "a" student).
+    student_id: Mapped[int | None] = mapped_column(
+        ForeignKey("students.id"), unique=True, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     driver: Mapped[Driver | None] = relationship(back_populates="user")
+    guardian_of: Mapped[list[Student]] = relationship(
+        secondary="student_guardians", back_populates="guardians"
+    )
 
 
 class School(Base):
@@ -137,6 +163,89 @@ class School(Base):
     location_lon: Mapped[float] = mapped_column(nullable=False)
 
     runs: Mapped[list[Run]] = relationship(back_populates="school")
+
+
+class Stop(Base):
+    """A physical boarding/alighting location (spec section 3). Phase 5
+    MVP only: manually created by transportation personnel — spec
+    section 3's automated stop-generation algorithm (walking distance,
+    road safety constraints) needs GIS/road-network data this project
+    doesn't have yet (PostGIS is deferred, ADR 0006) and is out of
+    scope until that exists."""
+
+    __tablename__ = "stops"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    location_lat: Mapped[float] = mapped_column(nullable=False)
+    location_lon: Mapped[float] = mapped_column(nullable=False)
+
+
+class Student(Base):
+    """spec section 3. Deliberately minimal fields — no home address is
+    collected here, even though spec section 3 mentions it, because
+    nothing in this phase consumes it (automated stop generation is
+    deferred); same PII-minimalism precedent as Driver above."""
+
+    __tablename__ = "students"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    school_id: Mapped[int] = mapped_column(ForeignKey("schools.id"), nullable=False)
+    stop_id: Mapped[int | None] = mapped_column(ForeignKey("stops.id"), nullable=True)
+    default_ridership: Mapped[RidershipDefault] = mapped_column(
+        SAEnum(RidershipDefault, native_enum=False, length=20),
+        default=RidershipDefault.RIDES,
+        nullable=False,
+    )
+
+    school: Mapped[School] = relationship()
+    stop: Mapped[Stop | None] = relationship()
+    guardians: Mapped[list[User]] = relationship(
+        secondary="student_guardians", back_populates="guardian_of"
+    )
+
+
+# A parent/guardian's access to a student's data (spec section 17) —
+# many-to-many since a parent may have multiple children and, less
+# commonly but really, a student may have more than one guardian with
+# app access. Distinct from User.student_id above, which is a
+# student's own login, not a guardian's.
+student_guardians = Table(
+    "student_guardians",
+    Base.metadata,
+    Column("student_id", ForeignKey("students.id"), primary_key=True),
+    Column("user_id", ForeignKey("users.id"), primary_key=True),
+)
+
+
+class RidershipOverride(Base):
+    """spec section 4.2: a per-day, per-leg (AM/PM) override of a
+    student's default ridership state — e.g. "not riding AM" for one
+    date. Absence of a row for a (student, date, direction) means "use
+    Student.default_ridership." Also spec section 4.5's "late request
+    to ride": flipping a Does-Not-Ride default's override to
+    is_riding=True for one day uses this exact same mechanism, no
+    separate code path needed."""
+
+    __tablename__ = "ridership_overrides"
+    __table_args__ = (
+        UniqueConstraint(
+            "student_id", "service_date", "direction", name="uq_ridership_override_leg"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("students.id"), nullable=False)
+    service_date: Mapped[date] = mapped_column(Date, nullable=False)
+    direction: Mapped[RideDirection] = mapped_column(
+        SAEnum(RideDirection, native_enum=False, length=8), nullable=False
+    )
+    is_riding: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
 
 
 class Vehicle(Base):

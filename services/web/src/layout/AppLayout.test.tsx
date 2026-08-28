@@ -31,6 +31,7 @@ const dispatcherUser: CurrentUser = {
   is_active: true,
   driver_id: null,
   school_id: null,
+  student_id: null,
 }
 
 describe('AppLayout', () => {
@@ -52,6 +53,21 @@ describe('AppLayout', () => {
     await waitFor(() => expect(screen.getByRole('link', { name: 'My Runs' })).toBeInTheDocument())
     expect(screen.queryByRole('link', { name: 'Schedule' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Setup' })).not.toBeInTheDocument()
+  })
+
+  it('shows My Family and not Schedule/Setup/My Runs for a parent', async () => {
+    vi.mocked(api.getCurrentUser).mockResolvedValue({ ...dispatcherUser, role: 'parent' })
+    renderLayout()
+    await waitFor(() => expect(screen.getByRole('link', { name: 'My Family' })).toBeInTheDocument())
+    expect(screen.queryByRole('link', { name: 'Schedule' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Setup' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'My Runs' })).not.toBeInTheDocument()
+  })
+
+  it('shows My Family for a student too', async () => {
+    vi.mocked(api.getCurrentUser).mockResolvedValue({ ...dispatcherUser, role: 'student' })
+    renderLayout()
+    await waitFor(() => expect(screen.getByRole('link', { name: 'My Family' })).toBeInTheDocument())
   })
 
   it('shows no nav links when logged out', async () => {

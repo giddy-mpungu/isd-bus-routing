@@ -13,6 +13,7 @@ export interface CurrentUser {
   is_active: boolean
   driver_id: number | null
   school_id: number | null
+  student_id: number | null
 }
 
 export interface School {
@@ -144,4 +145,52 @@ export interface RunCreate {
   buffer_minutes: number
   passenger_count: number
   required_qualification_codes: string[]
+}
+
+export interface Stop {
+  id: number
+  label: string
+  location_lat: number
+  location_lon: number
+}
+
+export interface StopCreate {
+  label: string
+  location_lat: number
+  location_lon: number
+}
+
+export type RidershipDefault = 'rides' | 'does_not_ride'
+
+export interface Student {
+  id: number
+  full_name: string
+  school_id: number
+  stop_id: number | null
+  default_ridership: RidershipDefault
+}
+
+export interface StudentCreate {
+  full_name: string
+  school_id: number
+  stop_id?: number
+  default_ridership: RidershipDefault
+}
+
+export type RideDirection = 'am' | 'pm'
+
+export interface RidershipOverrideUpdate {
+  service_date: string
+  direction: RideDirection
+  is_riding: boolean
+}
+
+export interface FamilyMember {
+  student_id: number
+  full_name: string
+  school_name: string
+  stop_label: string | null
+  service_date: string
+  riding_am: boolean
+  riding_pm: boolean
 }
