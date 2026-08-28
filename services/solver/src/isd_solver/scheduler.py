@@ -26,6 +26,11 @@ per ADR 0002):
     as a qualifying break (see docs/domain-model.md). This is a
     district-configured value; this codebase makes no claim about what
     any specific driver-hour law requires.
+  - A job is never scheduled into a crew's busy_intervals (spec section
+    21: a locked assignment protects that specific commitment, not the
+    crew's whole day — routers/schedule.py populates this from a
+    crew's other locked assignments on a re-solve). No deadhead buffer
+    is enforced around a busy interval — see Crew's docstring.
 
 Soft objective implemented here: minimize the number of distinct crews
 used (spec section 2.2, objective 1). Other soft objectives (mileage,
@@ -243,6 +248,22 @@ def solve_multi_school_schedule(
                         end_vars[job_a.id] - start_vars[job_b.id] <= max_continuous
                     ).OnlyEnforceIf(both + [order.Not()])
 
+    # A crew with busy_intervals (spec section 21: locked assignments
+    # elsewhere in its day) can't be given a job that overlaps one —
+    # same disjunctive shape as the pairwise ordering above, but
+    # against a fixed interval instead of another job's variables, so
+    # no deadhead buffer is added (there's no location for whatever's
+    # occupying that interval).
+    for job in jobs:
+        for crew in candidate_crews[job.id]:
+            if not crew.busy_intervals:
+                continue
+            var = x[job.id][crew.id]
+            for idx, busy in enumerate(crew.busy_intervals):
+                before_busy = model.NewBoolVar(f"before_busy_{job.id}_{crew.id}_{idx}")
+                model.Add(end_vars[job.id] <= busy.earliest).OnlyEnforceIf([var, before_busy])
+                model.Add(start_vars[job.id] >= busy.latest).OnlyEnforceIf([var, before_busy.Not()])
+
     # crew_used[c] = 1 if crew c serves at least one job
     all_crew_ids = {crew.id for crew in crews}
     crew_used: dict[str, cp_model.IntVar] = {}
@@ -318,6 +339,8 @@ def solve_multi_school_schedule(
             checks.append(
                 f"the driver's continuous-duty limit ({max_continuous} min) is not exceeded"
             )
+        if crew_by_id[crew_id].busy_intervals:
+            checks.append("it does not overlap this crew's other committed (locked) assignments")
         buffer_to_next = None
         if next_job is not None:
             deadhead = deadhead_estimator(job.location, next_job.location)

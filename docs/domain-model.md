@@ -66,6 +66,15 @@ route window). Trips (spec §12) will extend this in a later phase.
 - `id`
 - `driver_id`, `vehicle_id`
 - `available_window`: `TimeWindow` the crew is available to work today
+- `busy_intervals`: time ranges within `available_window` this crew is
+  already committed elsewhere (spec §21: a locked assignment protects
+  that specific commitment, not the crew's whole day). Populated by
+  `routers/schedule.py` from the crew's other locked assignments on a
+  re-solve — a crew is no longer excluded outright just because it has
+  one locked assignment. No deadhead buffer is enforced around a busy
+  interval, since there's no `Job`/location for whatever's occupying
+  it — a time-only exclusion, not a full scheduling constraint like
+  the pairwise job-vs-job case.
 
 ### DeadheadEstimator
 A pluggable function `(location_a, location_b) -> minutes`. Two
