@@ -16,9 +16,9 @@ import json
 import logging
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from math import asin, cos, radians, sin, sqrt
-from typing import Callable, FrozenSet
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +31,7 @@ _EARTH_RADIUS_KM = 6371.0
 
 def _validate_minute_of_day(value: int, field_name: str) -> None:
     if not (0 <= value < MINUTES_PER_DAY):
-        raise ValueError(
-            f"{field_name}={value} must be a minute-of-day in [0, {MINUTES_PER_DAY})"
-        )
+        raise ValueError(f"{field_name}={value} must be a minute-of-day in [0, {MINUTES_PER_DAY})")
 
 
 @dataclass(frozen=True)
@@ -102,7 +100,7 @@ class Job:
     duration_minutes: int
     buffer_minutes: int
     location: Location
-    required_vehicle_qualifications: FrozenSet[str] = field(default_factory=frozenset)
+    required_vehicle_qualifications: frozenset[str] = field(default_factory=frozenset)
     # 0 means "ridership not modeled for this job" and is never a capacity
     # violation on its own (spec section 4 ridership-declaration data
     # feeds this in later phases; Phase 1 callers may leave it at 0).
@@ -139,7 +137,7 @@ class Vehicle:
     """
 
     id: str
-    qualifications: FrozenSet[str] = field(default_factory=frozenset)
+    qualifications: frozenset[str] = field(default_factory=frozenset)
     nominal_capacity: int | None = None
     effective_capacity: int | None = None
 
@@ -166,13 +164,15 @@ class Vehicle:
         back to nominal capacity; None means capacity is unknown for
         this vehicle.
         """
-        return self.effective_capacity if self.effective_capacity is not None else self.nominal_capacity
+        if self.effective_capacity is not None:
+            return self.effective_capacity
+        return self.nominal_capacity
 
 
 @dataclass(frozen=True)
 class Driver:
     id: str
-    license_qualifications: FrozenSet[str] = field(default_factory=frozenset)
+    license_qualifications: frozenset[str] = field(default_factory=frozenset)
     # District-configured limit; this codebase asserts nothing about
     # what any specific driver-hour law requires (ADR: see domain.py
     # module docstring and README "Non-negotiables").
@@ -313,7 +313,7 @@ def osrm_deadhead_estimator(
         except Exception as exc:  # noqa: BLE001 - deliberately broad: network/JSON/shape errors all handled the same way
             if fallback is not None:
                 logger.warning(
-                    "Routing API deadhead lookup failed for %s -> %s (%s); using fallback estimator",
+                    "Routing API deadhead lookup failed for %s -> %s (%s); using fallback",
                     a,
                     b,
                     exc,

@@ -40,6 +40,10 @@ See `docs/adr/` for the reasoning behind irreversible decisions
 (stack, service boundaries, constraint modeling, explainability/audit
 approach). Read these before making changes that touch them.
 
+See `docs/architecture.md` for the system-context diagram, the full
+spec-section-to-phase mapping, and known gaps to close before the next
+phase starts.
+
 ## Repository layout
 
 ```
@@ -92,6 +96,23 @@ fine for development. For anything beyond that, set
 `ISD_API_DATABASE_URL` to a real PostgreSQL connection string and set
 `ISD_API_ENVIRONMENT=production` with a real `ISD_API_JWT_SECRET_KEY`
 (the app refuses to start in production with the default dev secret).
+
+## Development
+
+Each service is linted and type-checked independently (they're
+separate installable packages — see ADR 0003). Run from inside
+`services/solver` or `services/api`:
+
+```bash
+ruff check .        # lint
+ruff check . --fix  # lint, autofixing what's safe to autofix
+ruff format .        # format
+mypy                 # type-check the package source (src/)
+pytest               # run that service's test suite
+```
+
+CI (once set up) will run all four for both services on every PR —
+run them locally before pushing.
 
 ## Non-negotiables (carried from spec)
 
