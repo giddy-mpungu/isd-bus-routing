@@ -1,0 +1,75 @@
+// Mirrors services/api/src/isd_api/schemas.py and models.py Role enum
+// (spec section 17). Kept hand-written rather than generated — the
+// endpoint surface this console uses is still small (see client.ts).
+
+export type Role =
+  'driver' | 'student' | 'parent' | 'school_admin' | 'dispatcher' | 'transportation_admin'
+
+export interface CurrentUser {
+  id: number
+  email: string
+  full_name: string
+  role: Role
+  is_active: boolean
+  driver_id: number | null
+  school_id: number | null
+}
+
+export interface School {
+  id: number
+  name: string
+  location_lat: number
+  location_lon: number
+}
+
+export interface Driver {
+  id: number
+  full_name: string
+}
+
+export interface Vehicle {
+  id: number
+  label: string
+}
+
+export interface Run {
+  id: number
+  service_date: string
+  school_id: number
+  window_earliest: number
+  window_latest: number
+  duration_minutes: number
+  buffer_minutes: number
+  passenger_count: number
+}
+
+export interface Crew {
+  id: number
+  service_date: string
+  driver_id: number
+  vehicle_id: number
+  available_window_earliest: number
+  available_window_latest: number
+}
+
+export interface Assignment {
+  id: number
+  run_id: number
+  crew_id: number
+  start_minute: number
+  end_minute: number
+  explanation_text: string
+  locked: boolean
+}
+
+export interface ScheduleResult {
+  crews_used: number
+  assignments: Assignment[]
+}
+
+export interface AssignmentPatch {
+  crew_id?: number
+  start_minute?: number
+  end_minute?: number
+  locked?: boolean
+}

@@ -10,3 +10,8 @@ build/
 *.db-journal
 .mypy_cache/
 .ruff_cache/
+
+node_modules/
+*.tsbuildinfo
+coverage/
+npm-debug.log*
