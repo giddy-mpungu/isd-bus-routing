@@ -62,7 +62,7 @@ services/
 - API: Python + FastAPI, SQLAlchemy 2.0, Alembic migrations
 - Data: SQLite (dev/test, used in this environment), PostgreSQL + PostGIS (production target — see ADR 0006)
 - Dispatcher console (Phase 3, MVP shipped): React + TypeScript + Vite, oxlint + Prettier, Vitest + React Testing Library
-- Deployment: containerized, cloud-agnostic
+- Deployment: containerized (Dockerfiles for api + web, `docker-compose.yml` for local orchestration), cloud-agnostic — see "Getting started (Docker)" below
 
 ## Getting started (solver)
 
@@ -122,6 +122,34 @@ httpOnly cookie (never touched by this frontend's own code — see
 `isd_api.security`) with a sliding 30-minute inactivity timeout and a
 12-hour absolute cap, so a page refresh doesn't require logging in
 again but leaving the tab idle eventually does.
+
+## Getting started (Docker)
+
+Runs api + web together via `docker-compose.yml` at the repo root —
+useful for a closer-to-real check than the dev servers above, not a
+production deployment manifest (see the comments in
+`docker-compose.yml` and `services/api/Dockerfile` for why: SQLite,
+the insecure default JWT secret, and `ISD_API_ENVIRONMENT=dev` are all
+dev-only defaults a real deployment must override explicitly).
+
+```bash
+docker compose up -d --build
+# api:  http://localhost:8000/docs
+# web:  http://localhost:8080
+
+# One-time: create the first admin user inside the running api container.
+docker compose exec \
+  -e ISD_API_BOOTSTRAP_EMAIL=you@example.org \
+  -e ISD_API_BOOTSTRAP_PASSWORD='choose-a-real-password' \
+  -e ISD_API_BOOTSTRAP_NAME='Your Name' \
+  api python scripts/bootstrap_admin.py
+
+docker compose down -v   # stop and remove the SQLite volume too
+```
+
+Migrations are **not** run automatically on container start (multiple
+replicas would race to migrate concurrently) — run them as a one-off:
+`docker compose run --rm api alembic upgrade head`.
 
 ## Development
 

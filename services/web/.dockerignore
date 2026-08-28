@@ -1,0 +1,6 @@
+# Applies to services/web/Dockerfile's build context (services/web
+# itself — self-contained, doesn't need the rest of the repo).
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo

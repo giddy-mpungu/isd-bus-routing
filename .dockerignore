@@ -1,0 +1,18 @@
+# Applies to services/api/Dockerfile's build context (repo root — it
+# needs both services/solver and services/api).
+.git/
+.github/
+docs/
+*.md
+services/web/node_modules/
+services/web/dist/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/*.egg-info/
+**/.venv/
+**/venv/
+**/*.db
+**/*.db-journal
+**/.mypy_cache/
+**/.ruff_cache/
