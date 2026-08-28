@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { NavLink } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
 export function AppLayout({ children }: { children: ReactNode }) {
@@ -8,6 +9,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
     <div className="app-shell">
       <header className="app-header">
         <span className="brand">isd-bus-routing</span>
+        {user && (
+          <nav className="app-nav">
+            <NavLink to="/schedule">Schedule</NavLink>
+            <NavLink to="/setup">Setup</NavLink>
+          </nav>
+        )}
         {user && (
           <div className="user-info">
             <span>

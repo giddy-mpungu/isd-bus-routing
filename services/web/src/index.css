@@ -71,11 +71,60 @@ td {
   font-weight: 600;
 }
 
+.app-nav {
+  display: flex;
+  gap: 1rem;
+}
+
+.app-nav a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.app-nav a.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .user-info {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   color: var(--muted);
+}
+
+.setup-page section {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.setup-page form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-width: 360px;
+  margin-top: 0.75rem;
+}
+
+.setup-page label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.setup-page fieldset {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 0.25rem 0;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
 }
 
 .app-body {

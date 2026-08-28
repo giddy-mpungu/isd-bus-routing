@@ -23,8 +23,19 @@ vi.mock('../api/client', async (importOriginal) => {
 })
 
 const school: School = { id: 1, name: 'Riverside Elementary', location_lat: 0, location_lon: 0 }
-const driverRecord: Driver = { id: 2, full_name: 'Jordan Driver' }
-const vehicle: Vehicle = { id: 3, label: 'Bus 101' }
+const driverRecord: Driver = {
+  id: 2,
+  full_name: 'Jordan Driver',
+  max_continuous_minutes: null,
+  qualifications: [],
+}
+const vehicle: Vehicle = {
+  id: 3,
+  label: 'Bus 101',
+  nominal_capacity: 48,
+  effective_capacity: 44,
+  qualifications: [],
+}
 const run: Run = {
   id: 10,
   service_date: '2026-09-01',
@@ -43,8 +54,19 @@ const crew: Crew = {
   available_window_earliest: 0,
   available_window_latest: 1439,
 }
-const otherDriver: Driver = { id: 4, full_name: 'Sam Substitute' }
-const otherVehicle: Vehicle = { id: 5, label: 'Bus 202' }
+const otherDriver: Driver = {
+  id: 4,
+  full_name: 'Sam Substitute',
+  max_continuous_minutes: null,
+  qualifications: [],
+}
+const otherVehicle: Vehicle = {
+  id: 5,
+  label: 'Bus 202',
+  nominal_capacity: 48,
+  effective_capacity: 44,
+  qualifications: [],
+}
 const otherCrew: Crew = {
   id: 21,
   service_date: '2026-09-01',
