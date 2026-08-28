@@ -58,6 +58,13 @@ class QualificationKind(enum.StrEnum):
     VEHICLE_CAPABILITY = "vehicle_capability"
 
 
+class AssignmentStatus(enum.StrEnum):
+    SCHEDULED = "scheduled"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    NO_SHOW = "no_show"
+
+
 class Qualification(Base):
     """A tag such as CDL_A/CDL_B/NON_CDL_C (driver license quals, spec
     section 1/15) or wheelchair/lift (vehicle capability quals, spec
@@ -225,9 +232,22 @@ class Assignment(Base):
     explanation_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     # spec section 21: transportation personnel must be able to "lock
     # specific routes or assignments" — a locked assignment survives a
-    # re-POST /schedule for its date untouched, and its crew is
-    # excluded from that re-solve (see routers/schedule.py).
+    # re-POST /schedule for its date untouched, and its crew's busy
+    # interval for this run is excluded from that re-solve, not the
+    # whole crew (see routers/schedule.py; solver-side in
+    # isd_solver.Crew.busy_intervals).
     locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Driver-reported progress (Phase 4) — distinct from `locked`, which
+    # is a dispatcher-facing scheduling concept. Set via the driver-only
+    # PATCH .../status endpoint, not the dispatcher override endpoint.
+    status: Mapped[AssignmentStatus] = mapped_column(
+        SAEnum(AssignmentStatus, native_enum=False, length=20),
+        default=AssignmentStatus.SCHEDULED,
+        nullable=False,
+    )
+    status_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow

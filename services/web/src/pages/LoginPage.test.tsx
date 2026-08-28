@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
@@ -20,6 +20,10 @@ function renderLoginPage() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/schedule" element={<p>schedule page</p>} />
+          {/* Mirrors App.tsx's real "/" role redirect closely enough for
+              this test's purposes — LoginPage itself just navigates to
+              "/" and lets that route decide the destination. */}
+          <Route path="/" element={<Navigate to="/schedule" replace />} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>,
