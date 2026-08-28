@@ -56,7 +56,6 @@ export function SchedulePage() {
   const driversById = new Map(drivers.map((d) => [d.id, d]))
   const vehiclesById = new Map(vehicles.map((v) => [v.id, v]))
   const runsById = new Map(runs.map((r) => [r.id, r]))
-  const crewsById = new Map(crews.map((c) => [c.id, c]))
 
   async function handleRunSchedule() {
     setIsBusy(true)
@@ -68,6 +67,26 @@ export function SchedulePage() {
       await loadAll(serviceDate)
     } catch (err) {
       setErrorMessage(err instanceof ApiError ? err.message : 'Failed to run schedule.')
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  async function handleReassignCrew(assignment: Assignment, crewId: number) {
+    if (crewId === assignment.crew_id) {
+      return
+    }
+    setIsBusy(true)
+    setErrorMessage(null)
+    try {
+      await api.updateAssignment(assignment.id, { crew_id: crewId })
+      await loadAll(serviceDate)
+    } catch (err) {
+      // On failure, assignments state (and so the <select>'s value) is
+      // untouched — it naturally reverts to showing the original crew
+      // rather than the rejected one, since this is a controlled
+      // component driven by that state, not by the raw DOM selection.
+      setErrorMessage(err instanceof ApiError ? err.message : 'Failed to reassign crew.')
     } finally {
       setIsBusy(false)
     }
@@ -134,8 +153,7 @@ export function SchedulePage() {
           <tr>
             <th>School</th>
             <th>Window</th>
-            <th>Driver</th>
-            <th>Vehicle</th>
+            <th>Crew</th>
             <th>Assigned</th>
             <th>Locked</th>
             <th>Explanation</th>
@@ -145,10 +163,7 @@ export function SchedulePage() {
         <tbody>
           {assignments.map((assignment) => {
             const run = runsById.get(assignment.run_id)
-            const crew = crewsById.get(assignment.crew_id)
             const school = run ? schoolsById.get(run.school_id) : undefined
-            const driver = crew ? driversById.get(crew.driver_id) : undefined
-            const vehicle = crew ? vehiclesById.get(crew.vehicle_id) : undefined
             return (
               <tr key={assignment.id}>
                 <td>{school?.name ?? `School #${run?.school_id ?? '?'}`}</td>
@@ -157,8 +172,28 @@ export function SchedulePage() {
                     ? `${formatMinuteOfDay(run.window_earliest)}–${formatMinuteOfDay(run.window_latest)}`
                     : '—'}
                 </td>
-                <td>{driver?.full_name ?? `Driver #${crew?.driver_id ?? '?'}`}</td>
-                <td>{vehicle?.label ?? `Vehicle #${crew?.vehicle_id ?? '?'}`}</td>
+                <td>
+                  <select
+                    aria-label="Crew"
+                    value={String(assignment.crew_id)}
+                    onChange={(event) =>
+                      void handleReassignCrew(assignment, Number(event.target.value))
+                    }
+                    disabled={isBusy}
+                  >
+                    {crews.map((c) => {
+                      const d = driversById.get(c.driver_id)
+                      const v = vehiclesById.get(c.vehicle_id)
+                      return (
+                        <option key={c.id} value={c.id}>
+                          {d?.full_name ?? `Driver #${c.driver_id}`}
+                          {' — '}
+                          {v?.label ?? `Vehicle #${c.vehicle_id}`}
+                        </option>
+                      )
+                    })}
+                  </select>
+                </td>
                 <td>
                   {formatMinuteOfDay(assignment.start_minute)}
                   {'–'}
