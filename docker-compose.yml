@@ -1,0 +1,49 @@
+# Local/dev orchestration — NOT a production deployment manifest.
+# Defaults here match this project's local dev conventions (SQLite,
+# the insecure default JWT secret, ISD_API_ENVIRONMENT=dev so the app
+# auto-creates tables instead of requiring a migration step first) —
+# see services/api/Dockerfile and src/isd_api/config.py for why a real
+# deployment must override ISD_API_ENVIRONMENT, ISD_API_JWT_SECRET_KEY,
+# and ISD_API_DATABASE_URL explicitly rather than relying on any
+# default defined here.
+services:
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      ISD_API_ENVIRONMENT: ${ISD_API_ENVIRONMENT:-dev}
+      ISD_API_DATABASE_URL: ${ISD_API_DATABASE_URL:-sqlite:////data/isd_api.db}
+      ISD_API_CORS_ALLOWED_ORIGINS: ${ISD_API_CORS_ALLOWED_ORIGINS:-["http://localhost:8080"]}
+      # ISD_API_JWT_SECRET_KEY deliberately NOT listed here. `VAR: ${VAR:-x}`
+      # in compose still sets the env var (to `x`, or "" if x is empty) —
+      # it does NOT mean "unset". Setting this to "" that way passes an
+      # actual empty string into the container, which pydantic-settings
+      # reads as a real (invalid — empty HMAC key) value instead of
+      # falling back to its own insecure-dev-default (confirmed: this
+      # broke login with a 500 until removed). Only add this back with a
+      # real value, e.g. via a .env file or `ISD_API_JWT_SECRET_KEY=... docker compose up`.
+    volumes:
+      - api-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  web:
+    build:
+      context: services/web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  api-data:
