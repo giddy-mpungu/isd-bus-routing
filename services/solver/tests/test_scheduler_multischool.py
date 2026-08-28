@@ -35,6 +35,7 @@ def _crew(
     earliest: int = 0,
     latest: int = 1439,
     max_continuous_minutes: int | None = None,
+    busy_intervals: tuple[TimeWindow, ...] = (),
 ) -> Crew:
     return Crew(
         id=crew_id,
@@ -45,6 +46,7 @@ def _crew(
         ),
         vehicle=Vehicle(id=f"vehicle-{crew_id}"),
         available_window=TimeWindow(earliest=earliest, latest=latest),
+        busy_intervals=busy_intervals,
     )
 
 
@@ -169,6 +171,60 @@ def test_job_alone_exceeding_every_crews_duty_limit_is_infeasible_with_clear_rea
     assert isinstance(result, InfeasibleResult)
     assert "max_continuous_minutes" in result.reason
     assert "long-run" in result.reason
+
+
+def test_job_overlapping_a_busy_interval_is_never_assigned_to_that_crew():
+    jobs = [
+        Job(
+            id="pre-k-run",
+            school_id="pre-k-school",
+            window=TimeWindow(earliest=360, latest=410),
+            duration_minutes=40,
+            buffer_minutes=10,
+            location=Location(lat=29.70, lon=-95.40),
+        )
+    ]
+    # Busy interval exactly matches the job's only possible slot, on
+    # the only crew — must be infeasible, not silently double-booked.
+    busy_crew = _crew("C1", busy_intervals=(TimeWindow(earliest=360, latest=410),))
+    result = solve_multi_school_schedule(jobs, [busy_crew], _fixed_deadhead(5))
+
+    assert isinstance(result, InfeasibleResult)
+
+
+def test_job_outside_a_busy_interval_can_still_be_assigned():
+    jobs = [
+        Job(
+            id="pre-k-run",
+            school_id="pre-k-school",
+            window=TimeWindow(earliest=360, latest=410),
+            duration_minutes=40,
+            buffer_minutes=10,
+            location=Location(lat=29.70, lon=-95.40),
+        )
+    ]
+    # Busy interval is earlier in the day and doesn't overlap the job.
+    free_crew = _crew("C1", busy_intervals=(TimeWindow(earliest=0, latest=300),))
+    result = solve_multi_school_schedule(jobs, [free_crew], _fixed_deadhead(5))
+
+    assert isinstance(result, SchedulingResult)
+    assert result.assignments[0].crew_id == "C1"
+
+
+def test_crew_with_a_busy_interval_can_still_serve_other_jobs_around_it():
+    # Mirrors how routers/schedule.py calls the solver on a re-solve:
+    # a locked job is excluded from `jobs` entirely, and its crew gets
+    # that time as a busy_interval instead of being excluded outright.
+    # Only the HS and MS legs of the spec section 5 chain are passed
+    # in here — the Pre-K leg is "already locked" on this same crew.
+    jobs = _spec_section5_jobs()[1:]
+    crew = _crew("C1", busy_intervals=(TimeWindow(earliest=360, latest=410),))
+    result = solve_multi_school_schedule(jobs, [crew], _fixed_deadhead(5))
+
+    assert isinstance(result, SchedulingResult)
+    assert result.crews_used == 1
+    assert {a.job_id for a in result.assignments} == {"hs-run", "ms-run"}
+    assert all(a.crew_id == "C1" for a in result.assignments)
 
 
 def test_unqualified_crew_is_never_assigned_a_job_requiring_a_qualification():

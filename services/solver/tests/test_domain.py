@@ -66,6 +66,28 @@ def test_crew_qualification_check():
     assert crew.is_qualified_for(job_needs_lift) is False
 
 
+def test_crew_accepts_busy_interval_within_available_window():
+    crew = Crew(
+        id="C1",
+        driver=Driver(id="D1"),
+        vehicle=Vehicle(id="V1"),
+        available_window=TimeWindow(earliest=0, latest=1439),
+        busy_intervals=(TimeWindow(earliest=360, latest=410),),
+    )
+    assert crew.busy_intervals == (TimeWindow(earliest=360, latest=410),)
+
+
+def test_crew_rejects_busy_interval_outside_available_window():
+    with pytest.raises(ValueError):
+        Crew(
+            id="C1",
+            driver=Driver(id="D1"),
+            vehicle=Vehicle(id="V1"),
+            available_window=TimeWindow(earliest=400, latest=1439),
+            busy_intervals=(TimeWindow(earliest=360, latest=410),),  # starts before the window
+        )
+
+
 def test_straight_line_deadhead_estimator_symmetric_and_positive():
     estimate = straight_line_deadhead_estimator(average_speed_kmh=30.0)
     a = Location(lat=29.7604, lon=-95.3698)  # Houston

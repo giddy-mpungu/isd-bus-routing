@@ -188,6 +188,27 @@ class Crew:
     driver: Driver
     vehicle: Vehicle
     available_window: TimeWindow
+    # Time ranges within available_window this crew is already
+    # committed elsewhere (spec section 21: a locked assignment
+    # protects that specific commitment, not the crew's whole day —
+    # see routers/schedule.py for how the api populates this on a
+    # re-solve). No deadhead buffer is enforced around a busy
+    # interval — there's no Job/location for whatever's happening
+    # during it, so this is a time-only exclusion, not a full
+    # scheduling constraint like the pairwise job-vs-job case.
+    busy_intervals: tuple[TimeWindow, ...] = ()
+
+    def __post_init__(self) -> None:
+        for interval in self.busy_intervals:
+            if (
+                interval.earliest < self.available_window.earliest
+                or interval.latest > self.available_window.latest
+            ):
+                raise ValueError(
+                    f"Crew {self.id}: busy interval [{interval.earliest}, {interval.latest}] "
+                    f"falls outside available_window [{self.available_window.earliest}, "
+                    f"{self.available_window.latest}]"
+                )
 
     def is_qualified_for(self, job: Job) -> bool:
         return job.required_vehicle_qualifications.issubset(self.vehicle.qualifications)
