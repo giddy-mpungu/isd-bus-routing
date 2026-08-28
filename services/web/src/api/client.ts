@@ -15,10 +15,15 @@ import type {
   Crew,
   CurrentUser,
   Driver,
+  DriverCreate,
+  Qualification,
+  QualificationCreate,
   Run,
   School,
+  SchoolCreate,
   ScheduleResult,
   Vehicle,
+  VehicleCreate,
 } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
@@ -87,12 +92,32 @@ export async function getSchools(): Promise<School[]> {
   return request<School[]>('/schools')
 }
 
+export async function createSchool(payload: SchoolCreate): Promise<School> {
+  return request<School>('/schools', jsonInit('POST', payload))
+}
+
+export async function getQualifications(): Promise<Qualification[]> {
+  return request<Qualification[]>('/qualifications')
+}
+
+export async function createQualification(payload: QualificationCreate): Promise<Qualification> {
+  return request<Qualification>('/qualifications', jsonInit('POST', payload))
+}
+
 export async function getDrivers(): Promise<Driver[]> {
   return request<Driver[]>('/drivers')
 }
 
+export async function createDriver(payload: DriverCreate): Promise<Driver> {
+  return request<Driver>('/drivers', jsonInit('POST', payload))
+}
+
 export async function getVehicles(): Promise<Vehicle[]> {
   return request<Vehicle[]>('/vehicles')
+}
+
+export async function createVehicle(payload: VehicleCreate): Promise<Vehicle> {
+  return request<Vehicle>('/vehicles', jsonInit('POST', payload))
 }
 
 export async function getRuns(serviceDate: string): Promise<Run[]> {
