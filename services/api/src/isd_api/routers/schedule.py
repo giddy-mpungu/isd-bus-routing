@@ -10,7 +10,7 @@ constraints (README "Non-negotiables carried from spec")."""
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from isd_solver import (
@@ -44,7 +44,14 @@ from isd_api.db import get_db
 from isd_api.models import Assignment, Role, User
 from isd_api.models import Crew as DBCrew
 from isd_api.models import Run as DBRun
-from isd_api.schemas import AssignmentRead, AssignmentUpdate, ScheduleRequest, ScheduleResult
+from isd_api.schemas import (
+    AssignmentRead,
+    AssignmentStatusUpdate,
+    AssignmentUpdate,
+    DriverAssignmentRead,
+    ScheduleRequest,
+    ScheduleResult,
+)
 from isd_api.security import get_current_user, require_role
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
@@ -454,3 +461,91 @@ def list_assignments(
         )
 
     return list(query.order_by(Assignment.id).all())
+
+
+@router.get("/{service_date}/my-assignments", response_model=list[DriverAssignmentRead])
+def list_my_assignments(
+    service_date: date,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DRIVER)),
+) -> list[DriverAssignmentRead]:
+    """Phase 4: a driver's own runs for a date, with school/vehicle
+    names resolved server-side — a driver has no other endpoint that
+    can resolve those (GET /runs, /crews, /drivers are all
+    admin/dispatcher-only, ADR 0006 least-privilege), so this is a
+    purpose-built, denormalized read rather than broadening those."""
+    if current_user.driver_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This driver account is not linked to a Driver record",
+        )
+    assignments = (
+        db.query(Assignment)
+        .join(DBRun, Assignment.run_id == DBRun.id)
+        .join(DBCrew, Assignment.crew_id == DBCrew.id)
+        .filter(DBRun.service_date == service_date, DBCrew.driver_id == current_user.driver_id)
+        .order_by(Assignment.start_minute)
+        .all()
+    )
+    return [
+        DriverAssignmentRead(
+            id=a.id,
+            run_id=a.run_id,
+            service_date=a.run.service_date,
+            school_name=a.run.school.name,
+            vehicle_label=a.crew.vehicle.label,
+            start_minute=a.start_minute,
+            end_minute=a.end_minute,
+            status=a.status,
+            locked=a.locked,
+        )
+        for a in assignments
+    ]
+
+
+@router.patch("/assignments/{assignment_id}/status", response_model=DriverAssignmentRead)
+def update_assignment_status(
+    assignment_id: int,
+    payload: AssignmentStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DRIVER)),
+) -> DriverAssignmentRead:
+    """Phase 4: a driver reports progress on their own run (started /
+    completed / no-show). Distinct from PATCH /assignments/{id}, which
+    is the dispatcher-only scheduling override — a status change never
+    touches crew/time/lock and needs no hard-constraint re-check."""
+    assignment = db.get(Assignment, assignment_id)
+    if assignment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
+    if assignment.crew.driver_id != current_user.driver_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only update your own assignments",
+        )
+
+    before_status = assignment.status
+    assignment.status = payload.status
+    assignment.status_updated_at = datetime.now(UTC)
+    db.flush()
+    record_audit(
+        db,
+        entity_type="assignment",
+        entity_id=assignment.id,
+        action="status_changed",
+        actor=current_user,
+        before_state={"status": before_status.value},
+        after_state={"status": assignment.status.value},
+    )
+    db.commit()
+    db.refresh(assignment)
+    return DriverAssignmentRead(
+        id=assignment.id,
+        run_id=assignment.run_id,
+        service_date=assignment.run.service_date,
+        school_name=assignment.run.school.name,
+        vehicle_label=assignment.crew.vehicle.label,
+        start_minute=assignment.start_minute,
+        end_minute=assignment.end_minute,
+        status=assignment.status,
+        locked=assignment.locked,
+    )
