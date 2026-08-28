@@ -42,6 +42,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+      # api imports isd_solver directly and doesn't declare it as a
+      # dependency (see the comment in services/api/pyproject.toml) —
+      # install order matters here.
+      - run: pip install -e ../solver
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .

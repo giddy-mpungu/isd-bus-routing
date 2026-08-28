@@ -36,6 +36,18 @@ packages = ["isd_solver"]
 disallow_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
+# Global, not per-module: ortools pulls in numpy/pandas transitively,
+# and this project imports neither directly. A numpy release can ship
+# .pyi stubs using newer syntax (PEP 695 `type` statements, Python
+# 3.12+ only) than this project's python_version=3.11 target can
+# parse — a parse-time syntax error that a per-module
+# ignore_errors/follow_imports override can't suppress (verified: it
+# doesn't, for this specific failure — parsing happens too early in
+# mypy's dependency-graph construction for per-module settings to take
+# effect). This global setting only affects modules not explicitly
+# part of `packages` above, so isd_solver's own files are unaffected —
+# only third-party imports get treated as Any without being parsed.
+follow_imports = "skip"
 
 [[tool.mypy.overrides]]
 module = "ortools.*"
