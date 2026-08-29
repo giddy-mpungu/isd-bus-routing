@@ -63,6 +63,7 @@ app.include_router(schedule.router)
 app.include_router(stops.router)
 app.include_router(students.router)
 app.include_router(absences.router)
+app.include_router(absences.all_absences_router)
 
 
 @app.get("/health")

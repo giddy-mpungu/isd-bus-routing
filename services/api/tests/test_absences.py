@@ -135,6 +135,53 @@ def test_dispatcher_can_report_absence_for_any_driver(client, admin_headers, db_
     assert response.status_code == 201
 
 
+def test_listing_all_absences_for_a_date_spans_every_driver(client, admin_headers):
+    _school, driver_a, _va, _ca, _run_a = _seed_driver_crew_and_run(
+        client, admin_headers, label="A"
+    )
+    _school2, driver_b, _vb, _cb, _run_b = _seed_driver_crew_and_run(
+        client, admin_headers, label="B"
+    )
+    client.post(
+        f"/drivers/{driver_a['id']}/absences",
+        headers=admin_headers,
+        json={
+            "service_date": SERVICE_DATE,
+            "start_minute": 0,
+            "end_minute": 1439,
+            "reason": "sick_leave",
+        },
+    )
+    client.post(
+        f"/drivers/{driver_b['id']}/absences",
+        headers=admin_headers,
+        json={
+            "service_date": SERVICE_DATE,
+            "start_minute": 0,
+            "end_minute": 1439,
+            "reason": "training",
+        },
+    )
+
+    response = client.get("/absences", headers=admin_headers, params={"service_date": SERVICE_DATE})
+    assert response.status_code == 200
+    driver_ids = {a["driver_id"] for a in response.json()}
+    assert driver_ids == {driver_a["id"], driver_b["id"]}
+
+
+def test_listing_all_absences_requires_admin_or_dispatcher_role(client, admin_headers, db_session):
+    _school, driver, _vehicle, _crew, _run = _seed_driver_crew_and_run(
+        client, admin_headers, label="A"
+    )
+    make_user(db_session, email="driver1@example.org", role=Role.DRIVER, driver_id=driver["id"])
+    token = login(client, email="driver1@example.org")
+
+    response = client.get(
+        "/absences", headers=auth_headers(token), params={"service_date": SERVICE_DATE}
+    )
+    assert response.status_code == 403
+
+
 def test_listing_absences_requires_admin_or_dispatcher_role(client, admin_headers, db_session):
     _school, driver, _vehicle, _crew, _run = _seed_driver_crew_and_run(
         client, admin_headers, label="A"

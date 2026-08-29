@@ -26,6 +26,9 @@ from isd_api.schemas import (
 from isd_api.security import get_current_user, require_role
 
 router = APIRouter(prefix="/drivers", tags=["absences"])
+# Driver-agnostic listing ("who's out today") doesn't fit the /drivers
+# prefix above — a separate router, registered alongside it in main.py.
+all_absences_router = APIRouter(prefix="/absences", tags=["absences"])
 
 
 @router.post(
@@ -92,6 +95,24 @@ def list_absences(
     return list(
         db.query(DriverAbsence)
         .filter(DriverAbsence.driver_id == driver_id, DriverAbsence.service_date == service_date)
+        .order_by(DriverAbsence.id)
+        .all()
+    )
+
+
+@all_absences_router.get("", response_model=list[AbsenceRead])
+def list_all_absences(
+    service_date: date,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role(Role.TRANSPORTATION_ADMIN, Role.DISPATCHER)),
+) -> list[DriverAbsence]:
+    """Who's out on a given date, across all drivers — the overview a
+    dispatcher opening the console for a date needs; the per-driver
+    GET /drivers/{id}/absences above only helps once you already
+    suspect a specific driver is absent."""
+    return list(
+        db.query(DriverAbsence)
+        .filter(DriverAbsence.service_date == service_date)
         .order_by(DriverAbsence.id)
         .all()
     )

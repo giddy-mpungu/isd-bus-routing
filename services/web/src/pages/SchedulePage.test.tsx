@@ -1,10 +1,28 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { Assignment, Crew, Driver, Qualification, Run, School, Vehicle } from '../api/types'
+import type {
+  Absence,
+  AffectedAssignmentSubstitutes,
+  Assignment,
+  Crew,
+  Driver,
+  Qualification,
+  Run,
+  School,
+  Vehicle,
+} from '../api/types'
 import { SchedulePage } from './SchedulePage'
+
+// Matches SchedulePage's own today() default for `serviceDate` — the
+// component doesn't use the fixtures' own service_date fields for
+// that, so assertions on what date it actually passed to an API call
+// need this, not a hardcoded string.
+function today(): string {
+  return new Date().toISOString().slice(0, 10)
+}
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -22,6 +40,9 @@ vi.mock('../api/client', async (importOriginal) => {
     deleteAssignment: vi.fn(),
     createCrew: vi.fn(),
     createRun: vi.fn(),
+    getAbsencesForDate: vi.fn(),
+    createAbsence: vi.fn(),
+    getSubstituteCandidates: vi.fn(),
   }
 })
 
@@ -95,14 +116,31 @@ const vehicleQual: Qualification = {
   description: 'Wheelchair lift',
 }
 
+const thirdDriver: Driver = {
+  id: 6,
+  full_name: 'Casey NoCrew',
+  max_continuous_minutes: null,
+  qualifications: [],
+}
+
+const absence: Absence = {
+  id: 1,
+  driver_id: 2,
+  service_date: '2026-09-01',
+  start_minute: 0,
+  end_minute: 1439,
+  reason: 'sick_leave',
+}
+
 function mockLoad() {
   vi.mocked(api.getRuns).mockResolvedValue([run])
   vi.mocked(api.getCrews).mockResolvedValue([crew, otherCrew])
   vi.mocked(api.getSchools).mockResolvedValue([school])
-  vi.mocked(api.getDrivers).mockResolvedValue([driverRecord, otherDriver])
+  vi.mocked(api.getDrivers).mockResolvedValue([driverRecord, otherDriver, thirdDriver])
   vi.mocked(api.getVehicles).mockResolvedValue([vehicle, otherVehicle])
   vi.mocked(api.getQualifications).mockResolvedValue([vehicleQual])
   vi.mocked(api.getAssignments).mockResolvedValue([assignment])
+  vi.mocked(api.getAbsencesForDate).mockResolvedValue([absence])
 }
 
 describe('SchedulePage', () => {
@@ -245,5 +283,141 @@ describe('SchedulePage', () => {
     await user.click(screen.getByRole('button', { name: 'Add run' }))
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/exceeds the run/))
+  })
+
+  it('renders a reported absence with the driver name resolved', async () => {
+    render(<SchedulePage />)
+    const findButton = await screen.findByRole('button', { name: 'Find substitutes' })
+    const row = findButton.closest('li')
+    expect(row).toHaveTextContent('Jordan Driver')
+    expect(row).toHaveTextContent('sick leave')
+  })
+
+  it('finding substitutes shows the ranked candidate panel', async () => {
+    const affected: AffectedAssignmentSubstitutes = {
+      assignment_id: 100,
+      run_id: 10,
+      school_name: 'Riverside Elementary',
+      start_minute: 360,
+      end_minute: 410,
+      vehicle_id: 3,
+      vehicle_label: 'Bus 101',
+      candidates: [
+        {
+          driver_id: 4,
+          full_name: 'Sam Substitute',
+          score: 2,
+          reasons: ['has driven this school 2 time(s) before'],
+        },
+      ],
+    }
+    vi.mocked(api.getSubstituteCandidates).mockResolvedValue([affected])
+    render(<SchedulePage />)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Find substitutes' })).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Find substitutes' }))
+
+    await waitFor(() => expect(api.getSubstituteCandidates).toHaveBeenCalledWith(2, today()))
+    const panel = (await screen.findByRole('heading', { level: 3 })).closest('div') as HTMLElement
+    expect(within(panel).getByText(/Sam Substitute/)).toBeInTheDocument()
+    expect(within(panel).getByText(/Bus 101/)).toBeInTheDocument()
+  })
+
+  it('assigning a substitute who already has a crew that day reassigns directly, without creating a new crew', async () => {
+    const affected: AffectedAssignmentSubstitutes = {
+      assignment_id: 100,
+      run_id: 10,
+      school_name: 'Riverside Elementary',
+      start_minute: 360,
+      end_minute: 410,
+      vehicle_id: 3,
+      vehicle_label: 'Bus 101',
+      candidates: [{ driver_id: 4, full_name: 'Sam Substitute', score: 1, reasons: ['available'] }],
+    }
+    vi.mocked(api.getSubstituteCandidates).mockResolvedValue([affected])
+    vi.mocked(api.updateAssignment).mockResolvedValue({ ...assignment, crew_id: otherCrew.id })
+    render(<SchedulePage />)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Find substitutes' })).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Find substitutes' }))
+    await screen.findByRole('button', { name: 'Assign as substitute' })
+    await user.click(screen.getByRole('button', { name: 'Assign as substitute' }))
+
+    await waitFor(() =>
+      expect(api.updateAssignment).toHaveBeenCalledWith(100, { crew_id: otherCrew.id }),
+    )
+    expect(api.createCrew).not.toHaveBeenCalled()
+  })
+
+  it('assigning a substitute with no existing crew that day creates one first', async () => {
+    const affected: AffectedAssignmentSubstitutes = {
+      assignment_id: 100,
+      run_id: 10,
+      school_name: 'Riverside Elementary',
+      start_minute: 360,
+      end_minute: 410,
+      vehicle_id: 3,
+      vehicle_label: 'Bus 101',
+      candidates: [{ driver_id: 6, full_name: 'Casey NoCrew', score: 0, reasons: ['available'] }],
+    }
+    const newCrew: Crew = {
+      id: 99,
+      service_date: '2026-09-01',
+      driver_id: 6,
+      vehicle_id: 3,
+      available_window_earliest: 0,
+      available_window_latest: 1439,
+    }
+    vi.mocked(api.getSubstituteCandidates).mockResolvedValue([affected])
+    vi.mocked(api.createCrew).mockResolvedValue(newCrew)
+    vi.mocked(api.updateAssignment).mockResolvedValue({ ...assignment, crew_id: newCrew.id })
+    render(<SchedulePage />)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Find substitutes' })).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Find substitutes' }))
+    await screen.findByRole('button', { name: 'Assign as substitute' })
+    await user.click(screen.getByRole('button', { name: 'Assign as substitute' }))
+
+    await waitFor(() =>
+      expect(api.createCrew).toHaveBeenCalledWith({
+        service_date: today(),
+        driver_id: 6,
+        vehicle_id: 3,
+        available_window_earliest: 0,
+        available_window_latest: 1439,
+      }),
+    )
+    expect(api.updateAssignment).toHaveBeenCalledWith(100, { crew_id: 99 })
+  })
+
+  it('reporting an absence with the whole-day default submits 0/1439', async () => {
+    vi.mocked(api.createAbsence).mockResolvedValue(absence)
+    render(<SchedulePage />)
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByLabelText('Absent driver'), String(driverRecord.id))
+    await user.click(screen.getByRole('button', { name: 'Report absence' }))
+
+    await waitFor(() =>
+      expect(api.createAbsence).toHaveBeenCalledWith(
+        driverRecord.id,
+        expect.objectContaining({
+          service_date: today(),
+          start_minute: 0,
+          end_minute: 1439,
+          reason: 'sick_leave',
+        }),
+      ),
+    )
   })
 })
