@@ -303,25 +303,22 @@ export function SchedulePage() {
     setAssigningKey(key)
     setSubstituteError(null)
     try {
-      // A driver can have at most one crew per day (Crew is a
-      // driver+vehicle+date triple) — a candidate who already has a
-      // crew today (serving some other, non-overlapping run) must be
-      // reassigned onto that existing crew, not paired with the
-      // absent driver's freed vehicle via a second POST /crews, which
-      // would violate that constraint.
+      // A driver can have at most one crew per day, AND a vehicle can
+      // only be on one crew per day (Crew is a driver+vehicle+date
+      // triple, each side unique for that date) — the absent driver's
+      // own crew row already claims the freed vehicle for this date,
+      // so a candidate with no crew of their own can't be paired with
+      // that vehicle via a second POST /crews (the vehicle's own
+      // uniqueness constraint rejects it); repointing that existing
+      // crew's driver (PATCH /crews/{id}) is the way. A candidate who
+      // already has a *different* crew that date is reassigned onto
+      // it via the existing PATCH .../assignments/{id} instead.
       const existingCrew = crews.find((c) => c.driver_id === candidate.driver_id)
-      const crewId = existingCrew
-        ? existingCrew.id
-        : (
-            await api.createCrew({
-              service_date: serviceDate,
-              driver_id: candidate.driver_id,
-              vehicle_id: affected.vehicle_id,
-              available_window_earliest: 0,
-              available_window_latest: 1439,
-            })
-          ).id
-      await api.updateAssignment(affected.assignment_id, { crew_id: crewId })
+      if (existingCrew) {
+        await api.updateAssignment(affected.assignment_id, { crew_id: existingCrew.id })
+      } else {
+        await api.updateCrewDriver(affected.crew_id, candidate.driver_id)
+      }
       await loadAll(serviceDate)
       if (substituteDriverId !== null) {
         setSubstituteResults(await api.getSubstituteCandidates(substituteDriverId, serviceDate))

@@ -145,6 +145,10 @@ export async function createCrew(payload: CrewCreate): Promise<Crew> {
   return request<Crew>('/crews', jsonInit('POST', payload))
 }
 
+export async function updateCrewDriver(crewId: number, driverId: number): Promise<Crew> {
+  return request<Crew>(`/crews/${crewId}`, jsonInit('PATCH', { driver_id: driverId }))
+}
+
 export async function createRun(payload: RunCreate): Promise<Run> {
   return request<Run>('/runs', jsonInit('POST', payload))
 }

@@ -1,11 +1,16 @@
 """spec section 13 (driver absence + substitute coverage). Read-only
 decision support only — spec section 13.1's "automatic coverage
 analysis" identifies affected assignments and ranks substitute
-candidates, but completing a substitution reuses the existing
-POST /crews (pair the chosen substitute with the absent driver's
-now-free vehicle) + PATCH /schedule/assignments/{id} (reassign, which
-already re-validates every hard constraint) — not a new endpoint. Spec
-section 21: decision support, not an autonomous authority."""
+candidates, but completing a substitution reuses existing endpoints,
+not a new one: a candidate with no crew of their own that date is
+substituted in via PATCH /crews/{id} (repoints the absent driver's own
+crew — a vehicle already claimed by a crew row for a date can't be
+paired with a second driver via POST /crews, its own uniqueness
+constraint would reject that); a candidate who already has a different
+crew that date is reassigned via the existing
+PATCH /schedule/assignments/{id} instead (which already re-validates
+every hard constraint). Spec section 21: decision support, not an
+autonomous authority."""
 
 from __future__ import annotations
 
@@ -227,6 +232,7 @@ def get_substitute_candidates(
             school_name=a.run.school.name,
             start_minute=a.start_minute,
             end_minute=a.end_minute,
+            crew_id=crew.id,
             vehicle_id=crew.vehicle_id,
             vehicle_label=crew.vehicle.label,
             candidates=_rank_substitute_candidates(db, a),
