@@ -135,6 +135,53 @@ def test_dispatcher_can_report_absence_for_any_driver(client, admin_headers, db_
     assert response.status_code == 201
 
 
+def test_listing_all_absences_for_a_date_spans_every_driver(client, admin_headers):
+    _school, driver_a, _va, _ca, _run_a = _seed_driver_crew_and_run(
+        client, admin_headers, label="A"
+    )
+    _school2, driver_b, _vb, _cb, _run_b = _seed_driver_crew_and_run(
+        client, admin_headers, label="B"
+    )
+    client.post(
+        f"/drivers/{driver_a['id']}/absences",
+        headers=admin_headers,
+        json={
+            "service_date": SERVICE_DATE,
+            "start_minute": 0,
+            "end_minute": 1439,
+            "reason": "sick_leave",
+        },
+    )
+    client.post(
+        f"/drivers/{driver_b['id']}/absences",
+        headers=admin_headers,
+        json={
+            "service_date": SERVICE_DATE,
+            "start_minute": 0,
+            "end_minute": 1439,
+            "reason": "training",
+        },
+    )
+
+    response = client.get("/absences", headers=admin_headers, params={"service_date": SERVICE_DATE})
+    assert response.status_code == 200
+    driver_ids = {a["driver_id"] for a in response.json()}
+    assert driver_ids == {driver_a["id"], driver_b["id"]}
+
+
+def test_listing_all_absences_requires_admin_or_dispatcher_role(client, admin_headers, db_session):
+    _school, driver, _vehicle, _crew, _run = _seed_driver_crew_and_run(
+        client, admin_headers, label="A"
+    )
+    make_user(db_session, email="driver1@example.org", role=Role.DRIVER, driver_id=driver["id"])
+    token = login(client, email="driver1@example.org")
+
+    response = client.get(
+        "/absences", headers=auth_headers(token), params={"service_date": SERVICE_DATE}
+    )
+    assert response.status_code == 403
+
+
 def test_listing_absences_requires_admin_or_dispatcher_role(client, admin_headers, db_session):
     _school, driver, _vehicle, _crew, _run = _seed_driver_crew_and_run(
         client, admin_headers, label="A"
@@ -364,5 +411,83 @@ def test_substitute_candidates_requires_admin_or_dispatcher_role(client, admin_h
         f"/drivers/{driver_a['id']}/substitute-candidates",
         headers=auth_headers(token),
         params={"service_date": SERVICE_DATE},
+    )
+    assert response.status_code == 403
+
+
+def test_substitute_candidates_response_includes_the_crew_id(client, admin_headers):
+    """The crew id is what a caller actually needs to complete a
+    substitution via PATCH /crews/{id} when the candidate has no crew
+    of their own that date — see that endpoint's docstring for why."""
+    school_id, driver_a, _va, crew_a, _run_a = _seed_driver_crew_and_run(
+        client, admin_headers, label="A"
+    )
+    schedule = client.post("/schedule", headers=admin_headers, json={"service_date": SERVICE_DATE})
+    assert schedule.status_code == 200, schedule.text
+
+    response = client.get(
+        f"/drivers/{driver_a['id']}/substitute-candidates",
+        headers=admin_headers,
+        params={"service_date": SERVICE_DATE},
+    )
+    assert response.json()[0]["crew_id"] == crew_a["id"]
+
+
+def test_update_crew_driver_repoints_it(client, admin_headers):
+    """spec section 13.2: a vehicle already claimed by a crew row for a
+    date can't be paired with a second driver via POST /crews (its own
+    uniqueness constraint rejects that) — repointing the existing
+    crew's driver is how a candidate with no crew of their own that
+    date gets substituted in."""
+    _school, _driver_a, _va, crew_a, _run_a = _seed_driver_crew_and_run(
+        client, admin_headers, label="A"
+    )
+    substitute = client.post(
+        "/drivers", headers=admin_headers, json={"full_name": "Substitute Driver"}
+    ).json()
+
+    response = client.patch(
+        f"/crews/{crew_a['id']}", headers=admin_headers, json={"driver_id": substitute["id"]}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["driver_id"] == substitute["id"]
+    assert response.json()["vehicle_id"] == crew_a["vehicle_id"]
+
+
+def test_update_crew_driver_conflicts_if_new_driver_already_has_a_crew_that_date(
+    client, admin_headers
+):
+    _school, _driver_a, _va, crew_a, _run_a = _seed_driver_crew_and_run(
+        client, admin_headers, label="A"
+    )
+    _school2, driver_b, _vb, _cb, _run_b = _seed_driver_crew_and_run(
+        client, admin_headers, label="B"
+    )
+
+    response = client.patch(
+        f"/crews/{crew_a['id']}", headers=admin_headers, json={"driver_id": driver_b["id"]}
+    )
+    assert response.status_code == 409
+
+
+def test_update_crew_driver_rejects_unknown_driver_id(client, admin_headers):
+    _school, _driver_a, _va, crew_a, _run_a = _seed_driver_crew_and_run(
+        client, admin_headers, label="A"
+    )
+    response = client.patch(
+        f"/crews/{crew_a['id']}", headers=admin_headers, json={"driver_id": 999999}
+    )
+    assert response.status_code == 400
+
+
+def test_update_crew_driver_requires_admin_or_dispatcher_role(client, admin_headers, db_session):
+    _school, driver_a, _va, crew_a, _run_a = _seed_driver_crew_and_run(
+        client, admin_headers, label="A"
+    )
+    make_user(db_session, email="driver1@example.org", role=Role.DRIVER, driver_id=driver_a["id"])
+    token = login(client, email="driver1@example.org")
+
+    response = client.patch(
+        f"/crews/{crew_a['id']}", headers=auth_headers(token), json={"driver_id": driver_a["id"]}
     )
     assert response.status_code == 403

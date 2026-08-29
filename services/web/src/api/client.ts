@@ -10,6 +10,9 @@
 // full session-cookie reasoning.
 
 import type {
+  Absence,
+  AbsenceCreate,
+  AffectedAssignmentSubstitutes,
   Assignment,
   AssignmentPatch,
   AssignmentStatus,
@@ -142,6 +145,10 @@ export async function createCrew(payload: CrewCreate): Promise<Crew> {
   return request<Crew>('/crews', jsonInit('POST', payload))
 }
 
+export async function updateCrewDriver(crewId: number, driverId: number): Promise<Crew> {
+  return request<Crew>(`/crews/${crewId}`, jsonInit('PATCH', { driver_id: driverId }))
+}
+
 export async function createRun(payload: RunCreate): Promise<Run> {
   return request<Run>('/runs', jsonInit('POST', payload))
 }
@@ -205,4 +212,21 @@ export async function updateRidership(
   override: RidershipOverrideUpdate,
 ): Promise<void> {
   await request<void>(`/students/${studentId}/ridership`, jsonInit('PATCH', override))
+}
+
+export async function getAbsencesForDate(serviceDate: string): Promise<Absence[]> {
+  return request<Absence[]>(`/absences?service_date=${serviceDate}`)
+}
+
+export async function createAbsence(driverId: number, payload: AbsenceCreate): Promise<Absence> {
+  return request<Absence>(`/drivers/${driverId}/absences`, jsonInit('POST', payload))
+}
+
+export async function getSubstituteCandidates(
+  driverId: number,
+  serviceDate: string,
+): Promise<AffectedAssignmentSubstitutes[]> {
+  return request<AffectedAssignmentSubstitutes[]>(
+    `/drivers/${driverId}/substitute-candidates?service_date=${serviceDate}`,
+  )
 }
