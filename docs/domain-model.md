@@ -119,13 +119,37 @@ produces them rather than duplicated here.
   re-linking every day. Also spec §4.5's "late request to ride" — same
   mechanism, no separate code path.
 
+## Phase 6 entities (`services/api/src/isd_api/models.py`, first slice — spec §13 only)
+
+- **DriverAbsence**: `driver_id`, `service_date`, `start_minute`/
+  `end_minute` (0/1439 for a whole-day absence — spec §13's "Partial-day
+  absence" reason is representable this way, so it's deliberately not
+  a separate `AbsenceReason` value), `reason` (spec §13's enumerated
+  list, minus any free-text medical detail — "should store only the
+  information necessary for transportation operations"). Who reported
+  it is captured by the existing audit log, not a column here.
+- **Substitute-candidate ranking** (spec §13.1) is *not* a persisted
+  entity — it's a read-only, computed endpoint
+  (`GET /drivers/{id}/substitute-candidates`) over existing data
+  (`Assignment`/`Crew`/`Driver`). See `routers/absences.py`'s
+  `_rank_substitute_candidates` docstring for the scoring factors and
+  why a driver-license-vs-vehicle-type qualification check was
+  deliberately left out (no such compatibility mapping exists
+  anywhere in this schema — would have been a fabricated signal).
+  Completing a substitution reuses the existing `POST /crews` +
+  `PATCH /schedule/assignments/{id}` endpoints, not a new one — spec
+  §21: decision support, not an autonomous authority.
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)
 - Wiring ridership declarations into the solver (dropping empty stops, recalculating ETAs, spec §4.3) — `Run.passenger_count` is still a static admin-entered int; a natural follow-up to the Phase 5 MVP, not part of it
 - Ridership reporting cutoff / route-lock configuration (spec §4.4)
 - A recurring `route` (template) table distinct from dated `run` instances — ADR 0001 named this intention for Phase 2+, never built; Phase 5 worked around its absence rather than building it (see RidershipOverride above)
-- Field trips / Trip conflict detection (spec §12) — Phase 2/6
-- Driver absence and substitute ranking (spec §13) — Phase 6
+- Field trips / Trip conflict detection (spec §12) — Phase 6
+- A dispatcher-facing UI for absence reporting/substitute ranking (spec §13 backend is done — see "Phase 6 entities" above; no `services/web` page yet, an intentional, named follow-up)
 - Bus-legal road-network routing and turn penalties (spec §6/7) — Phase 6, requires a routing graph/profile aware of bus dimensions and restrictions, not either estimator above
+- District-specific geographic knowledge / local roadway overrides (spec §8) — Phase 6, depends on §6/7's routing graph existing first
+- Dynamic rerouting around road closures/incidents (spec §10) — Phase 6, same GIS dependency
 - Live GPS bus location, delay/substitution/route-change notifications (spec §18) — Phase 6+, no live-tracking or notification infrastructure exists yet
+- Historical operational data / learning-adjusted estimates (spec §20) — Phase 6
