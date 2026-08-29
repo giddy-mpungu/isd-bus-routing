@@ -39,6 +39,7 @@ vi.mock('../api/client', async (importOriginal) => {
     updateAssignment: vi.fn(),
     deleteAssignment: vi.fn(),
     createCrew: vi.fn(),
+    updateCrewDriver: vi.fn(),
     createRun: vi.fn(),
     getAbsencesForDate: vi.fn(),
     createAbsence: vi.fn(),
@@ -300,6 +301,7 @@ describe('SchedulePage', () => {
       school_name: 'Riverside Elementary',
       start_minute: 360,
       end_minute: 410,
+      crew_id: 20,
       vehicle_id: 3,
       vehicle_label: 'Bus 101',
       candidates: [
@@ -333,6 +335,7 @@ describe('SchedulePage', () => {
       school_name: 'Riverside Elementary',
       start_minute: 360,
       end_minute: 410,
+      crew_id: 20,
       vehicle_id: 3,
       vehicle_label: 'Bus 101',
       candidates: [{ driver_id: 4, full_name: 'Sam Substitute', score: 1, reasons: ['available'] }],
@@ -355,28 +358,20 @@ describe('SchedulePage', () => {
     expect(api.createCrew).not.toHaveBeenCalled()
   })
 
-  it('assigning a substitute with no existing crew that day creates one first', async () => {
+  it('assigning a substitute with no existing crew that day repoints the affected crew instead of creating a new one', async () => {
     const affected: AffectedAssignmentSubstitutes = {
       assignment_id: 100,
       run_id: 10,
       school_name: 'Riverside Elementary',
       start_minute: 360,
       end_minute: 410,
+      crew_id: 20,
       vehicle_id: 3,
       vehicle_label: 'Bus 101',
       candidates: [{ driver_id: 6, full_name: 'Casey NoCrew', score: 0, reasons: ['available'] }],
     }
-    const newCrew: Crew = {
-      id: 99,
-      service_date: '2026-09-01',
-      driver_id: 6,
-      vehicle_id: 3,
-      available_window_earliest: 0,
-      available_window_latest: 1439,
-    }
     vi.mocked(api.getSubstituteCandidates).mockResolvedValue([affected])
-    vi.mocked(api.createCrew).mockResolvedValue(newCrew)
-    vi.mocked(api.updateAssignment).mockResolvedValue({ ...assignment, crew_id: newCrew.id })
+    vi.mocked(api.updateCrewDriver).mockResolvedValue({ ...crew, driver_id: 6 })
     render(<SchedulePage />)
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Find substitutes' })).toBeInTheDocument(),
@@ -387,16 +382,9 @@ describe('SchedulePage', () => {
     await screen.findByRole('button', { name: 'Assign as substitute' })
     await user.click(screen.getByRole('button', { name: 'Assign as substitute' }))
 
-    await waitFor(() =>
-      expect(api.createCrew).toHaveBeenCalledWith({
-        service_date: today(),
-        driver_id: 6,
-        vehicle_id: 3,
-        available_window_earliest: 0,
-        available_window_latest: 1439,
-      }),
-    )
-    expect(api.updateAssignment).toHaveBeenCalledWith(100, { crew_id: 99 })
+    await waitFor(() => expect(api.updateCrewDriver).toHaveBeenCalledWith(20, 6))
+    expect(api.createCrew).not.toHaveBeenCalled()
+    expect(api.updateAssignment).not.toHaveBeenCalled()
   })
 
   it('reporting an absence with the whole-day default submits 0/1439', async () => {

@@ -236,6 +236,7 @@ export interface AffectedAssignmentSubstitutes {
   school_name: string
   start_minute: number
   end_minute: number
+  crew_id: number
   vehicle_id: number
   vehicle_label: string
   candidates: SubstituteCandidate[]
