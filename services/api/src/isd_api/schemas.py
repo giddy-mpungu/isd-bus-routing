@@ -5,6 +5,7 @@ from datetime import date
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from isd_api.models import (
+    AbsenceReason,
     AssignmentStatus,
     QualificationKind,
     RideDirection,
@@ -276,3 +277,44 @@ class FamilyMemberRead(BaseModel):
     service_date: date
     riding_am: bool
     riding_pm: bool
+
+
+class AbsenceCreate(BaseModel):
+    service_date: date
+    start_minute: int = Field(ge=0, lt=1440)
+    end_minute: int = Field(ge=0, lt=1440)
+    reason: AbsenceReason
+
+
+class AbsenceRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    driver_id: int
+    service_date: date
+    start_minute: int
+    end_minute: int
+    reason: AbsenceReason
+
+
+class SubstituteCandidate(BaseModel):
+    driver_id: int
+    full_name: str
+    score: int
+    reasons: list[str]
+
+
+class AffectedAssignmentSubstitutes(BaseModel):
+    """spec section 13.1: one of the absent driver's assignments for
+    the date, plus ranked substitute candidates and the vehicle that
+    would need re-pairing (POST /crews) with whichever candidate is
+    chosen — completing a substitution reuses that existing endpoint
+    plus PATCH /schedule/assignments/{id}, not a new one."""
+
+    assignment_id: int
+    run_id: int
+    school_name: str
+    start_minute: int
+    end_minute: int
+    vehicle_id: int
+    vehicle_label: str
+    candidates: list[SubstituteCandidate]
