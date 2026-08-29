@@ -81,6 +81,24 @@ class RideDirection(enum.StrEnum):
     PM = "pm"
 
 
+class AbsenceReason(enum.StrEnum):
+    """spec section 13's enumerated reasons. "Partial-day absence" is
+    deliberately not a value here — it's already representable via
+    DriverAbsence.start_minute/end_minute not spanning the full day, a
+    separate enum value would be redundant with that."""
+
+    SICK_LEAVE = "sick_leave"
+    PERSONAL_DAY = "personal_day"
+    VACATION = "vacation"
+    EMERGENCY_LEAVE = "emergency_leave"
+    TRAINING = "training"
+    APPROVED_LEAVE = "approved_leave"
+    ADMINISTRATIVE_DIRECTION = "administrative_direction"
+    INJURY = "injury"
+    NO_CALL_NO_SHOW = "no_call_no_show"
+    OTHER = "other"
+
+
 class Qualification(Base):
     """A tag such as CDL_A/CDL_B/NON_CDL_C (driver license quals, spec
     section 1/15) or wheelchair/lift (vehicle capability quals, spec
@@ -279,6 +297,27 @@ class Driver(Base):
     qualifications: Mapped[list[Qualification]] = relationship(secondary=driver_qualifications)
     crews: Mapped[list[Crew]] = relationship(back_populates="driver")
     user: Mapped[User | None] = relationship(back_populates="driver")
+
+
+class DriverAbsence(Base):
+    """spec section 13. Deliberately minimal — no free-text detail
+    field ("should not require unnecessary medical details"); who
+    reported it is captured by the existing audit-log mechanism
+    (actor on the create call), not a column here."""
+
+    __tablename__ = "driver_absences"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    driver_id: Mapped[int] = mapped_column(ForeignKey("drivers.id"), nullable=False)
+    service_date: Mapped[date] = mapped_column(Date, nullable=False)
+    start_minute: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_minute: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[AbsenceReason] = mapped_column(
+        SAEnum(AbsenceReason, native_enum=False, length=32), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    driver: Mapped[Driver] = relationship()
 
 
 class Crew(Base):
