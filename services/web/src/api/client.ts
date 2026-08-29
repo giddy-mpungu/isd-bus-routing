@@ -10,6 +10,9 @@
 // full session-cookie reasoning.
 
 import type {
+  Absence,
+  AbsenceCreate,
+  AffectedAssignmentSubstitutes,
   Assignment,
   AssignmentPatch,
   AssignmentStatus,
@@ -205,4 +208,21 @@ export async function updateRidership(
   override: RidershipOverrideUpdate,
 ): Promise<void> {
   await request<void>(`/students/${studentId}/ridership`, jsonInit('PATCH', override))
+}
+
+export async function getAbsencesForDate(serviceDate: string): Promise<Absence[]> {
+  return request<Absence[]>(`/absences?service_date=${serviceDate}`)
+}
+
+export async function createAbsence(driverId: number, payload: AbsenceCreate): Promise<Absence> {
+  return request<Absence>(`/drivers/${driverId}/absences`, jsonInit('POST', payload))
+}
+
+export async function getSubstituteCandidates(
+  driverId: number,
+  serviceDate: string,
+): Promise<AffectedAssignmentSubstitutes[]> {
+  return request<AffectedAssignmentSubstitutes[]>(
+    `/drivers/${driverId}/substitute-candidates?service_date=${serviceDate}`,
+  )
 }

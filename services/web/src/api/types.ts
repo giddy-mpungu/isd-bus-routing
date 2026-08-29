@@ -194,3 +194,49 @@ export interface FamilyMember {
   riding_am: boolean
   riding_pm: boolean
 }
+
+export type AbsenceReason =
+  | 'sick_leave'
+  | 'personal_day'
+  | 'vacation'
+  | 'emergency_leave'
+  | 'training'
+  | 'approved_leave'
+  | 'administrative_direction'
+  | 'injury'
+  | 'no_call_no_show'
+  | 'other'
+
+export interface Absence {
+  id: number
+  driver_id: number
+  service_date: string
+  start_minute: number
+  end_minute: number
+  reason: AbsenceReason
+}
+
+export interface AbsenceCreate {
+  service_date: string
+  start_minute: number
+  end_minute: number
+  reason: AbsenceReason
+}
+
+export interface SubstituteCandidate {
+  driver_id: number
+  full_name: string
+  score: number
+  reasons: string[]
+}
+
+export interface AffectedAssignmentSubstitutes {
+  assignment_id: number
+  run_id: number
+  school_name: string
+  start_minute: number
+  end_minute: number
+  vehicle_id: number
+  vehicle_label: string
+  candidates: SubstituteCandidate[]
+}
