@@ -156,6 +156,23 @@ Monorepo, 3 services, each separately installed:
    *time* windows don't need this (two overlapping runs can never share
    one crew regardless of the objective, so both crews are always used
    — only the *pairing* is ambiguous, not *whether* each gets used).
+9. **A `Crew` row isn't freed just because its driver is marked
+   absent** — `Crew` is a `(driver_id, vehicle_id, service_date)`
+   triple with a `UniqueConstraint` on *each* side (one crew per
+   driver per day, one crew per vehicle per day). Reporting an absence
+   doesn't touch that row at all — the absent driver's vehicle is
+   still "claimed" by their own (still-existing) crew for that date.
+   First version of the substitute-assignment flow (PR #17) tried
+   `POST /crews` to pair a substitute with that "freed" vehicle — every
+   attempt 409'd, since the vehicle's own uniqueness constraint doesn't
+   care that the original driver is absent, only that a crew row for
+   that vehicle+date already exists. Fix: `PATCH /crews/{id}`
+   (`routers/crews.py`) repoints the *existing* crew's `driver_id`
+   instead of creating a second one — also matches spec §13.2 ("Bus
+   724 should remain available for assignment to another qualified
+   driver") more literally than the original design did. If a future
+   feature needs to "give someone else this same vehicle today," this
+   is the pattern — not `POST /crews`.
 
 **Auth (revised mid-session — see PR #6, hardened in PR #14):** httpOnly,
 `SameSite=Lax` session cookie (`isd_session`), sliding 30-min
@@ -249,31 +266,33 @@ PATCH edits that bypass the solver.
   solver's re-optimization (§4.3), cutoff/lock rules (§4.4), live
   GPS/ETA and notifications (§18, Phase 6+).
 - **Phase 6** (dynamic rerouting, substitutes, field trips, historical
-  learning) — **first slice done** (PR #16, spec §13 only — driver
-  absence + substitute ranking). `DriverAbsence` entity (a driver
-  reports their own, or dispatcher/admin reports for any driver,
-  `POST /drivers/{id}/absences`); `GET /drivers/{id}/substitute-candidates`
+  learning) — **spec §13 done, both backend and UI** (PR #16 backend,
+  PR #17 UI + a real bug fix — see "Gotchas" #9). `DriverAbsence`
+  entity (a driver reports their own, or dispatcher/admin reports for
+  any driver, `POST /drivers/{id}/absences`; `GET /absences?service_date=`
+  for the date-wide overview); `GET /drivers/{id}/substitute-candidates`
   identifies that driver's affected assignments for a date and ranks
   substitutes (school familiarity, same-day workload — see
   `docs/domain-model.md`'s "Phase 6 entities" for the scoring detail
   and why a driver-license-vs-vehicle-type qualification match was
   deliberately left out) with genuine double-bookings and duty-limit
-  violations hard-excluded. Read-only decision support — completing a
-  substitution reuses the existing `POST /crews` + `PATCH
-  /schedule/assignments/{id}`, no new mutation endpoint. **Deliberately
-  backend-only** — no `services/web` UI yet, an explicit named
-  follow-up (mirrors this project's own Phase 2 → Phase 3 precedent:
-  mutation endpoints shipped UI-less first). Everything else in Phase
-  6 (§6/§7/§8/§10's GIS-dependent routing, §12 field trips, §20
-  historical learning) is still not started — picked §13 specifically
-  because it needed no new external integration, unlike the rest of
-  the phase.
+  violations hard-excluded. Completing a substitution: `PATCH
+  /crews/{id}` (repoint, when the candidate has no crew of their own
+  that date) or the existing `PATCH /schedule/assignments/{id}` (when
+  they do) — no `POST /crews` in this flow, see gotcha #9 for why.
+  `services/web`'s `SchedulePage` gained a "Driver absences" section:
+  report an absence, browse ranked substitutes per affected assignment,
+  one-click assign (branches on which of the two above it needs).
+  Everything else in Phase 6 (§6/§7/§8/§10's GIS-dependent routing,
+  §12 field trips, §20 historical learning) is still not started —
+  picked §13 specifically because it needed no new external
+  integration, unlike the rest of the phase.
 - **Auth hardening** (PR #14) — **Done.** Both ADR 0006 follow-ups
   closed: login rate limiting, logout token revocation. See "Auth"
   under Architecture above for detail.
 - **CI**: `.github/workflows/ci.yml`, 4 jobs (solver/api/web/docker),
   runs on every push to `main` and every PR. Currently green (verified
-  via `gh pr checks --watch` on PR #16, not just assumed).
+  via `gh pr checks --watch` on PR #17, not just assumed).
 
 ## PRs merged this session (chronological)
 
@@ -293,8 +312,9 @@ PATCH edits that bypass the solver.
 14. #14 `feat/auth-hardening-rate-limit-revocation` — `security.LoginRateLimiter` (per-IP, in-memory) on `POST /auth/login`; `jti` claim on every issued JWT + `revoked_tokens` denylist table + `security.revoke_token`, called from `POST /auth/logout`, checked in `get_current_user`; closed both ADR 0006 follow-ups, updated that ADR's "Consequences" section
 15. #15 `feat/phase5-student-ridership-mvp` — `Student`/`Stop`/`RidershipOverride`/`student_guardians` (manual entry, scoped from the real spec doc — see "Phase 5" above), `GET /students/my-family` + `PATCH /students/{id}/ridership`, `services/web` `/family` page + `/setup` Students/Stops sections; fixed a real bug where `POST /users` silently dropped `student_id` (see "Gotchas" above)
 16. #16 `feat/phase6-driver-absence-substitutes` — `DriverAbsence`, `GET /drivers/{id}/substitute-candidates` (school-familiarity + same-day-workload ranking, hard-excludes double-bookings/duty-limit violations), backend-only (see "Phase 6" above); test design deliberately avoided a same-school/non-overlapping-runs solver-tie trap (see "Gotchas" above)
+17. #17 `feat/phase6-absence-substitute-ui` — `GET /absences?service_date=` (date-wide overview), `PATCH /crews/{id}` (driver repoint — added mid-PR after manual testing caught `POST /crews` 409ing every time, see "Gotchas" #9), `services/web` "Driver absences" section on `SchedulePage` (report absence, browse/act on ranked substitutes)
 
-## Key files (current state, post-PR #16)
+## Key files (current state, post-PR #17)
 
 - `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal + revocation check), `LoginRateLimiter`/`login_rate_limiter`, `revoke_token`
 - `services/api/src/isd_api/routers/auth.py` — login rate-limited + sets cookie + returns bearer token; `POST /auth/logout` (still no auth required — a no-op if nothing to revoke, but revokes the current token if one is present)
@@ -303,7 +323,8 @@ PATCH edits that bypass the solver.
 - `services/api/src/isd_api/models.py` — `RevokedToken` (jti denylist), `Assignment.status`/`AssignmentStatus`, `Student`/`Stop`/`RidershipOverride`/`student_guardians` (Phase 5), `User.student_id`, `DriverAbsence`/`AbsenceReason` (Phase 6)
 - `services/api/src/isd_api/routers/students.py` — `POST`/`GET`/`PATCH /students`, `POST /students/{id}/guardians`, `GET /students/my-family`, `PATCH /students/{id}/ridership` — all the Phase 5 RBAC ownership-check logic lives here
 - `services/api/src/isd_api/routers/stops.py` — `POST`/`GET /stops`, admin/dispatcher only
-- `services/api/src/isd_api/routers/absences.py` — `POST`/`GET /drivers/{id}/absences`, `GET /drivers/{id}/substitute-candidates` + `_rank_substitute_candidates` (Phase 6 ranking heuristic, private helper)
+- `services/api/src/isd_api/routers/absences.py` — `POST`/`GET /drivers/{id}/absences`, `GET /absences?service_date=` (all-drivers overview, `all_absences_router`, second router in this file), `GET /drivers/{id}/substitute-candidates` + `_rank_substitute_candidates` (Phase 6 ranking heuristic, private helper)
+- `services/api/src/isd_api/routers/crews.py` — `POST`/`GET /crews`, `PATCH /crews/{id}` (driver-only repoint — see Gotchas #9 for why this exists instead of a second `POST /crews`)
 - `services/api/src/isd_api/main.py` — `CORSMiddleware` config, router registration (check here first if a new router's routes 404 — it needs an `app.include_router(...)` call too, not just existing as a file)
 - `services/solver/src/isd_solver/scheduler.py` — CP-SAT model, duty-limit pairwise constraints, busy-interval constraints
 - `services/solver/src/isd_solver/domain.py` — `Crew.busy_intervals` (validated within `available_window`)
@@ -324,47 +345,49 @@ PATCH edits that bypass the solver.
 ## Exact next step (as of this checkpoint)
 
 Phase 4 MVP (PR #13), auth hardening (PR #14), Phase 5 MVP (PR #15),
-and Phase 6's first slice (PR #16, spec §13) are all **merged**, CI
-green on all four, local `main` synced (commit `907bbe6`). Phases 0–6
-have each shipped at least one real increment now — every phase in
-the original roadmap has *something* built.
+and both of Phase 6's spec §13 increments (PR #16 backend, PR #17 UI
++ crew-repoint fix) are all **merged**, CI green on all five, local
+`main` synced (commit `e25f3fe`). Every phase in the original roadmap
+(0–6) now has real, working, tested functionality — no phase is at
+"nothing built" anymore.
 
 **No known gap is currently blocking further work.** Reasonable next
 candidates, roughly in order of how directly they extend what's just
 shipped:
 
-- **The Phase 6 dispatcher-facing UI** — PR #16 was deliberately
-  backend-only (see "Phase 6" above); a `/setup`-or-new-page flow to
-  report an absence and browse/act on substitute candidates is the
-  natural, already-scoped-on-the-backend-side next increment. This is
-  probably the single most direct next step: the API contract already
-  exists and is tested, "just" needs a `services/web` page the way
-  Phase 3 built the console for Phase 2's mutation endpoints.
 - The rest of Phase 6 — §6/§7/§8/§10's GIS-dependent routing, §12
   field trips, §20 historical learning — genuinely needs a new
   external integration (a real road-network/GIS provider, ADR 0007's
-  "external compute" shape) this project has never built. Don't start
-  this without confirming the user actually wants to take on a new
-  external dependency; it's a materially bigger commitment than any
-  increment shipped so far this session.
+  "external compute" shape) this project has never built. This is now
+  the largest remaining item in the original roadmap. Don't start it
+  without confirming the user actually wants to take on a new external
+  dependency; it's a materially bigger commitment than anything
+  shipped so far this session.
 - Follow-ups intentionally left out of Phases 4/5's own MVPs: wiring
   ridership overrides into the solver's `passenger_count`/re-solve
   (spec §4.3), GPS/live position + notifications (§9/§18, needs a real
   telemetry integration, ADR 0007), absence reporting from the driver
-  app's own UI (today only the API supports a driver reporting their
-  own absence — no `DriverPage.tsx` button for it yet).
+  app's own UI (the API already supports a driver reporting their own
+  absence — `POST /drivers/{id}/absences`, driver-role ownership check
+  already there — just no `DriverPage.tsx` button for it yet; a small,
+  well-scoped increment following the exact same pattern as this
+  session's other UI-follow-up PRs).
 - The one remaining minor, non-blocking polish item: `services/api`
   doesn't use the SQLAlchemy 2.0 mypy plugin, so ORM constructor
   kwargs aren't strictly type-checked against column types — the
-  Phase 5 `student_id` bug (see "Gotchas") is exactly the class of
+  Phase 5 `student_id` bug (see "Gotchas" #7) is exactly the class of
   mistake that plugin would have caught at type-check time instead of
   requiring manual testing to find.
 
-None of these were asked for — don't start one without checking
-whether the user actually wants it over continuing toward the Phase 6
-UI, which is the most natural next step if no other direction is
-given (small, already-scoped, closes out what PR #16 deliberately
-left open).
+None of these were asked for and none is as clearly "the" next step
+the way the last several were (each prior checkpoint had one obvious
+already-scoped follow-up; this one doesn't) — check recent
+conversation for explicit user direction before picking one. If none
+exists, the driver-app absence-reporting UI is the smallest, most
+directly precedented candidate (mirrors Phase 4/5/6's own UI-follow-up
+pattern exactly); the GIS-dependent rest of Phase 6 is the largest and
+most consequential, worth surfacing to the user as a real decision
+point rather than assuming.
 
 ## Environment specifics (this machine)
 
@@ -383,7 +406,16 @@ left open).
   is often hidden/times out) → `form_input` for text fields →
   `computer` `left_click` with a `ref` for buttons (works once the tab
   is fronted via `tabs_select` if the pane was hidden) → `tabs_close` +
-  `TaskStop` cleanup at the end.
+  `TaskStop` cleanup at the end. **Finish all source edits before
+  starting the click-through, not during** — Vite's HMR hot-reloads
+  the page live, and editing `SchedulePage.tsx` mid-interaction (Phase
+  6 UI session) silently reset component state (the substitute-panel
+  results, the service-date field) between clicks, which looked like
+  broken click handling for several tool calls before the actual cause
+  (still-running HMR from an in-progress fix) was obvious. If a click
+  stops producing a network request partway through a verification
+  pass and nothing else changed, check whether a file edit landed in
+  between rather than assuming the click tooling failed.
 - `isd_api_dev.db` (default dev DB path) has been avoided entirely
   since the Phase 4 → auth-hardening boundary, because it's wedged
   behind the "ghost process" gotcha above (`rm`/`del` fails with
