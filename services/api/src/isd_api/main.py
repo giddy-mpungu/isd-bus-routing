@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from isd_api.config import settings
 from isd_api.db import Base, engine
 from isd_api.routers import (
+    absences,
     auth,
     crews,
     drivers,
@@ -61,6 +62,7 @@ app.include_router(runs.router)
 app.include_router(schedule.router)
 app.include_router(stops.router)
 app.include_router(students.router)
+app.include_router(absences.router)
 
 
 @app.get("/health")
