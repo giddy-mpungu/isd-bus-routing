@@ -147,7 +147,6 @@ produces them rather than duplicated here.
 - Ridership reporting cutoff / route-lock configuration (spec §4.4)
 - A recurring `route` (template) table distinct from dated `run` instances — ADR 0001 named this intention for Phase 2+, never built; Phase 5 worked around its absence rather than building it (see RidershipOverride above)
 - Field trips / Trip conflict detection (spec §12) — Phase 6
-- A dispatcher-facing UI for absence reporting/substitute ranking (spec §13 backend is done — see "Phase 6 entities" above; no `services/web` page yet, an intentional, named follow-up)
 - Bus-legal road-network routing and turn penalties (spec §6/7) — Phase 6, requires a routing graph/profile aware of bus dimensions and restrictions, not either estimator above
 - District-specific geographic knowledge / local roadway overrides (spec §8) — Phase 6, depends on §6/7's routing graph existing first
 - Dynamic rerouting around road closures/incidents (spec §10) — Phase 6, same GIS dependency

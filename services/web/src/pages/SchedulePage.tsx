@@ -1,7 +1,32 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { Assignment, Crew, Driver, Qualification, Run, School, Vehicle } from '../api/types'
+import type {
+  Absence,
+  AbsenceReason,
+  AffectedAssignmentSubstitutes,
+  Assignment,
+  Crew,
+  Driver,
+  Qualification,
+  Run,
+  School,
+  SubstituteCandidate,
+  Vehicle,
+} from '../api/types'
+
+const ABSENCE_REASONS: AbsenceReason[] = [
+  'sick_leave',
+  'personal_day',
+  'vacation',
+  'emergency_leave',
+  'training',
+  'approved_leave',
+  'administrative_direction',
+  'injury',
+  'no_call_no_show',
+  'other',
+]
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -22,6 +47,7 @@ export function SchedulePage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [qualifications, setQualifications] = useState<Qualification[]>([])
   const [assignments, setAssignments] = useState<Assignment[]>([])
+  const [absences, setAbsences] = useState<Absence[]>([])
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
@@ -37,6 +63,7 @@ export function SchedulePage() {
         vehiclesData,
         qualificationsData,
         assignmentsData,
+        absencesData,
       ] = await Promise.all([
         api.getRuns(date),
         api.getCrews(date),
@@ -45,6 +72,7 @@ export function SchedulePage() {
         api.getVehicles(),
         api.getQualifications(),
         api.getAssignments(date),
+        api.getAbsencesForDate(date),
       ])
       setRuns(runsData)
       setCrews(crewsData)
@@ -53,6 +81,7 @@ export function SchedulePage() {
       setVehicles(vehiclesData)
       setQualifications(qualificationsData)
       setAssignments(assignmentsData)
+      setAbsences(absencesData)
     } catch (err) {
       setErrorMessage(err instanceof ApiError ? err.message : 'Failed to load schedule data.')
     }
@@ -214,6 +243,90 @@ export function SchedulePage() {
       setRunError(err instanceof ApiError ? err.message : 'Failed to create run.')
     } finally {
       setIsSavingRun(false)
+    }
+  }
+
+  // --- Report absence (for the selected serviceDate) ---
+  const [absenceDriverId, setAbsenceDriverId] = useState('')
+  const [absenceReason, setAbsenceReason] = useState<AbsenceReason>('sick_leave')
+  const [absenceWholeDay, setAbsenceWholeDay] = useState(true)
+  const [absenceStartMinute, setAbsenceStartMinute] = useState('0')
+  const [absenceEndMinute, setAbsenceEndMinute] = useState('1439')
+  const [absenceError, setAbsenceError] = useState<string | null>(null)
+  const [isSavingAbsence, setIsSavingAbsence] = useState(false)
+
+  async function handleCreateAbsence(event: FormEvent) {
+    event.preventDefault()
+    setAbsenceError(null)
+    setIsSavingAbsence(true)
+    try {
+      await api.createAbsence(Number(absenceDriverId), {
+        service_date: serviceDate,
+        start_minute: absenceWholeDay ? 0 : Number(absenceStartMinute),
+        end_minute: absenceWholeDay ? 1439 : Number(absenceEndMinute),
+        reason: absenceReason,
+      })
+      setAbsenceDriverId('')
+      setAbsenceReason('sick_leave')
+      setAbsenceWholeDay(true)
+      setAbsenceStartMinute('0')
+      setAbsenceEndMinute('1439')
+      await loadAll(serviceDate)
+    } catch (err) {
+      setAbsenceError(err instanceof ApiError ? err.message : 'Failed to report absence.')
+    } finally {
+      setIsSavingAbsence(false)
+    }
+  }
+
+  // --- Substitute candidates ---
+  const [substituteDriverId, setSubstituteDriverId] = useState<number | null>(null)
+  const [substituteResults, setSubstituteResults] = useState<AffectedAssignmentSubstitutes[]>([])
+  const [substituteError, setSubstituteError] = useState<string | null>(null)
+  const [assigningKey, setAssigningKey] = useState<string | null>(null)
+
+  async function handleFindSubstitutes(driverId: number) {
+    setSubstituteError(null)
+    setSubstituteDriverId(driverId)
+    try {
+      setSubstituteResults(await api.getSubstituteCandidates(driverId, serviceDate))
+    } catch (err) {
+      setSubstituteError(err instanceof ApiError ? err.message : 'Failed to load substitutes.')
+    }
+  }
+
+  async function handleAssignSubstitute(
+    affected: AffectedAssignmentSubstitutes,
+    candidate: SubstituteCandidate,
+  ) {
+    const key = `${affected.assignment_id}-${candidate.driver_id}`
+    setAssigningKey(key)
+    setSubstituteError(null)
+    try {
+      // A driver can have at most one crew per day, AND a vehicle can
+      // only be on one crew per day (Crew is a driver+vehicle+date
+      // triple, each side unique for that date) — the absent driver's
+      // own crew row already claims the freed vehicle for this date,
+      // so a candidate with no crew of their own can't be paired with
+      // that vehicle via a second POST /crews (the vehicle's own
+      // uniqueness constraint rejects it); repointing that existing
+      // crew's driver (PATCH /crews/{id}) is the way. A candidate who
+      // already has a *different* crew that date is reassigned onto
+      // it via the existing PATCH .../assignments/{id} instead.
+      const existingCrew = crews.find((c) => c.driver_id === candidate.driver_id)
+      if (existingCrew) {
+        await api.updateAssignment(affected.assignment_id, { crew_id: existingCrew.id })
+      } else {
+        await api.updateCrewDriver(affected.crew_id, candidate.driver_id)
+      }
+      await loadAll(serviceDate)
+      if (substituteDriverId !== null) {
+        setSubstituteResults(await api.getSubstituteCandidates(substituteDriverId, serviceDate))
+      }
+    } catch (err) {
+      setSubstituteError(err instanceof ApiError ? err.message : 'Failed to assign substitute.')
+    } finally {
+      setAssigningKey(null)
     }
   }
 
@@ -494,6 +607,149 @@ export function SchedulePage() {
             </button>
           </form>
         </div>
+      </section>
+
+      <section className="absences-section">
+        <h2>Driver absences for {serviceDate}</h2>
+        {absences.length === 0 && <p>No absences reported for this date.</p>}
+        {absences.length > 0 && (
+          <ul>
+            {absences.map((absence) => (
+              <li key={absence.id}>
+                {driversById.get(absence.driver_id)?.full_name ?? `Driver #${absence.driver_id}`}
+                {' — '}
+                {absence.reason.replace(/_/g, ' ')}
+                {' ('}
+                {formatMinuteOfDay(absence.start_minute)}
+                {'–'}
+                {formatMinuteOfDay(absence.end_minute)}
+                {')'}
+                <button
+                  type="button"
+                  onClick={() => void handleFindSubstitutes(absence.driver_id)}
+                  disabled={isBusy}
+                >
+                  Find substitutes
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form onSubmit={(event) => void handleCreateAbsence(event)}>
+          <label htmlFor="absence-driver">Absent driver</label>
+          <select
+            id="absence-driver"
+            value={absenceDriverId}
+            onChange={(event) => setAbsenceDriverId(event.target.value)}
+            required
+          >
+            <option value="" disabled>
+              Select a driver
+            </option>
+            {drivers.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.full_name}
+              </option>
+            ))}
+          </select>
+          <label htmlFor="absence-reason">Reason</label>
+          <select
+            id="absence-reason"
+            value={absenceReason}
+            onChange={(event) => setAbsenceReason(event.target.value as AbsenceReason)}
+          >
+            {ABSENCE_REASONS.map((reason) => (
+              <option key={reason} value={reason}>
+                {reason.replace(/_/g, ' ')}
+              </option>
+            ))}
+          </select>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={absenceWholeDay}
+              onChange={(event) => setAbsenceWholeDay(event.target.checked)}
+            />
+            Whole day
+          </label>
+          {!absenceWholeDay && (
+            <>
+              <label htmlFor="absence-start">Start (minute of day)</label>
+              <input
+                id="absence-start"
+                type="number"
+                min="0"
+                max="1439"
+                value={absenceStartMinute}
+                onChange={(event) => setAbsenceStartMinute(event.target.value)}
+                required
+              />
+              <label htmlFor="absence-end">End (minute of day)</label>
+              <input
+                id="absence-end"
+                type="number"
+                min="0"
+                max="1439"
+                value={absenceEndMinute}
+                onChange={(event) => setAbsenceEndMinute(event.target.value)}
+                required
+              />
+            </>
+          )}
+          {absenceError && (
+            <p role="alert" className="error">
+              {absenceError}
+            </p>
+          )}
+          <button type="submit" disabled={isSavingAbsence}>
+            {isSavingAbsence ? 'Saving…' : 'Report absence'}
+          </button>
+        </form>
+
+        {substituteError && (
+          <p role="alert" className="error">
+            {substituteError}
+          </p>
+        )}
+
+        {substituteDriverId !== null && (
+          <div className="substitute-results">
+            <h3>
+              Substitutes for{' '}
+              {driversById.get(substituteDriverId)?.full_name ?? `Driver #${substituteDriverId}`}
+            </h3>
+            {substituteResults.length === 0 && <p>No affected assignments for this date.</p>}
+            {substituteResults.map((affected) => (
+              <div key={affected.assignment_id} className="affected-assignment">
+                <p>
+                  {affected.school_name} ({formatMinuteOfDay(affected.start_minute)}
+                  {'–'}
+                  {formatMinuteOfDay(affected.end_minute)}) — vehicle {affected.vehicle_label}
+                </p>
+                {affected.candidates.length === 0 && <p>No eligible substitutes found.</p>}
+                <ul>
+                  {affected.candidates.map((candidate) => {
+                    const key = `${affected.assignment_id}-${candidate.driver_id}`
+                    return (
+                      <li key={candidate.driver_id}>
+                        {candidate.full_name} (score {candidate.score}) —{' '}
+                        {candidate.reasons.join('; ')}
+                        <button
+                          type="button"
+                          onClick={() => void handleAssignSubstitute(affected, candidate)}
+                          disabled={assigningKey === key}
+                        >
+                          {assigningKey === key ? 'Assigning…' : 'Assign as substitute'}
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </main>
   )

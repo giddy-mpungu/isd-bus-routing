@@ -1,11 +1,16 @@
 """spec section 13 (driver absence + substitute coverage). Read-only
 decision support only — spec section 13.1's "automatic coverage
 analysis" identifies affected assignments and ranks substitute
-candidates, but completing a substitution reuses the existing
-POST /crews (pair the chosen substitute with the absent driver's
-now-free vehicle) + PATCH /schedule/assignments/{id} (reassign, which
-already re-validates every hard constraint) — not a new endpoint. Spec
-section 21: decision support, not an autonomous authority."""
+candidates, but completing a substitution reuses existing endpoints,
+not a new one: a candidate with no crew of their own that date is
+substituted in via PATCH /crews/{id} (repoints the absent driver's own
+crew — a vehicle already claimed by a crew row for a date can't be
+paired with a second driver via POST /crews, its own uniqueness
+constraint would reject that); a candidate who already has a different
+crew that date is reassigned via the existing
+PATCH /schedule/assignments/{id} instead (which already re-validates
+every hard constraint). Spec section 21: decision support, not an
+autonomous authority."""
 
 from __future__ import annotations
 
@@ -26,6 +31,9 @@ from isd_api.schemas import (
 from isd_api.security import get_current_user, require_role
 
 router = APIRouter(prefix="/drivers", tags=["absences"])
+# Driver-agnostic listing ("who's out today") doesn't fit the /drivers
+# prefix above — a separate router, registered alongside it in main.py.
+all_absences_router = APIRouter(prefix="/absences", tags=["absences"])
 
 
 @router.post(
@@ -92,6 +100,24 @@ def list_absences(
     return list(
         db.query(DriverAbsence)
         .filter(DriverAbsence.driver_id == driver_id, DriverAbsence.service_date == service_date)
+        .order_by(DriverAbsence.id)
+        .all()
+    )
+
+
+@all_absences_router.get("", response_model=list[AbsenceRead])
+def list_all_absences(
+    service_date: date,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role(Role.TRANSPORTATION_ADMIN, Role.DISPATCHER)),
+) -> list[DriverAbsence]:
+    """Who's out on a given date, across all drivers — the overview a
+    dispatcher opening the console for a date needs; the per-driver
+    GET /drivers/{id}/absences above only helps once you already
+    suspect a specific driver is absent."""
+    return list(
+        db.query(DriverAbsence)
+        .filter(DriverAbsence.service_date == service_date)
         .order_by(DriverAbsence.id)
         .all()
     )
@@ -206,6 +232,7 @@ def get_substitute_candidates(
             school_name=a.run.school.name,
             start_minute=a.start_minute,
             end_minute=a.end_minute,
+            crew_id=crew.id,
             vehicle_id=crew.vehicle_id,
             vehicle_label=crew.vehicle.label,
             candidates=_rank_substitute_candidates(db, a),

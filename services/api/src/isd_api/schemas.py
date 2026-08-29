@@ -117,6 +117,10 @@ class CrewRead(BaseModel):
     available_window_latest: int
 
 
+class CrewDriverUpdate(BaseModel):
+    driver_id: int
+
+
 class RunCreate(BaseModel):
     service_date: date
     school_id: int
@@ -305,16 +309,21 @@ class SubstituteCandidate(BaseModel):
 
 class AffectedAssignmentSubstitutes(BaseModel):
     """spec section 13.1: one of the absent driver's assignments for
-    the date, plus ranked substitute candidates and the vehicle that
-    would need re-pairing (POST /crews) with whichever candidate is
-    chosen — completing a substitution reuses that existing endpoint
-    plus PATCH /schedule/assignments/{id}, not a new one."""
+    the date, plus ranked substitute candidates. `crew_id` is the
+    absent driver's own crew (same vehicle, same date) — a candidate
+    with no crew of their own that date gets substituted in by
+    repointing *this* crew's driver (PATCH /crews/{crew_id}), not by
+    creating a second crew for the same vehicle+date, which the
+    vehicle's own uniqueness constraint would reject. A candidate who
+    already has a different crew that date is reassigned via the
+    existing PATCH /schedule/assignments/{id} instead."""
 
     assignment_id: int
     run_id: int
     school_name: str
     start_minute: int
     end_minute: int
+    crew_id: int
     vehicle_id: int
     vehicle_label: str
     candidates: list[SubstituteCandidate]
