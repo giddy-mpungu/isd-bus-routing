@@ -363,11 +363,47 @@ def osrm_deadhead_estimator(
     return estimate
 
 
+def avoid_polygons_geojson(points: list[Location], buffer_degrees: float = 0.0004) -> dict | None:
+    """Builds a GeoJSON MultiPolygon of small squares around each point,
+    for ORS's ``options.avoid_polygons`` (spec section 8: district-
+    specific geographic knowledge). ``buffer_degrees`` defaults to
+    roughly 44m at the equator — a small, deliberately conservative
+    "avoid this specific spot," not a wide exclusion zone. Which
+    GeographicKnowledgeOverride categories get passed in here (and
+    which deliberately don't) is the API layer's decision — see
+    ``routers/schedule.py`` — this function only turns points into
+    geometry, with no opinion on what they mean.
+
+    Returns None for an empty points list; callers should omit
+    ``avoid_polygons`` from the ORS request entirely in that case
+    rather than send an empty/degenerate geometry.
+    """
+    if not points:
+        return None
+
+    rings = []
+    for point in points:
+        lat, lon = point.lat, point.lon
+        rings.append(
+            [
+                [
+                    [lon - buffer_degrees, lat - buffer_degrees],
+                    [lon + buffer_degrees, lat - buffer_degrees],
+                    [lon + buffer_degrees, lat + buffer_degrees],
+                    [lon - buffer_degrees, lat + buffer_degrees],
+                    [lon - buffer_degrees, lat - buffer_degrees],
+                ]
+            ]
+        )
+    return {"type": "MultiPolygon", "coordinates": rings}
+
+
 def ors_deadhead_estimator(
     api_key: str,
     base_url: str = "https://api.openrouteservice.org",
     profile: str = "driving-hgv",
     timeout_seconds: float = 5.0,
+    avoid_polygons: dict | None = None,
     http_post: Callable[[str, dict, dict[str, str], float], dict] | None = None,
     fallback: DeadheadEstimator | None = None,
 ) -> DeadheadEstimator:
@@ -396,9 +432,22 @@ def ors_deadhead_estimator(
     would require `DeadheadEstimator` to carry a `Vehicle` argument,
     which ripples into every `scheduler.py` call site — a deliberate
     follow-up, not part of this estimator. Turn/dead-end safety costs
-    (section 7) and district-specific overrides (section 8) are also
-    out of scope here — this is a point-to-point travel-time estimate,
-    not a customizable routing graph.
+    (section 7) remain out of scope here — this is a point-to-point
+    travel-time estimate, not a customizable routing graph.
+
+    `avoid_polygons` is the wiring point for spec section 8's
+    district-specific geographic knowledge — a GeoJSON Polygon or
+    MultiPolygon (see `avoid_polygons_geojson` above for building one
+    from points) passed straight into ORS's `options.avoid_polygons`.
+    Fixed for the estimator's whole lifetime, not re-evaluated per
+    call, since it represents standing local knowledge rather than
+    anything that varies per origin/destination pair. Which
+    `GeographicKnowledgeOverride` categories actually get turned into
+    an avoid-zone (and which deliberately don't — several categories
+    are cautions, time-dependent, vehicle-dependent, or positive
+    preferences that a hard avoid-zone can't correctly express) is
+    `routers/schedule.py`'s decision, not this function's — it accepts
+    whatever geometry it's given.
 
     Results are cached in-memory per (origin, destination) pair for the
     lifetime of the returned estimator, since the scheduler's pairwise
@@ -429,7 +478,9 @@ def ors_deadhead_estimator(
             return cache[key]
 
         url = f"{base_url}/v2/directions/{profile}"
-        body = {"coordinates": [[a.lon, a.lat], [b.lon, b.lat]]}
+        body: dict = {"coordinates": [[a.lon, a.lat], [b.lon, b.lat]]}
+        if avoid_polygons is not None:
+            body["options"] = {"avoid_polygons": avoid_polygons}
         headers = {"Authorization": api_key}
         try:
             payload = post(url, body, headers, timeout_seconds)

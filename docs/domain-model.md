@@ -88,28 +88,40 @@ implementations exist:
   reference but never wired into `services/api` — superseded in
   practice by `ors_deadhead_estimator` below, which the API layer
   actually uses.
-- `ors_deadhead_estimator` (Phase 6 GIS slice 1): calls the
-  OpenRouteService Directions API (`driving-hgv` profile by default —
-  a real heavy-goods-vehicle profile, closer to spec §6's intent than
-  a passenger-car profile). `services/api`'s `POST /schedule` wires
-  this in automatically when `ISD_API_ORS_API_KEY` is configured
-  (`isd_api.config.settings`), falling back to the straight-line
-  estimator (logged at WARNING) if the ORS call fails. **Still not
-  full bus-legal routing per spec §6** — every crew gets the same
-  `driving-hgv` default regardless of its actual vehicle's dimensions;
-  applying per-vehicle height/width/weight/length restrictions would
-  require widening `DeadheadEstimator`'s signature to also take a
-  `Vehicle`, which ripples into every `scheduler.py` call site — a
-  deliberate follow-up, not part of this estimator. §7 (turn/dead-end
-  safety costs) and §10 (dynamic rerouting from live incident feeds)
-  need a routing *graph* this system doesn't own and can't customize
-  through a simple point-to-point directions call — out of scope here
-  too. Neither `osrm_deadhead_estimator` nor `ors_deadhead_estimator`
-  has been exercised against a live routing server in this development
-  environment (network-restricted sandbox); each takes its HTTP call
-  as a dependency-injected parameter specifically so it can be
-  unit-tested without live network access, and should be validated
-  against a real endpoint before any operational use.
+- `ors_deadhead_estimator` (Phase 6 GIS slice 1, extended in the §8
+  wiring slice): calls the OpenRouteService Directions API
+  (`driving-hgv` profile by default — a real heavy-goods-vehicle
+  profile, closer to spec §6's intent than a passenger-car profile).
+  `services/api`'s `POST /schedule` wires this in automatically when
+  `ISD_API_ORS_API_KEY` is configured (`isd_api.config.settings`),
+  falling back to the straight-line estimator (logged at WARNING) if
+  the ORS call fails. Also accepts `avoid_polygons` (a GeoJSON
+  Polygon/MultiPolygon, built by the `avoid_polygons_geojson` helper
+  next to it) — the wiring point for spec §8's district-specific
+  geographic knowledge: `routers/schedule.py` queries
+  `GeographicKnowledgeOverride` rows for the 3 of 8 categories that
+  genuinely mean "never route through this point"
+  (`FREQUENT_FLOODING`, `UNSAFE_TURN`, `INVALID_TURNAROUND` — see
+  "Phase 6 entities" below for why the other 5 are deliberately
+  excluded) and passes their locations in. **Still not full bus-legal
+  routing per spec §6** — every crew gets the same `driving-hgv`
+  default regardless of its actual vehicle's dimensions; applying
+  per-vehicle height/width/weight/length restrictions would require
+  widening `DeadheadEstimator`'s signature to also take a `Vehicle`,
+  which ripples into every `scheduler.py` call site — a deliberate
+  follow-up, not part of this estimator. §7 (turn/dead-end safety
+  costs) and §10 (dynamic rerouting from live incident feeds) need a
+  routing *graph* this system doesn't own and can't customize through
+  a simple point-to-point directions call — out of scope here too.
+  `osrm_deadhead_estimator` has not been exercised against a live
+  routing server in this development environment (network-restricted
+  sandbox); `ors_deadhead_estimator` **has** — live-verified with a
+  real OpenRouteService API key against real Houston-area coordinates,
+  both for the base estimate and for `avoid_polygons` (confirmed a
+  real detour: forcing a block on a point actually on the route's
+  returned geometry measurably changed the trip duration). Each still
+  takes its HTTP call as a dependency-injected parameter so it can be
+  unit-tested without live network access in CI.
 
 ### Assignment / SchedulingResult / Explanation
 See `scheduler.py` and `explain.py` docstrings — these are the solver
@@ -174,9 +186,19 @@ produces them rather than duplicated here.
   transportation_admin and dispatcher (day-to-day operational
   knowledge, same RBAC shape as `DriverAbsence`, broader than
   `Stop`'s admin-only creation). Who added it is the audit log, same
-  precedent as `DriverAbsence`. **Not yet wired into any route
-  calculation** — spec §8's own text defers that to "future route
-  calculations"; this slice only persists the knowledge.
+  precedent as `DriverAbsence`. **Now partially applied to routing**
+  (the §8 wiring slice): `routers/schedule.py`'s `_HARD_AVOID_CATEGORIES`
+  turns `FREQUENT_FLOODING`/`UNSAFE_TURN`/`INVALID_TURNAROUND` overrides
+  into ORS `avoid_polygons` (`isd_solver.domain.avoid_polygons_geojson`)
+  on every `POST /schedule` when an ORS key is configured. The other 5
+  categories are deliberately excluded, not just not-yet-built:
+  `DIFFICULT_INTERSECTION` is a caution/cost, not a hard block;
+  `CONGESTION_WINDOW` is time-of-day dependent and the estimator has
+  no time parameter; `VEHICLE_SIZE_RESTRICTED` depends on which
+  vehicle (ties to the still-deferred per-vehicle-restrictions
+  follow-up); `PREFERRED_ENTRANCE` is a positive preference, the
+  opposite of an avoidance, needing a different mechanism entirely;
+  `OTHER` is too ambiguous to apply an unpredictable effect for.
 
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
@@ -186,7 +208,7 @@ produces them rather than duplicated here.
 - A recurring `route` (template) table distinct from dated `run` instances — ADR 0001 named this intention for Phase 2+, never built; Phase 5 worked around its absence rather than building it (see RidershipOverride above)
 - Field trips / Trip conflict detection (spec §12) — Phase 6
 - Full bus-legal routing per spec §6/7 — `ors_deadhead_estimator` (Phase 6 GIS slice 1, above) gets real road-network travel time on a heavy-vehicle profile, but not yet: per-vehicle height/width/weight/length restrictions, turning-radius awareness, or turn/dead-end safety costs (§7) — all need a routing graph/profile this system doesn't own, not just a point-to-point directions call
-- District-specific geographic knowledge / local roadway overrides (spec §8) — persistence done (`GeographicKnowledgeOverride`, above); wiring these into actual route calculations (e.g. ORS `avoid_polygons`) is what remains, per spec §8's own "future route calculations" framing
+- District-specific geographic knowledge / local roadway overrides (spec §8) — persistence done, and 3 of 8 categories now applied to routing via ORS `avoid_polygons` (`GeographicKnowledgeOverride`, above); the other 5 categories (caution/time-dependent/vehicle-dependent/preference/ambiguous) each need a different mechanism than a hard avoid-zone, not just more plumbing
 - Dynamic rerouting around road closures/incidents (spec §10) — Phase 6, same GIS dependency
 - Live GPS bus location, delay/substitution/route-change notifications (spec §18) — Phase 6+, no live-tracking or notification infrastructure exists yet
 - Historical operational data / learning-adjusted estimates (spec §20) — Phase 6
