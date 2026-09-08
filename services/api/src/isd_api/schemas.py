@@ -201,7 +201,11 @@ class ScheduleRequest(BaseModel):
         gt=0,
         description=(
             "Straight-line deadhead approximation speed (Phase 1 estimator). "
-            "This is not bus-legal routing — see docs/adr/0006."
+            "Used directly when no ISD_API_ORS_API_KEY is configured; when one "
+            "is, this instead serves as the fallback speed if the "
+            "OpenRouteService routing call fails (see isd_api.config.settings, "
+            "isd_solver.domain.ors_deadhead_estimator). This is not full "
+            "bus-legal routing — see docs/adr/0007."
         ),
     )
 
