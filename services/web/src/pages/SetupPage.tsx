@@ -3,6 +3,8 @@ import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type {
   Driver,
+  GeographicKnowledgeCategory,
+  GeographicKnowledgeOverride,
   Qualification,
   QualificationKind,
   RidershipDefault,
@@ -22,9 +24,27 @@ function qualificationLabel(q: Qualification): string {
   return q.description ? `${q.code} — ${q.description}` : q.code
 }
 
+const GEO_CATEGORIES: GeographicKnowledgeCategory[] = [
+  'frequent_flooding',
+  'difficult_intersection',
+  'unsafe_turn',
+  'invalid_turnaround',
+  'congestion_window',
+  'vehicle_size_restricted',
+  'preferred_entrance',
+  'other',
+]
+
 export function SetupPage() {
   const { user } = useAuth()
   const canCreate = user?.role === 'transportation_admin'
+  // District geographic-knowledge overrides are day-to-day operational
+  // knowledge (services/api/src/isd_api/routers/geographic_knowledge.py
+  // allows both roles to create), not structural master data like
+  // schools/vehicles — so this section's create form has its own,
+  // broader gate than canCreate above.
+  const canCreateDistrictKnowledge =
+    user?.role === 'transportation_admin' || user?.role === 'dispatcher'
 
   const [schools, setSchools] = useState<School[]>([])
   const [qualifications, setQualifications] = useState<Qualification[]>([])
@@ -32,26 +52,36 @@ export function SetupPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [stops, setStops] = useState<Stop[]>([])
   const [students, setStudents] = useState<Student[]>([])
+  const [geoOverrides, setGeoOverrides] = useState<GeographicKnowledgeOverride[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const loadAll = useCallback(async () => {
     setErrorMessage(null)
     try {
-      const [schoolsData, qualificationsData, driversData, vehiclesData, stopsData, studentsData] =
-        await Promise.all([
-          api.getSchools(),
-          api.getQualifications(),
-          api.getDrivers(),
-          api.getVehicles(),
-          api.getStops(),
-          api.getStudents(),
-        ])
+      const [
+        schoolsData,
+        qualificationsData,
+        driversData,
+        vehiclesData,
+        stopsData,
+        studentsData,
+        geoOverridesData,
+      ] = await Promise.all([
+        api.getSchools(),
+        api.getQualifications(),
+        api.getDrivers(),
+        api.getVehicles(),
+        api.getStops(),
+        api.getStudents(),
+        api.getGeographicKnowledgeOverrides(),
+      ])
       setSchools(schoolsData)
       setQualifications(qualificationsData)
       setDrivers(driversData)
       setVehicles(vehiclesData)
       setStops(stopsData)
       setStudents(studentsData)
+      setGeoOverrides(geoOverridesData)
     } catch (err) {
       setErrorMessage(err instanceof ApiError ? err.message : 'Failed to load setup data.')
     }
@@ -227,6 +257,37 @@ export function SetupPage() {
       setStopError(err instanceof ApiError ? err.message : 'Failed to create stop.')
     } finally {
       setIsSavingStop(false)
+    }
+  }
+
+  // --- District geographic knowledge (spec section 8) ---
+  const [geoLat, setGeoLat] = useState('')
+  const [geoLon, setGeoLon] = useState('')
+  const [geoCategory, setGeoCategory] = useState<GeographicKnowledgeCategory>('frequent_flooding')
+  const [geoNote, setGeoNote] = useState('')
+  const [geoError, setGeoError] = useState<string | null>(null)
+  const [isSavingGeo, setIsSavingGeo] = useState(false)
+
+  async function handleCreateGeoOverride(event: FormEvent) {
+    event.preventDefault()
+    setGeoError(null)
+    setIsSavingGeo(true)
+    try {
+      await api.createGeographicKnowledgeOverride({
+        location_lat: Number(geoLat),
+        location_lon: Number(geoLon),
+        category: geoCategory,
+        note: geoNote,
+      })
+      setGeoLat('')
+      setGeoLon('')
+      setGeoCategory('frequent_flooding')
+      setGeoNote('')
+      await loadAll()
+    } catch (err) {
+      setGeoError(err instanceof ApiError ? err.message : 'Failed to create override.')
+    } finally {
+      setIsSavingGeo(false)
     }
   }
 
@@ -527,6 +588,68 @@ export function SetupPage() {
             )}
             <button type="submit" disabled={isSavingStop}>
               {isSavingStop ? 'Saving…' : 'Add stop'}
+            </button>
+          </form>
+        )}
+      </section>
+
+      <section>
+        <h2>District geographic knowledge</h2>
+        <ul>
+          {geoOverrides.map((o) => (
+            <li key={o.id}>
+              [{o.category.replace(/_/g, ' ')}] {o.note} ({o.location_lat}, {o.location_lon})
+            </li>
+          ))}
+        </ul>
+        {canCreateDistrictKnowledge && (
+          <form onSubmit={(event) => void handleCreateGeoOverride(event)}>
+            <label htmlFor="geo-lat">Override latitude</label>
+            <input
+              id="geo-lat"
+              type="number"
+              step="any"
+              value={geoLat}
+              onChange={(event) => setGeoLat(event.target.value)}
+              required
+            />
+            <label htmlFor="geo-lon">Override longitude</label>
+            <input
+              id="geo-lon"
+              type="number"
+              step="any"
+              value={geoLon}
+              onChange={(event) => setGeoLon(event.target.value)}
+              required
+            />
+            <label htmlFor="geo-category">Category</label>
+            <select
+              id="geo-category"
+              value={geoCategory}
+              onChange={(event) =>
+                setGeoCategory(event.target.value as GeographicKnowledgeCategory)
+              }
+            >
+              {GEO_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {category.replace(/_/g, ' ')}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="geo-note">Note</label>
+            <textarea
+              id="geo-note"
+              value={geoNote}
+              onChange={(event) => setGeoNote(event.target.value)}
+              required
+            />
+            {geoError && (
+              <p role="alert" className="error">
+                {geoError}
+              </p>
+            )}
+            <button type="submit" disabled={isSavingGeo}>
+              {isSavingGeo ? 'Saving…' : 'Add override'}
             </button>
           </form>
         )}
