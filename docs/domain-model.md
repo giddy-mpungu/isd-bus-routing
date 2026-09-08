@@ -46,6 +46,17 @@ route window). Trips (spec §12) will extend this in a later phase.
 - `nominal_capacity`, `effective_capacity` (spec §15 distinguishes
   these; either or both may be `None` if unknown). `allowable_capacity()`
   returns effective if known, else nominal, else `None`.
+- `length_m`, `width_m`, `height_m`, `weight_kg` (spec §6's vehicle
+  profile, Phase 6 GIS slice — persisted only. `DeadheadEstimator`
+  (below) is still `Callable[[Location, Location], int]`, with no
+  `Vehicle` argument, so nothing in the scheduler reads these yet —
+  see the "DeadheadEstimator" section for exactly what's deferred and
+  why). Deliberately not persisting turning radius (no ORS HGV
+  restriction parameter could consume it), wheelchair configuration
+  (already modeled via the `qualifications` capability-tag system
+  above), vehicle type (no per-vehicle ORS profile switching exists),
+  or "applicable road restrictions" (that's what height/width/weight
+  restrictions already express at the routing-provider level).
 
 ### Driver
 - `id`
@@ -207,7 +218,7 @@ produces them rather than duplicated here.
 - Ridership reporting cutoff / route-lock configuration (spec §4.4)
 - A recurring `route` (template) table distinct from dated `run` instances — ADR 0001 named this intention for Phase 2+, never built; Phase 5 worked around its absence rather than building it (see RidershipOverride above)
 - Field trips / Trip conflict detection (spec §12) — Phase 6
-- Full bus-legal routing per spec §6/7 — `ors_deadhead_estimator` (Phase 6 GIS slice 1, above) gets real road-network travel time on a heavy-vehicle profile, but not yet: per-vehicle height/width/weight/length restrictions, turning-radius awareness, or turn/dead-end safety costs (§7) — all need a routing graph/profile this system doesn't own, not just a point-to-point directions call
+- Full bus-legal routing per spec §6/7 — `ors_deadhead_estimator` (Phase 6 GIS slice 1) gets real road-network travel time on a heavy-vehicle profile, and `Vehicle` now persists length/width/height/weight (Phase 6 GIS slice, above), but the two still aren't connected: `DeadheadEstimator`'s signature doesn't take a `Vehicle` yet, so every crew still gets the same undifferentiated `driving-hgv` profile. Turn/dead-end safety costs (§7) need a routing graph/profile this system doesn't own, not just a point-to-point directions call — out of scope regardless.
 - District-specific geographic knowledge / local roadway overrides (spec §8) — persistence done, and 3 of 8 categories now applied to routing via ORS `avoid_polygons` (`GeographicKnowledgeOverride`, above); the other 5 categories (caution/time-dependent/vehicle-dependent/preference/ambiguous) each need a different mechanism than a hard avoid-zone, not just more plumbing
 - Dynamic rerouting around road closures/incidents (spec §10) — Phase 6, same GIS dependency
 - Live GPS bus location, delay/substitution/route-change notifications (spec §18) — Phase 6+, no live-tracking or notification infrastructure exists yet

@@ -134,12 +134,29 @@ class Vehicle:
     passenger age, seating configuration, or wheelchair use). Both are
     optional so existing callers that don't model capacity are
     unaffected; allowable_capacity() is what the scheduler enforces.
+
+    length_m/width_m/height_m/weight_kg (spec section 6's vehicle
+    profile) are persisted but NOT YET consumed anywhere in this
+    module — `DeadheadEstimator` (below) is still
+    `Callable[[Location, Location], int]`, with no `Vehicle` argument,
+    so every crew still gets ORS's plain `driving-hgv` profile
+    regardless of its actual vehicle's dimensions. Widening that
+    signature (and `scheduler.py`'s pairwise-ordering loop, which
+    currently calls the estimator once per job-pair shared across
+    every candidate crew, not once per (job-pair, crew)) is a
+    deliberate follow-up, not part of this change — same "persist
+    first, wire in as a named follow-up" shape as spec section 8's
+    `GeographicKnowledgeOverride`.
     """
 
     id: str
     qualifications: frozenset[str] = field(default_factory=frozenset)
     nominal_capacity: int | None = None
     effective_capacity: int | None = None
+    length_m: float | None = None
+    width_m: float | None = None
+    height_m: float | None = None
+    weight_kg: float | None = None
 
     def __post_init__(self) -> None:
         if self.nominal_capacity is not None and self.nominal_capacity <= 0:
@@ -155,6 +172,10 @@ class Vehicle:
                 f"Vehicle {self.id}: effective_capacity ({self.effective_capacity}) "
                 f"cannot exceed nominal_capacity ({self.nominal_capacity})"
             )
+        for field_name in ("length_m", "width_m", "height_m", "weight_kg"):
+            value = getattr(self, field_name)
+            if value is not None and value <= 0:
+                raise ValueError(f"Vehicle {self.id}: {field_name} must be > 0")
 
     def allowable_capacity(self) -> int | None:
         """The capacity the scheduler enforces against passenger demand
