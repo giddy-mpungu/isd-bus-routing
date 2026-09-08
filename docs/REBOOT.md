@@ -266,9 +266,10 @@ PATCH edits that bypass the solver.
   solver's re-optimization (§4.3), cutoff/lock rules (§4.4), live
   GPS/ETA and notifications (§18, Phase 6+).
 - **Phase 6** (dynamic rerouting, substitutes, field trips, historical
-  learning) — **spec §13 done (backend+UI), §6 GIS slice 1 done**
+  learning) — **spec §13 done (backend+UI), §6 GIS slice 1 done, §8
+  done (persistence only)**
   (PR #16 backend, PR #17 UI + a real bug fix — see "Gotchas" #9;
-  PR #18 GIS slice 1). `DriverAbsence`
+  PR #18 GIS slice 1; PR #19 §8 district geo knowledge). `DriverAbsence`
   entity (a driver reports their own, or dispatcher/admin reports for
   any driver, `POST /drivers/{id}/absences`; `GET /absences?service_date=`
   for the date-wide overview); `GET /drivers/{id}/substitute-candidates`
@@ -301,12 +302,31 @@ PATCH edits that bypass the solver.
   rerouting, §12 field trips, §20 historical learning — all still not
   started, each needs either a routing graph this system doesn't own
   or its own new persisted entity/UI.
+  **§8 district geographic knowledge (PR #19)**: `GeographicKnowledgeOverride`
+  (`services/api/src/isd_api/routers/geographic_knowledge.py`) —
+  transportation_admin/dispatcher record local roadway knowledge
+  (flooding, difficult intersections, unsafe turns, invalid
+  turnarounds, congestion windows, vehicle-size restrictions,
+  preferred entrances, other) via `POST`/`GET /geographic-knowledge`,
+  audited. RBAC deliberately matches `DriverAbsence` (both roles can
+  create — day-to-day operational knowledge) rather than `Stop`
+  (admin-only structural master data). `services/web`'s `/setup` page
+  gained a "District geographic knowledge" section, gated on a new
+  `canCreateDistrictKnowledge` boolean distinct from the page's
+  existing admin-only `canCreate`. **Persistence only** — per ADR
+  0007 this is the one piece of routing data the system owns itself,
+  but spec §8's own text defers wiring it into actual route
+  calculations ("future route calculations") — not done yet, named as
+  a follow-up. Manually verified live against a real running server as
+  both dispatcher and transportation_admin (see "Environment
+  specifics" below for two real environment quirks hit and worked
+  around along the way — neither was a bug in this feature's code).
 - **Auth hardening** (PR #14) — **Done.** Both ADR 0006 follow-ups
   closed: login rate limiting, logout token revocation. See "Auth"
   under Architecture above for detail.
 - **CI**: `.github/workflows/ci.yml`, 4 jobs (solver/api/web/docker),
   runs on every push to `main` and every PR. Currently green (verified
-  via `gh pr checks --watch` on PR #17, not just assumed).
+  via `gh pr checks --watch` on PR #19, not just assumed).
 
 ## PRs merged this session (chronological)
 
@@ -328,8 +348,9 @@ PATCH edits that bypass the solver.
 16. #16 `feat/phase6-driver-absence-substitutes` — `DriverAbsence`, `GET /drivers/{id}/substitute-candidates` (school-familiarity + same-day-workload ranking, hard-excludes double-bookings/duty-limit violations), backend-only (see "Phase 6" above); test design deliberately avoided a same-school/non-overlapping-runs solver-tie trap (see "Gotchas" above)
 17. #17 `feat/phase6-absence-substitute-ui` — `GET /absences?service_date=` (date-wide overview), `PATCH /crews/{id}` (driver repoint — added mid-PR after manual testing caught `POST /crews` 409ing every time, see "Gotchas" #9), `services/web` "Driver absences" section on `SchedulePage` (report absence, browse/act on ranked substitutes)
 18. #18 `feat/phase6-gis-ors-deadhead-estimator` — Phase 6 GIS slice 1: `isd_solver.ors_deadhead_estimator` (OpenRouteService `driving-hgv` profile), wired into `POST /schedule` opt-in via `ISD_API_ORS_API_KEY`, falls back to the straight-line estimator when unset or on API failure; also fixed a stale doc claim in `architecture.md`/`domain-model.md` that substitute assignment still used `POST /crews` (PR #17 already replaced that with `PATCH /crews/{id}`)
+19. #19 `feat/phase6-district-geographic-knowledge` — Phase 6 spec §8: `GeographicKnowledgeOverride` entity, `POST`/`GET /geographic-knowledge` (transportation_admin + dispatcher, audited), `services/web` "District geographic knowledge" section on `SetupPage`; persistence only, not yet wired into route calculations (spec §8's own deferral)
 
-## Key files (current state, post-PR #18)
+## Key files (current state, post-PR #19)
 
 - `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal + revocation check), `LoginRateLimiter`/`login_rate_limiter`, `revoke_token`
 - `services/api/src/isd_api/routers/auth.py` — login rate-limited + sets cookie + returns bearer token; `POST /auth/logout` (still no auth required — a no-op if nothing to revoke, but revokes the current token if one is present)
@@ -341,6 +362,7 @@ PATCH edits that bypass the solver.
 - `services/api/src/isd_api/routers/stops.py` — `POST`/`GET /stops`, admin/dispatcher only
 - `services/api/src/isd_api/routers/absences.py` — `POST`/`GET /drivers/{id}/absences`, `GET /absences?service_date=` (all-drivers overview, `all_absences_router`, second router in this file), `GET /drivers/{id}/substitute-candidates` + `_rank_substitute_candidates` (Phase 6 ranking heuristic, private helper)
 - `services/api/src/isd_api/routers/crews.py` — `POST`/`GET /crews`, `PATCH /crews/{id}` (driver-only repoint — see Gotchas #9 for why this exists instead of a second `POST /crews`)
+- `services/api/src/isd_api/routers/geographic_knowledge.py` — `POST`/`GET /geographic-knowledge` (spec §8, Phase 6 GIS slice 2 — transportation_admin + dispatcher, audited, persistence only)
 - `services/api/src/isd_api/main.py` — `CORSMiddleware` config, router registration (check here first if a new router's routes 404 — it needs an `app.include_router(...)` call too, not just existing as a file)
 - `services/solver/src/isd_solver/scheduler.py` — CP-SAT model, duty-limit pairwise constraints, busy-interval constraints
 - `services/solver/src/isd_solver/domain.py` — `Crew.busy_intervals` (validated within `available_window`)
@@ -362,40 +384,38 @@ PATCH edits that bypass the solver.
 
 Phase 4 MVP (PR #13), auth hardening (PR #14), Phase 5 MVP (PR #15),
 both of Phase 6's spec §13 increments (PR #16 backend, PR #17 UI +
-crew-repoint fix), and Phase 6's GIS slice 1 (PR #18, ORS deadhead
-estimator) are all **merged**, CI green on all six, local `main`
-synced (commit `75f0369`). The user explicitly confirmed they wanted
-Phase 6's GIS work started (chose OpenRouteService over HERE — free-
-tier signup was giving them trouble — and over self-hosted
-OSRM/GraphHopper — avoids ops burden for a solo founder for now).
+crew-repoint fix), Phase 6's GIS slice 1 (PR #18, ORS deadhead
+estimator, live-verified end-to-end with a real ORS API key against a
+real running server), and Phase 6's spec §8 slice (PR #19, district
+geographic knowledge, also live-verified as both dispatcher and
+transportation_admin) are all **merged**, CI green on all seven, local
+`main` synced (commit `9db478d`). The user explicitly confirmed
+wanting Phase 6's GIS work started, chose OpenRouteService, then said
+"continue" after PR #18 shipped — §8 was picked next as the most
+directly scoped follow-up (small, precedented shape, layers onto the
+routing call PR #18 just added).
 
 **No known gap is currently blocking further work.** Reasonable next
 candidates, roughly in order of how directly they extend what's just
 shipped:
 
-- **The rest of Phase 6's GIS work** — PR #18 only swapped the
-  deadhead-estimation number for a real one; nothing else in §6/§7/§8/
-  §10 is built yet:
+- **The rest of Phase 6's GIS work** — §6/§8 are both "slice 1" only,
+  nothing else in §6/§7/§8/§10 is built yet:
   - Per-vehicle HGV restrictions (height/width/weight/length, spec
     §6) — needs `DeadheadEstimator`'s signature to grow a `Vehicle`
     parameter (ripples into every `services/solver/src/isd_solver/scheduler.py`
     call site) plus new `Vehicle` fields end-to-end (domain dataclass,
     DB column, Pydantic schema, `SetupPage.tsx` form — see gotcha #7,
     "three places").
+  - Actually wiring §8's `GeographicKnowledgeOverride` rows into the
+    ORS routing call (e.g. `avoid_polygons`/`avoid_features`) — PR #19
+    only persists the knowledge, spec §8's own text explicitly defers
+    this ("future route calculations"). The natural next increment
+    once there's an appetite for touching the ORS request shape again.
   - §7 turn/dead-end safety costs, §10 dynamic rerouting — need a
     routing *graph* this system doesn't own; ORS's simple
-    point-to-point directions call (what PR #18 uses) can't express
-    per-turn costs. A materially bigger undertaking than slice 1.
-  - §8 district-specific overrides — this system's own data per ADR
-    0007 ("external compute, not owned data" — overrides are the
-    named exception), needs a new persisted entity + UI. The most
-    naturally scoped *next* GIS increment, once there's a real routing
-    call (there now is) to layer it onto.
-  - Manual verification of PR #18 itself is still outstanding — no
-    live network in this sandbox to confirm real ORS distances
-    end-to-end. Get a free key at openrouteservice.org, set
-    `ISD_API_ORS_API_KEY`, and re-run a `POST /schedule` somewhere
-    with real network access, when convenient.
+    point-to-point directions call can't express per-turn costs. A
+    materially bigger undertaking than either slice so far.
 - §12 field trips, §20 historical learning — the rest of Phase 6,
   untouched so far, each its own scoping exercise from the spec text.
 - Follow-ups intentionally left out of Phases 4/5's own MVPs: wiring
@@ -412,11 +432,9 @@ shipped:
   mistake that plugin would have caught at type-check time instead of
   requiring manual testing to find.
 
-District-specific overrides (§8) is the most directly scoped next GIS
-increment (small, precedented shape — new entity + UI, same pattern as
-every prior phase's MVP); the driver-app absence-reporting UI is the
-smallest cross-phase candidate if GIS work should pause. Check recent
-conversation for explicit user direction before picking either.
+Check recent conversation for explicit user direction before picking
+one — none of these is clearly "the" next step the way §8 was after
+GIS slice 1.
 
 ## Environment specifics (this machine)
 
@@ -461,6 +479,36 @@ conversation for explicit user direction before picking either.
   tool's `preview_start` — if a Vite dev server is already running on
   that port from a prior turn, `preview_start` attaches to it instead
   of starting a new one (`"url"` config, no `runtimeExecutable`).
+- **The "ghost process" gotcha (#6 above) also hits `npm run dev`
+  (Vite/node), not just uvicorn.** Discovered during PR #19's manual
+  verification: a `npm run dev` backgrounded via the Bash tool with a
+  different `VITE_API_BASE_URL` left a still-running process squatting
+  on port 5173 with the *old* env var baked in; a second `npm run dev`
+  attempt silently fell through to 5174, then 5175 (Vite's own
+  fallback-port behavior), while the Browser pane kept talking to the
+  stale 5173 ghost with the wrong API port compiled in — looked like a
+  CORS failure (browser console literally said "blocked by CORS
+  policy") until traced to the mismatched port. Same fix as the
+  uvicorn case: don't hunt the PID, just point the *next* API instance
+  at whatever port the still-live ghost's frontend already expects
+  (simplest fix in the moment), or use a genuinely fresh port pair for
+  both frontend and backend together, not just the backend.
+- **A `.test`-TLD email (e.g. `admin@geo-verify.test`) as bootstrap/
+  scratch test data crashes `GET /users/me` with a 500**, not the 401/
+  CORS error it superficially looks like in a browser's console. Root
+  cause: pydantic's `EmailStr` (via `email-validator`) rejects `.test`
+  as a reserved/special-use TLD at **response serialization** time
+  (`UserRead.email`), not at input validation — so login (`POST
+  /auth/login`, which never re-serializes the email) succeeds fine,
+  and the crash only surfaces on the *next* request that reads that
+  user's own record back, which a browser reports as a CORS failure
+  (no CORS headers survive an unhandled 500 in this middleware
+  ordering) — a red herring that cost real debugging time during PR
+  #19's manual verification before the actual server log traceback was
+  checked. Use `.org`/`.com`/`example.org`-style scratch emails for any
+  bootstrap/manual-testing user, never `.test`/`.invalid`/`.example`
+  reserved TLDs, even though they're the "correct" RFC 2606 choice for
+  throwaway data in most other contexts.
 
 ## Memory system
 
