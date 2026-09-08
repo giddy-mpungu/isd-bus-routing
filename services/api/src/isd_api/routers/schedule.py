@@ -22,6 +22,7 @@ from isd_solver import (
 from isd_solver import (
     InfeasibleResult,
     SchedulingResult,
+    avoid_polygons_geojson,
     ors_deadhead_estimator,
     solve_multi_school_schedule,
     straight_line_deadhead_estimator,
@@ -43,7 +44,13 @@ from sqlalchemy.orm import Session
 from isd_api.audit import record as record_audit
 from isd_api.config import settings
 from isd_api.db import get_db
-from isd_api.models import Assignment, Role, User
+from isd_api.models import (
+    Assignment,
+    GeographicKnowledgeCategory,
+    GeographicKnowledgeOverride,
+    Role,
+    User,
+)
 from isd_api.models import Crew as DBCrew
 from isd_api.models import Run as DBRun
 from isd_api.schemas import (
@@ -57,6 +64,22 @@ from isd_api.schemas import (
 from isd_api.security import get_current_user, require_role
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
+
+# spec section 8: which GeographicKnowledgeOverride categories become a hard
+# ORS avoid-zone. Deliberately NOT all 8 categories — DIFFICULT_INTERSECTION
+# is a caution/cost rather than a block (blanket-avoiding could make routing
+# infeasible for something only meant as "drive carefully here"); CONGESTION_WINDOW
+# is time-of-day dependent and the estimator has no time parameter; VEHICLE_SIZE_RESTRICTED
+# depends on which vehicle, tying to the still-deferred per-vehicle-restrictions
+# follow-up; PREFERRED_ENTRANCE is a positive preference, the opposite of an
+# avoidance, needing a different mechanism entirely; OTHER is too ambiguous to
+# apply an unpredictable effect for. See isd_solver.domain.ors_deadhead_estimator's
+# avoid_polygons docstring for the geometry side of this.
+_HARD_AVOID_CATEGORIES = (
+    GeographicKnowledgeCategory.FREQUENT_FLOODING,
+    GeographicKnowledgeCategory.UNSAFE_TURN,
+    GeographicKnowledgeCategory.INVALID_TURNAROUND,
+)
 
 
 def _to_solver_inputs(
@@ -224,10 +247,17 @@ def run_schedule(
         average_speed_kmh=payload.average_deadhead_speed_kmh
     )
     if settings.ors_api_key:
+        avoid_points = [
+            SolverLocation(lat=override.location_lat, lon=override.location_lon)
+            for override in db.query(GeographicKnowledgeOverride)
+            .filter(GeographicKnowledgeOverride.category.in_(_HARD_AVOID_CATEGORIES))
+            .all()
+        ]
         estimator = ors_deadhead_estimator(
             api_key=settings.ors_api_key,
             base_url=settings.ors_base_url,
             profile=settings.ors_profile,
+            avoid_polygons=avoid_polygons_geojson(avoid_points),
             fallback=fallback_estimator,
         )
     else:

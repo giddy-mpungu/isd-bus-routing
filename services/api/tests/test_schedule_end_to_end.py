@@ -158,6 +158,60 @@ def test_schedule_uses_ors_estimator_when_api_key_configured(client, admin_heade
     assert "fallback" in calls[0]
 
 
+def test_schedule_ors_estimator_gets_avoid_polygons_for_hard_avoid_categories_only(
+    client, admin_headers, monkeypatch
+):
+    """Phase 6 spec section 8 wiring: only GeographicKnowledgeOverride rows
+    whose category is a hard-avoid one (frequent_flooding, unsafe_turn,
+    invalid_turnaround) should end up in the ORS avoid_polygons geometry
+    — a preferred_entrance override (a positive preference, the opposite
+    of an avoidance) must not."""
+    _school, _crew, _run = _seed_single_run_scenario(client, admin_headers)
+    client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={
+            "location_lat": 29.70,
+            "location_lon": -95.40,
+            "category": "frequent_flooding",
+            "note": "Floods after heavy rain.",
+        },
+    )
+    client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={
+            "location_lat": 29.80,
+            "location_lon": -95.50,
+            "category": "preferred_entrance",
+            "note": "Use the north gate for field trips.",
+        },
+    )
+
+    import isd_api.routers.schedule as schedule_module
+
+    monkeypatch.setattr(schedule_module.settings, "ors_api_key", "test-key")
+    calls = []
+
+    def fake_ors_deadhead_estimator(**kwargs):
+        calls.append(kwargs)
+        return lambda a, b: 5
+
+    monkeypatch.setattr(schedule_module, "ors_deadhead_estimator", fake_ors_deadhead_estimator)
+
+    response = client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
+    assert response.status_code == 200, response.text
+
+    avoid_polygons = calls[0]["avoid_polygons"]
+    assert avoid_polygons["type"] == "MultiPolygon"
+    assert len(avoid_polygons["coordinates"]) == 1  # only the flooding override, not the entrance
+    ring = avoid_polygons["coordinates"][0][0]
+    lons = [c[0] for c in ring]
+    lats = [c[1] for c in ring]
+    assert min(lons) < -95.40 < max(lons)
+    assert min(lats) < 29.70 < max(lats)
+
+
 def test_schedule_uses_straight_line_estimator_when_no_ors_key_configured(
     client, admin_headers, monkeypatch
 ):
