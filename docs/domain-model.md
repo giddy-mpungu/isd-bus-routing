@@ -77,20 +77,39 @@ route window). Trips (spec §12) will extend this in a later phase.
   the pairwise job-vs-job case.
 
 ### DeadheadEstimator
-A pluggable function `(location_a, location_b) -> minutes`. Two
-implementations ship in Phase 1:
-- `straight_line_deadhead_estimator`: haversine distance / average
-  speed, explicitly labeled as an approximation.
-- `osrm_deadhead_estimator`: calls an OSRM-compatible routing HTTP API
-  for a real road-network travel-time estimate. This is still **not**
-  the bus-legal routing spec §6 requires — it uses a passenger-car
-  driving profile, with no height/weight/turning-radius/road-restriction
-  awareness. It has not been exercised against a live routing server in
-  this development environment (network-restricted sandbox); its
-  `http_get` parameter is dependency-injected specifically so it can be
-  unit-tested without live network access, and it should be validated
-  against a real endpoint before any operational use. A true bus-legal
-  routing profile remains a Phase 6 integration point.
+A pluggable function `(location_a, location_b) -> minutes`. Three
+implementations exist:
+- `straight_line_deadhead_estimator` (Phase 1): haversine distance /
+  average speed, explicitly labeled as an approximation. Used whenever
+  no routing API key is configured — the default for CI/tests/local
+  dev, and the automatic fallback if a routing API call fails.
+- `osrm_deadhead_estimator` (Phase 1, unwired): calls an
+  OSRM-compatible routing HTTP API. Written as a scaffold/pattern
+  reference but never wired into `services/api` — superseded in
+  practice by `ors_deadhead_estimator` below, which the API layer
+  actually uses.
+- `ors_deadhead_estimator` (Phase 6 GIS slice 1): calls the
+  OpenRouteService Directions API (`driving-hgv` profile by default —
+  a real heavy-goods-vehicle profile, closer to spec §6's intent than
+  a passenger-car profile). `services/api`'s `POST /schedule` wires
+  this in automatically when `ISD_API_ORS_API_KEY` is configured
+  (`isd_api.config.settings`), falling back to the straight-line
+  estimator (logged at WARNING) if the ORS call fails. **Still not
+  full bus-legal routing per spec §6** — every crew gets the same
+  `driving-hgv` default regardless of its actual vehicle's dimensions;
+  applying per-vehicle height/width/weight/length restrictions would
+  require widening `DeadheadEstimator`'s signature to also take a
+  `Vehicle`, which ripples into every `scheduler.py` call site — a
+  deliberate follow-up, not part of this estimator. §7 (turn/dead-end
+  safety costs) and §10 (dynamic rerouting from live incident feeds)
+  need a routing *graph* this system doesn't own and can't customize
+  through a simple point-to-point directions call — out of scope here
+  too. Neither `osrm_deadhead_estimator` nor `ors_deadhead_estimator`
+  has been exercised against a live routing server in this development
+  environment (network-restricted sandbox); each takes its HTTP call
+  as a dependency-injected parameter specifically so it can be
+  unit-tested without live network access, and should be validated
+  against a real endpoint before any operational use.
 
 ### Assignment / SchedulingResult / Explanation
 See `scheduler.py` and `explain.py` docstrings — these are the solver
@@ -136,9 +155,13 @@ produces them rather than duplicated here.
   why a driver-license-vs-vehicle-type qualification check was
   deliberately left out (no such compatibility mapping exists
   anywhere in this schema — would have been a fabricated signal).
-  Completing a substitution reuses the existing `POST /crews` +
-  `PATCH /schedule/assignments/{id}` endpoints, not a new one — spec
-  §21: decision support, not an autonomous authority.
+  Completing a substitution uses `PATCH /crews/{id}` (repoints an
+  existing crew's driver — needed because a `Crew` row isn't freed
+  just by marking its driver absent, see REBOOT.md's gotcha #9) when
+  the candidate has no crew of their own that date, or the existing
+  `PATCH /schedule/assignments/{id}` when they do — never
+  `POST /crews`, which 409s on the vehicle's own uniqueness
+  constraint. Spec §21: decision support, not an autonomous authority.
 
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
@@ -147,7 +170,7 @@ produces them rather than duplicated here.
 - Ridership reporting cutoff / route-lock configuration (spec §4.4)
 - A recurring `route` (template) table distinct from dated `run` instances — ADR 0001 named this intention for Phase 2+, never built; Phase 5 worked around its absence rather than building it (see RidershipOverride above)
 - Field trips / Trip conflict detection (spec §12) — Phase 6
-- Bus-legal road-network routing and turn penalties (spec §6/7) — Phase 6, requires a routing graph/profile aware of bus dimensions and restrictions, not either estimator above
+- Full bus-legal routing per spec §6/7 — `ors_deadhead_estimator` (Phase 6 GIS slice 1, above) gets real road-network travel time on a heavy-vehicle profile, but not yet: per-vehicle height/width/weight/length restrictions, turning-radius awareness, or turn/dead-end safety costs (§7) — all need a routing graph/profile this system doesn't own, not just a point-to-point directions call
 - District-specific geographic knowledge / local roadway overrides (spec §8) — Phase 6, depends on §6/7's routing graph existing first
 - Dynamic rerouting around road closures/incidents (spec §10) — Phase 6, same GIS dependency
 - Live GPS bus location, delay/substitution/route-change notifications (spec §18) — Phase 6+, no live-tracking or notification infrastructure exists yet

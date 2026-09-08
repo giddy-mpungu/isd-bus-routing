@@ -129,6 +129,58 @@ def test_full_schedule_flow_persists_assignments_with_explanations(
     assert {a["run_id"] for a in read_back.json()} == {r["id"] for r in runs}
 
 
+def test_schedule_uses_ors_estimator_when_api_key_configured(client, admin_headers, monkeypatch):
+    """Config-gated wiring (Phase 6 GIS slice 1): when ISD_API_ORS_API_KEY
+    is set, POST /schedule must build its estimator via
+    isd_solver.ors_deadhead_estimator, not the Phase 1 straight-line
+    approximation. No live ORS call is made — the estimator factory
+    itself is replaced with a fake that returns a fixed estimate, since
+    this sandbox has no network access to a real routing API (see
+    isd_solver.domain.ors_deadhead_estimator's own docstring)."""
+    _school, _crew, _run = _seed_single_run_scenario(client, admin_headers)
+
+    import isd_api.routers.schedule as schedule_module
+
+    monkeypatch.setattr(schedule_module.settings, "ors_api_key", "test-key")
+    calls = []
+
+    def fake_ors_deadhead_estimator(**kwargs):
+        calls.append(kwargs)
+        return lambda a, b: 5
+
+    monkeypatch.setattr(schedule_module, "ors_deadhead_estimator", fake_ors_deadhead_estimator)
+
+    response = client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
+    assert response.status_code == 200, response.text
+    assert len(calls) == 1
+    assert calls[0]["api_key"] == "test-key"
+    assert calls[0]["profile"] == "driving-hgv"
+    assert "fallback" in calls[0]
+
+
+def test_schedule_uses_straight_line_estimator_when_no_ors_key_configured(
+    client, admin_headers, monkeypatch
+):
+    """Default/CI/local-dev config (no ORS key set) must not attempt to
+    call isd_solver.ors_deadhead_estimator at all."""
+    _school, _crew, _run = _seed_single_run_scenario(client, admin_headers)
+
+    import isd_api.routers.schedule as schedule_module
+
+    assert schedule_module.settings.ors_api_key is None  # the default
+
+    calls = []
+    monkeypatch.setattr(
+        schedule_module,
+        "ors_deadhead_estimator",
+        lambda **kwargs: calls.append(kwargs) or (lambda a, b: 5),
+    )
+
+    response = client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
+    assert response.status_code == 200, response.text
+    assert calls == []
+
+
 def test_schedule_endpoint_requires_dispatcher_or_admin_role(client, db_session, admin_headers):
     _seed_spec_section5_scenario(client, admin_headers)
     make_user(db_session, email="schooladmin@example.org", role=Role.SCHOOL_ADMIN)

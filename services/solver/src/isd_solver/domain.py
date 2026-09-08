@@ -270,6 +270,19 @@ def _default_http_get(url: str, timeout_seconds: float) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
+def _default_http_post(
+    url: str, json_body: dict, headers: dict[str, str], timeout_seconds: float
+) -> dict:
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(json_body).encode("utf-8"),
+        headers={**headers, "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 def osrm_deadhead_estimator(
     base_url: str,
     profile: str = "driving",
@@ -330,6 +343,100 @@ def osrm_deadhead_estimator(
             if not routes:
                 raise DeadheadEstimationError(f"Routing API returned no route for {a} -> {b}")
             duration_seconds = routes[0]["duration"]
+            minutes = int(round(duration_seconds / 60.0))
+        except Exception as exc:  # noqa: BLE001 - deliberately broad: network/JSON/shape errors all handled the same way
+            if fallback is not None:
+                logger.warning(
+                    "Routing API deadhead lookup failed for %s -> %s (%s); using fallback",
+                    a,
+                    b,
+                    exc,
+                )
+                return fallback(a, b)
+            raise DeadheadEstimationError(
+                f"Failed to get routing-API deadhead estimate for {a} -> {b}: {exc}"
+            ) from exc
+
+        cache[key] = minutes
+        return minutes
+
+    return estimate
+
+
+def ors_deadhead_estimator(
+    api_key: str,
+    base_url: str = "https://api.openrouteservice.org",
+    profile: str = "driving-hgv",
+    timeout_seconds: float = 5.0,
+    http_post: Callable[[str, dict, dict[str, str], float], dict] | None = None,
+    fallback: DeadheadEstimator | None = None,
+) -> DeadheadEstimator:
+    """Returns a DeadheadEstimator backed by OpenRouteService's Directions API.
+
+    Calls ``POST {base_url}/v2/directions/{profile}`` with an
+    ``Authorization`` header and a ``{"coordinates": [[lon, lat], [lon, lat]]}``
+    body, and reads ``routes[0].summary.duration`` (seconds) from the
+    response, per ORS's documented response shape (same ``routes[0]``
+    shape as OSRM's, despite the different request method). This has
+    NOT been exercised against a live ORS server in this development
+    environment — this sandbox's network access is restricted to a
+    fixed allowlist that does not include a routing API, so `http_post`
+    is dependency-injected specifically so the parsing/caching/error
+    logic can be tested without a live network call. Verify against a
+    real ORS API key (openrouteservice.org's free tier) before relying
+    on it.
+
+    `profile` defaults to `driving-hgv`, ORS's heavy-goods-vehicle
+    profile — meaningfully closer to spec section 6's bus-specific
+    routing intent than a passenger-car profile (avoids some
+    truck-prohibited roads by default). IMPORTANT: this does **not**
+    yet apply any *per-vehicle* restrictions (height/width/weight/length,
+    also spec section 6) — every crew gets the same `driving-hgv`
+    default regardless of its actual vehicle's dimensions. Doing so
+    would require `DeadheadEstimator` to carry a `Vehicle` argument,
+    which ripples into every `scheduler.py` call site — a deliberate
+    follow-up, not part of this estimator. Turn/dead-end safety costs
+    (section 7) and district-specific overrides (section 8) are also
+    out of scope here — this is a point-to-point travel-time estimate,
+    not a customizable routing graph.
+
+    Results are cached in-memory per (origin, destination) pair for the
+    lifetime of the returned estimator, since the scheduler's pairwise
+    ordering logic may request the same pair more than once.
+
+    If the API call fails (network error, non-2xx, unexpected response
+    shape) and `fallback` is provided, the fallback estimator is used
+    and the failure is logged at WARNING level. If no fallback is
+    provided, `DeadheadEstimationError` is raised — silently falling
+    back to a straight-line guess without telling the caller would
+    hide a routing failure that could matter for a safety-relevant
+    schedule.
+    """
+
+    if not api_key:
+        raise ValueError("api_key must be a non-empty OpenRouteService API key")
+    if not base_url:
+        raise ValueError("base_url must be a non-empty routing API base URL")
+
+    post = http_post or _default_http_post
+    cache: dict[tuple[Location, Location], int] = {}
+
+    def estimate(a: Location, b: Location) -> int:
+        if a == b:
+            return 0
+        key = (a, b)
+        if key in cache:
+            return cache[key]
+
+        url = f"{base_url}/v2/directions/{profile}"
+        body = {"coordinates": [[a.lon, a.lat], [b.lon, b.lat]]}
+        headers = {"Authorization": api_key}
+        try:
+            payload = post(url, body, headers, timeout_seconds)
+            routes = payload["routes"]
+            if not routes:
+                raise DeadheadEstimationError(f"Routing API returned no route for {a} -> {b}")
+            duration_seconds = routes[0]["summary"]["duration"]
             minutes = int(round(duration_seconds / 60.0))
         except Exception as exc:  # noqa: BLE001 - deliberately broad: network/JSON/shape errors all handled the same way
             if fallback is not None:

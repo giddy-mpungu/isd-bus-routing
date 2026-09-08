@@ -19,6 +19,7 @@ from isd_solver.domain import (
     School,
     TimeWindow,
     Vehicle,
+    ors_deadhead_estimator,
     osrm_deadhead_estimator,
     straight_line_deadhead_estimator,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "School",
     "TimeWindow",
     "Vehicle",
+    "ors_deadhead_estimator",
     "osrm_deadhead_estimator",
     "straight_line_deadhead_estimator",
     "Assignment",

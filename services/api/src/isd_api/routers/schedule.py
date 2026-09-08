@@ -22,6 +22,7 @@ from isd_solver import (
 from isd_solver import (
     InfeasibleResult,
     SchedulingResult,
+    ors_deadhead_estimator,
     solve_multi_school_schedule,
     straight_line_deadhead_estimator,
 )
@@ -40,6 +41,7 @@ from isd_solver import (
 from sqlalchemy.orm import Session
 
 from isd_api.audit import record as record_audit
+from isd_api.config import settings
 from isd_api.db import get_db
 from isd_api.models import Assignment, Role, User
 from isd_api.models import Crew as DBCrew
@@ -218,9 +220,18 @@ def run_schedule(
             assignments=[AssignmentRead.model_validate(a) for a in locked_assignments],
         )
 
-    estimator = straight_line_deadhead_estimator(
+    fallback_estimator = straight_line_deadhead_estimator(
         average_speed_kmh=payload.average_deadhead_speed_kmh
     )
+    if settings.ors_api_key:
+        estimator = ors_deadhead_estimator(
+            api_key=settings.ors_api_key,
+            base_url=settings.ors_base_url,
+            profile=settings.ors_profile,
+            fallback=fallback_estimator,
+        )
+    else:
+        estimator = fallback_estimator
     result = solve_multi_school_schedule(unlocked_jobs, solvable_crews, estimator)
 
     if isinstance(result, InfeasibleResult):
