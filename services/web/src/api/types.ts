@@ -44,6 +44,10 @@ export interface Vehicle {
   label: string
   nominal_capacity: number | null
   effective_capacity: number | null
+  length_m: number | null
+  width_m: number | null
+  height_m: number | null
+  weight_kg: number | null
   qualifications: Qualification[]
 }
 
@@ -125,6 +129,10 @@ export interface VehicleCreate {
   label: string
   nominal_capacity?: number
   effective_capacity?: number
+  length_m?: number
+  width_m?: number
+  height_m?: number
+  weight_kg?: number
   qualification_codes: string[]
 }
 

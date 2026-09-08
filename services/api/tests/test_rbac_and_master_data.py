@@ -110,6 +110,52 @@ def test_vehicle_rejects_effective_capacity_le_zero(client, admin_headers):
     assert response.status_code == 422  # pydantic validation, gt=0
 
 
+def test_vehicle_dimension_fields_round_trip(client, admin_headers):
+    """A field accepted by VehicleCreate must actually reach the DB and
+    come back in the response, not just pass schema validation — the
+    Phase 5 student_id bug (REBOOT.md gotcha #7) silently dropped a
+    field at exactly this router-constructor-kwargs step while every
+    schema-level check kept passing."""
+    response = client.post(
+        "/vehicles",
+        headers=admin_headers,
+        json={
+            "label": "Bus 1",
+            "length_m": 10.5,
+            "width_m": 2.5,
+            "height_m": 3.2,
+            "weight_kg": 12000.0,
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["length_m"] == 10.5
+    assert body["width_m"] == 2.5
+    assert body["height_m"] == 3.2
+    assert body["weight_kg"] == 12000.0
+
+    listed = client.get("/vehicles", headers=admin_headers).json()
+    created = next(v for v in listed if v["id"] == body["id"])
+    assert created["length_m"] == 10.5
+
+
+def test_vehicle_dimension_fields_are_optional(client, admin_headers):
+    response = client.post("/vehicles", headers=admin_headers, json={"label": "Bus 1"})
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["length_m"] is None
+    assert body["width_m"] is None
+    assert body["height_m"] is None
+    assert body["weight_kg"] is None
+
+
+def test_vehicle_rejects_non_positive_dimension(client, admin_headers):
+    response = client.post(
+        "/vehicles", headers=admin_headers, json={"label": "Bus 1", "height_m": 0}
+    )
+    assert response.status_code == 422
+
+
 def test_school_admin_sees_only_own_school_runs(client, admin_headers, db_session):
     s1 = client.post(
         "/schools",

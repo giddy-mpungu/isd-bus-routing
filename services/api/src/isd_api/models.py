@@ -273,6 +273,12 @@ class Vehicle(Base):
     label: Mapped[str] = mapped_column(String(64), nullable=False)  # e.g. bus number
     nominal_capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
     effective_capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # spec section 6 vehicle profile. Persisted only — not yet consumed by
+    # routing (isd_solver.domain.Vehicle's own docstring names the follow-up).
+    length_m: Mapped[float | None] = mapped_column(nullable=True)
+    width_m: Mapped[float | None] = mapped_column(nullable=True)
+    height_m: Mapped[float | None] = mapped_column(nullable=True)
+    weight_kg: Mapped[float | None] = mapped_column(nullable=True)
 
     qualifications: Mapped[list[Qualification]] = relationship(secondary=vehicle_qualifications)
     crews: Mapped[list[Crew]] = relationship(back_populates="vehicle")

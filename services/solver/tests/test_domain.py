@@ -88,6 +88,30 @@ def test_crew_rejects_busy_interval_outside_available_window():
         )
 
 
+def test_vehicle_accepts_dimension_fields():
+    vehicle = Vehicle(id="V1", length_m=10.5, width_m=2.5, height_m=3.2, weight_kg=12000.0)
+    assert vehicle.length_m == 10.5
+    assert vehicle.width_m == 2.5
+    assert vehicle.height_m == 3.2
+    assert vehicle.weight_kg == 12000.0
+
+
+def test_vehicle_dimension_fields_default_to_none():
+    vehicle = Vehicle(id="V1")
+    assert vehicle.length_m is None
+    assert vehicle.width_m is None
+    assert vehicle.height_m is None
+    assert vehicle.weight_kg is None
+
+
+@pytest.mark.parametrize("field_name", ["length_m", "width_m", "height_m", "weight_kg"])
+def test_vehicle_rejects_non_positive_dimension(field_name):
+    with pytest.raises(ValueError):
+        Vehicle(id="V1", **{field_name: 0})
+    with pytest.raises(ValueError):
+        Vehicle(id="V1", **{field_name: -1})
+
+
 def test_straight_line_deadhead_estimator_symmetric_and_positive():
     estimate = straight_line_deadhead_estimator(average_speed_kmh=30.0)
     a = Location(lat=29.7604, lon=-95.3698)  # Houston
