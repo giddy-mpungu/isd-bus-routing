@@ -118,6 +118,35 @@ def test_sends_authorization_header_and_coordinates_body():
     assert seen["headers"] == {"Authorization": "secret-key"}
 
 
+def test_avoid_polygons_is_passed_through_into_the_request_body_options():
+    seen = {}
+
+    def fake_http_post(url: str, json_body: dict, headers: dict, timeout_seconds: float) -> dict:
+        seen["json_body"] = json_body
+        return {"routes": [{"summary": {"duration": 60}}]}
+
+    polygon = {"type": "Polygon", "coordinates": [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]]}
+    estimate = ors_deadhead_estimator(
+        api_key="test-key", http_post=fake_http_post, avoid_polygons=polygon
+    )
+    estimate(Location(lat=29.70, lon=-95.40), Location(lat=29.72, lon=-95.42))
+
+    assert seen["json_body"]["options"] == {"avoid_polygons": polygon}
+
+
+def test_no_options_key_in_request_body_when_avoid_polygons_not_given():
+    seen = {}
+
+    def fake_http_post(url: str, json_body: dict, headers: dict, timeout_seconds: float) -> dict:
+        seen["json_body"] = json_body
+        return {"routes": [{"summary": {"duration": 60}}]}
+
+    estimate = ors_deadhead_estimator(api_key="test-key", http_post=fake_http_post)
+    estimate(Location(lat=29.70, lon=-95.40), Location(lat=29.72, lon=-95.42))
+
+    assert "options" not in seen["json_body"]
+
+
 def test_rejects_empty_api_key():
     with pytest.raises(ValueError):
         ors_deadhead_estimator(api_key="")
