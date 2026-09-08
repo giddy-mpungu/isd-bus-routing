@@ -241,3 +241,29 @@ export interface AffectedAssignmentSubstitutes {
   vehicle_label: string
   candidates: SubstituteCandidate[]
 }
+
+export type GeographicKnowledgeCategory =
+  | 'frequent_flooding'
+  | 'difficult_intersection'
+  | 'unsafe_turn'
+  | 'invalid_turnaround'
+  | 'congestion_window'
+  | 'vehicle_size_restricted'
+  | 'preferred_entrance'
+  | 'other'
+
+export interface GeographicKnowledgeOverride {
+  id: number
+  location_lat: number
+  location_lon: number
+  category: GeographicKnowledgeCategory
+  note: string
+  created_at: string
+}
+
+export interface GeographicKnowledgeOverrideCreate {
+  location_lat: number
+  location_lon: number
+  category: GeographicKnowledgeCategory
+  note: string
+}
