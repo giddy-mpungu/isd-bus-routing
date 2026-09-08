@@ -59,6 +59,10 @@ const vehicle: Vehicle = {
   label: 'Bus 101',
   nominal_capacity: 48,
   effective_capacity: 44,
+  length_m: null,
+  width_m: null,
+  height_m: null,
+  weight_kg: null,
   qualifications: [],
 }
 const run: Run = {
@@ -90,6 +94,10 @@ const otherVehicle: Vehicle = {
   label: 'Bus 202',
   nominal_capacity: 48,
   effective_capacity: 44,
+  length_m: null,
+  width_m: null,
+  height_m: null,
+  weight_kg: null,
   qualifications: [],
 }
 const otherCrew: Crew = {
