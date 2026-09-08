@@ -320,6 +320,45 @@ class DriverAbsence(Base):
     driver: Mapped[Driver] = relationship()
 
 
+class GeographicKnowledgeCategory(enum.StrEnum):
+    """spec section 8's example list of local roadway knowledge."""
+
+    FREQUENT_FLOODING = "frequent_flooding"
+    DIFFICULT_INTERSECTION = "difficult_intersection"
+    UNSAFE_TURN = "unsafe_turn"
+    INVALID_TURNAROUND = "invalid_turnaround"
+    CONGESTION_WINDOW = "congestion_window"
+    VEHICLE_SIZE_RESTRICTED = "vehicle_size_restricted"
+    PREFERRED_ENTRANCE = "preferred_entrance"
+    OTHER = "other"
+
+
+class GeographicKnowledgeOverride(Base):
+    """spec section 8: local roadway information transportation personnel
+    know that commercial mapping data doesn't ("this intersection is
+    difficult for full-size buses," "this lot isn't a valid turnaround").
+    Per ADR 0007, this is the one piece of routing-relevant data this
+    system owns itself, layered on top of an external routing provider's
+    output rather than merged into it — spec section 8's own text defers
+    that wiring to "future route calculations"; this entity only
+    persists the knowledge. `note` is required free text: unlike
+    DriverAbsence (which deliberately avoids free text for PII reasons),
+    the entire value of this entity is staff-authored institutional
+    knowledge, which a category alone can't carry. Who added it is the
+    audit log, not a column here, same precedent as DriverAbsence."""
+
+    __tablename__ = "geographic_knowledge_overrides"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    location_lat: Mapped[float] = mapped_column(nullable=False)
+    location_lon: Mapped[float] = mapped_column(nullable=False)
+    category: Mapped[GeographicKnowledgeCategory] = mapped_column(
+        SAEnum(GeographicKnowledgeCategory, native_enum=False, length=32), nullable=False
+    )
+    note: Mapped[str] = mapped_column(String(1000), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class Crew(Base):
     """A Driver+Vehicle pairing for one service_date (ADR 0001)."""
 

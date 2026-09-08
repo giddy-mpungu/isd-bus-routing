@@ -23,6 +23,8 @@ import type {
   DriverAssignment,
   DriverCreate,
   FamilyMember,
+  GeographicKnowledgeOverride,
+  GeographicKnowledgeOverrideCreate,
   Qualification,
   QualificationCreate,
   RidershipOverrideUpdate,
@@ -229,4 +231,14 @@ export async function getSubstituteCandidates(
   return request<AffectedAssignmentSubstitutes[]>(
     `/drivers/${driverId}/substitute-candidates?service_date=${serviceDate}`,
   )
+}
+
+export async function getGeographicKnowledgeOverrides(): Promise<GeographicKnowledgeOverride[]> {
+  return request<GeographicKnowledgeOverride[]>('/geographic-knowledge')
+}
+
+export async function createGeographicKnowledgeOverride(
+  payload: GeographicKnowledgeOverrideCreate,
+): Promise<GeographicKnowledgeOverride> {
+  return request<GeographicKnowledgeOverride>('/geographic-knowledge', jsonInit('POST', payload))
 }

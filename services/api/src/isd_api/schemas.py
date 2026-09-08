@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from isd_api.models import (
     AbsenceReason,
     AssignmentStatus,
+    GeographicKnowledgeCategory,
     QualificationKind,
     RideDirection,
     RidershipDefault,
@@ -302,6 +303,23 @@ class AbsenceRead(BaseModel):
     start_minute: int
     end_minute: int
     reason: AbsenceReason
+
+
+class GeographicKnowledgeOverrideCreate(BaseModel):
+    location_lat: float = Field(ge=-90, le=90)
+    location_lon: float = Field(ge=-180, le=180)
+    category: GeographicKnowledgeCategory
+    note: str = Field(min_length=1, max_length=1000)
+
+
+class GeographicKnowledgeOverrideRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    location_lat: float
+    location_lon: float
+    category: GeographicKnowledgeCategory
+    note: str
+    created_at: datetime
 
 
 class SubstituteCandidate(BaseModel):
