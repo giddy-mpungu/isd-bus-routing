@@ -13,6 +13,7 @@ from isd_api.routers import (
     auth,
     crews,
     drivers,
+    geographic_knowledge,
     qualifications,
     runs,
     schedule,
@@ -64,6 +65,7 @@ app.include_router(stops.router)
 app.include_router(students.router)
 app.include_router(absences.router)
 app.include_router(absences.all_absences_router)
+app.include_router(geographic_knowledge.router)
 
 
 @app.get("/health")

@@ -18,12 +18,14 @@ vi.mock('../api/client', async (importOriginal) => {
     getVehicles: vi.fn(),
     getStops: vi.fn(),
     getStudents: vi.fn(),
+    getGeographicKnowledgeOverrides: vi.fn(),
     createSchool: vi.fn(),
     createQualification: vi.fn(),
     createDriver: vi.fn(),
     createVehicle: vi.fn(),
     createStop: vi.fn(),
     createStudent: vi.fn(),
+    createGeographicKnowledgeOverride: vi.fn(),
   }
 })
 
@@ -73,6 +75,7 @@ function mockLoad() {
   vi.mocked(api.getVehicles).mockResolvedValue([vehicle])
   vi.mocked(api.getStops).mockResolvedValue([])
   vi.mocked(api.getStudents).mockResolvedValue([])
+  vi.mocked(api.getGeographicKnowledgeOverrides).mockResolvedValue([])
 }
 
 function renderAsRole(user: CurrentUser) {
@@ -108,6 +111,45 @@ describe('SetupPage', () => {
     )
     expect(screen.queryByRole('button', { name: 'Add school' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Add driver' })).not.toBeInTheDocument()
+  })
+
+  it('shows the district geographic knowledge form for dispatcher too, unlike the admin-only sections', async () => {
+    renderAsRole(dispatcherUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+    expect(screen.getByRole('button', { name: 'Add override' })).toBeInTheDocument()
+  })
+
+  it('creating a district geographic knowledge override calls the API and reloads the list', async () => {
+    vi.mocked(api.createGeographicKnowledgeOverride).mockResolvedValue({
+      id: 1,
+      location_lat: 29.7,
+      location_lon: -95.4,
+      category: 'frequent_flooding',
+      note: 'Elm St floods after heavy rain.',
+      created_at: '2026-09-08T12:00:00Z',
+    })
+    renderAsRole(dispatcherUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Override latitude'), '29.7')
+    await user.type(screen.getByLabelText('Override longitude'), '-95.4')
+    await user.type(screen.getByLabelText('Note'), 'Elm St floods after heavy rain.')
+    await user.click(screen.getByRole('button', { name: 'Add override' }))
+
+    await waitFor(() =>
+      expect(api.createGeographicKnowledgeOverride).toHaveBeenCalledWith({
+        location_lat: 29.7,
+        location_lon: -95.4,
+        category: 'frequent_flooding',
+        note: 'Elm St floods after heavy rain.',
+      }),
+    )
+    expect(api.getGeographicKnowledgeOverrides).toHaveBeenCalledTimes(2) // initial load + reload after create
   })
 
   it('only offers license qualifications on the driver form and vehicle_capability ones on the vehicle form', async () => {

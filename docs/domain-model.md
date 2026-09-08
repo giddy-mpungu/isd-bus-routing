@@ -162,6 +162,21 @@ produces them rather than duplicated here.
   `PATCH /schedule/assignments/{id}` when they do — never
   `POST /crews`, which 409s on the vehicle's own uniqueness
   constraint. Spec §21: decision support, not an autonomous authority.
+- **GeographicKnowledgeOverride** (spec §8, GIS slice 2): a point
+  location, a `category` (frequent flooding, difficult intersection,
+  unsafe turn, invalid turnaround, congestion window, vehicle-size
+  restriction, preferred entrance, other), and a required free-text
+  `note` — the one piece of routing-relevant data this system owns
+  itself, per ADR 0007. `note` is deliberately free text, unlike
+  `DriverAbsence`'s avoidance of it (PII risk) — the whole point of
+  this entity is staff-authored institutional knowledge a category
+  alone can't carry. `POST`/`GET /geographic-knowledge`, both
+  transportation_admin and dispatcher (day-to-day operational
+  knowledge, same RBAC shape as `DriverAbsence`, broader than
+  `Stop`'s admin-only creation). Who added it is the audit log, same
+  precedent as `DriverAbsence`. **Not yet wired into any route
+  calculation** — spec §8's own text defers that to "future route
+  calculations"; this slice only persists the knowledge.
 
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
@@ -171,7 +186,7 @@ produces them rather than duplicated here.
 - A recurring `route` (template) table distinct from dated `run` instances — ADR 0001 named this intention for Phase 2+, never built; Phase 5 worked around its absence rather than building it (see RidershipOverride above)
 - Field trips / Trip conflict detection (spec §12) — Phase 6
 - Full bus-legal routing per spec §6/7 — `ors_deadhead_estimator` (Phase 6 GIS slice 1, above) gets real road-network travel time on a heavy-vehicle profile, but not yet: per-vehicle height/width/weight/length restrictions, turning-radius awareness, or turn/dead-end safety costs (§7) — all need a routing graph/profile this system doesn't own, not just a point-to-point directions call
-- District-specific geographic knowledge / local roadway overrides (spec §8) — Phase 6, depends on §6/7's routing graph existing first
+- District-specific geographic knowledge / local roadway overrides (spec §8) — persistence done (`GeographicKnowledgeOverride`, above); wiring these into actual route calculations (e.g. ORS `avoid_polygons`) is what remains, per spec §8's own "future route calculations" framing
 - Dynamic rerouting around road closures/incidents (spec §10) — Phase 6, same GIS dependency
 - Live GPS bus location, delay/substitution/route-change notifications (spec §18) — Phase 6+, no live-tracking or notification infrastructure exists yet
 - Historical operational data / learning-adjusted estimates (spec §20) — Phase 6
