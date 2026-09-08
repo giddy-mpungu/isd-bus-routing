@@ -33,9 +33,10 @@ graph TB
         HR["HR / absence management"]
         SSO["District identity provider / SSO"]
         GPS["GPS / AVL fleet tracking"]
-        GIS["Routing / GIS + bus-legal\nnavigation profile"]
         Maint["Fleet maintenance system"]
     end
+
+    ORS["OpenRouteService\ndriving-hgv profile\n(opt-in: ISD_API_ORS_API_KEY)"]
 
     Dispatcher --> API
     DriverApp --> API
@@ -46,7 +47,7 @@ graph TB
     API -.future.-> SIS
     API -.future.-> HR
     API -.future.-> SSO
-    Solver -.future.-> GIS
+    Solver --> ORS
     API -.future.-> GPS
     API -.future.-> Maint
 ```
@@ -70,7 +71,7 @@ Spec section numbers refer to `Bus Program Specifications Document.docx`.
 | 3 — Dispatcher console (web) | §9 (ops visibility), §14 (dispatch), §21 (human override UI) | ✅ MVP done (`services/web`): login, schedule view (run/re-run the solver, view/reassign/lock/delete assignments, inline crew+run creation), `/setup` page (schools/qualifications/drivers/vehicles). Console is usable end-to-end without any raw API call. Dockerized (`docker-compose.yml`, both services build+run+pass CI's smoke test). Not yet: other roles (out of Phase 3's own scope — driver app is Phase 4, parent/student is Phase 5) |
 | 4 — Driver app | §9 (driver-facing nav/assignments), §14 (dispatch queue) | ✅ MVP done (`services/web`, ADR 0008: responsive web app, not native): `/driver` page for the `driver` role — today's own runs with resolved school/vehicle names (`GET /schedule/{date}/my-assignments`), mark started/completed/no-show (`PATCH /schedule/assignments/{id}/status`, audited). Not yet: parent/student views (Phase 5), absence reporting, GPS/live position (ADR 0007, Phase 6+), offline support |
 | 5 — Parent/student app + demand routing | §3 (student/stop assignment), §4 (ridership status), §18 (parent app scope) | ✅ MVP done (`services/web`): `Student`/`Stop`/`RidershipOverride` entities (manual entry, ADR 0007 precedent — no SIS sync yet); `/family` page for `student`/`parent` roles — each linked child's school/stop and today's AM/PM ridership (`GET /students/my-family`), declare/override ridership per leg (`PATCH /students/{id}/ridership`, also covers spec §4.5's "late request to ride"); `/setup` gained Students/Stops sections (admin-only creation, manual guardian linking). Not yet: automated stop generation (§3.1, needs GIS), wiring ridership into the solver's re-optimization (§4.3), cutoff/lock rules (§4.4), live GPS/ETA and notifications (§18, Phase 6+) |
-| 6 — Dynamic rerouting + substitutes + learning | §6/§7 (bus-legal routing, turn/dead-end rules), §8 (district geo knowledge), §10 (dynamic rerouting), §12 (field trips), §13 (absences/substitutes), §20 (historical learning) | 🟡 First slice done (§13 only): `DriverAbsence` (a driver or dispatcher/admin reports an absence, `POST /drivers/{id}/absences`; `GET /absences?service_date=` for the date-wide overview); `GET /drivers/{id}/substitute-candidates` identifies that driver's affected assignments and ranks substitutes (school familiarity, same-day workload, duty-limit headroom — see `docs/domain-model.md`'s "Phase 6 entities" for the scoring detail and what was deliberately left out). Read-only decision support — completing a substitution reuses the existing `POST /crews` + `PATCH /schedule/assignments/{id}`, not a new endpoint. `services/web`'s `SchedulePage` gained a "Driver absences" section: report an absence, browse ranked substitutes per affected assignment, one-click assign (creates a crew for the candidate if they don't already have one that date, otherwise reassigns straight to their existing crew). Everything else in this phase — §6/§7/§8/§10's GIS-dependent routing, §12 field trips, §20 historical learning — not started, needs a real road-network/GIS integration this project has never built |
+| 6 — Dynamic rerouting + substitutes + learning | §6/§7 (bus-legal routing, turn/dead-end rules), §8 (district geo knowledge), §10 (dynamic rerouting), §12 (field trips), §13 (absences/substitutes), §20 (historical learning) | 🟡 Two slices done: **§13** — `DriverAbsence` (a driver or dispatcher/admin reports an absence, `POST /drivers/{id}/absences`; `GET /absences?service_date=` for the date-wide overview); `GET /drivers/{id}/substitute-candidates` identifies that driver's affected assignments and ranks substitutes (school familiarity, same-day workload, duty-limit headroom — see `docs/domain-model.md`'s "Phase 6 entities" for the scoring detail and what was deliberately left out). `services/web`'s `SchedulePage` gained a "Driver absences" section: report an absence, browse ranked substitutes, one-click assign — `PATCH /crews/{id}` (repoint) when the candidate has no crew of their own that date, else `PATCH /schedule/assignments/{id}`, never `POST /crews`. **§6 (partial)** — `POST /schedule` now gets real road-network deadhead times from OpenRouteService's `driving-hgv` profile when `ISD_API_ORS_API_KEY` is configured (`isd_solver.ors_deadhead_estimator`), falling back to the Phase 1 straight-line estimate if unset or the call fails. Not yet: per-vehicle height/width/weight restrictions (needs `DeadheadEstimator`'s signature to grow a `Vehicle` param), §7 turn/dead-end safety costs, §8 district overrides, §10 dynamic rerouting, §12 field trips, §20 historical learning — all need either a routing graph this system doesn't (yet) own, or their own new persisted entity/UI |
 | Ongoing, no dedicated phase yet | §19 (SIS/HR/SSO/GPS/fleet-maintenance integration) | ADR 0007 written (data ownership + integration shape decided); no integration actually built yet — first one lands whenever the phase that needs it starts |
 
 ## Known gaps to close before the next phase

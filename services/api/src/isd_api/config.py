@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     login_rate_limit_attempts: int = 10
     login_rate_limit_window_seconds: int = 300
 
+    # OpenRouteService (spec section 6, Phase 6 GIS slice 1). Unset by
+    # default — a schedule solve falls back to the straight-line
+    # estimator when no key is configured, so CI/tests/local dev work
+    # without one. See isd_solver.domain.ors_deadhead_estimator.
+    ors_api_key: str | None = None
+    ors_base_url: str = "https://api.openrouteservice.org"
+    ors_profile: str = "driving-hgv"
+
     def require_production_ready(self) -> None:
         if self.environment == "production" and self.jwt_secret_key == _INSECURE_DEV_JWT_SECRET:
             raise RuntimeError(

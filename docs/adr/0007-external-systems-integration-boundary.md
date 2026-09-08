@@ -98,6 +98,22 @@ student/parent endpoints).
 - No code changes from this ADR. The next system actually integrated
   (most likely SIS, when Phase 5 starts student data) is the first
   real test of the adapter-interface pattern described above.
+- **Update (Phase 6 GIS slice 1):** routing/GIS turned out to be the
+  first system actually integrated, not SIS — `isd_solver.ors_deadhead_estimator`
+  calls OpenRouteService for real road-network deadhead times, wired
+  in by `services/api/src/isd_api/routers/schedule.py` when
+  `ISD_API_ORS_API_KEY` is configured. It deliberately does **not**
+  live under `services/api/src/isd_api/integrations/` as this ADR's
+  "Integration code shape" section describes — the estimator is a
+  pure, injectable function (`Callable[[Location, Location], int]`)
+  with no DB/framework dependency, a solver-level abstraction the API
+  layer only configures and wires, not a persisted external entity.
+  That location (`services/solver`, alongside the existing
+  `straight_line_deadhead_estimator`/`osrm_deadhead_estimator`) is the
+  reasonable exception for any future integration that fits this same
+  "stateless per-request compute" shape — the `integrations/` home
+  described below remains right for the synced-entity and streamed-
+  telemetry shapes (SIS, HR, GPS/AVL, etc.).
 - `Driver`/`User`/`Vehicle`/`School` records created manually today
   (Phase 2's only mode) are NOT retroactively assumed to have a stable
   external ID — a future sync integration will need an explicit
