@@ -266,8 +266,9 @@ PATCH edits that bypass the solver.
   solver's re-optimization (§4.3), cutoff/lock rules (§4.4), live
   GPS/ETA and notifications (§18, Phase 6+).
 - **Phase 6** (dynamic rerouting, substitutes, field trips, historical
-  learning) — **spec §13 done, both backend and UI** (PR #16 backend,
-  PR #17 UI + a real bug fix — see "Gotchas" #9). `DriverAbsence`
+  learning) — **spec §13 done (backend+UI), §6 GIS slice 1 done**
+  (PR #16 backend, PR #17 UI + a real bug fix — see "Gotchas" #9;
+  PR #18 GIS slice 1). `DriverAbsence`
   entity (a driver reports their own, or dispatcher/admin reports for
   any driver, `POST /drivers/{id}/absences`; `GET /absences?service_date=`
   for the date-wide overview); `GET /drivers/{id}/substitute-candidates`
@@ -283,10 +284,23 @@ PATCH edits that bypass the solver.
   `services/web`'s `SchedulePage` gained a "Driver absences" section:
   report an absence, browse ranked substitutes per affected assignment,
   one-click assign (branches on which of the two above it needs).
-  Everything else in Phase 6 (§6/§7/§8/§10's GIS-dependent routing,
-  §12 field trips, §20 historical learning) is still not started —
-  picked §13 specifically because it needed no new external
-  integration, unlike the rest of the phase.
+  **GIS slice 1 (PR #18)**: `isd_solver.ors_deadhead_estimator` calls
+  OpenRouteService's `driving-hgv` profile for a real road-network
+  deadhead time; `POST /schedule` wires it in automatically when
+  `ISD_API_ORS_API_KEY` is configured, else (the default — CI/tests/
+  local dev) falls back to the Phase 1 straight-line estimator, same
+  fallback if the live call fails. Chose OpenRouteService over HERE
+  (free-tier signup was giving the user trouble) and over self-hosted
+  OSRM/GraphHopper (avoids ops burden for a solo founder; self-hosting
+  stays an option later if ORS's free tier or precision is outgrown).
+  Deliberately NOT in this slice: per-vehicle height/width/weight
+  restrictions (`DeadheadEstimator`'s signature is vehicle-agnostic —
+  `Callable[[Location, Location], int]` — widening it to take a
+  `Vehicle` ripples into every `scheduler.py` call site), §7 turn/
+  dead-end safety costs, §8 district-specific overrides, §10 dynamic
+  rerouting, §12 field trips, §20 historical learning — all still not
+  started, each needs either a routing graph this system doesn't own
+  or its own new persisted entity/UI.
 - **Auth hardening** (PR #14) — **Done.** Both ADR 0006 follow-ups
   closed: login rate limiting, logout token revocation. See "Auth"
   under Architecture above for detail.
@@ -313,13 +327,15 @@ PATCH edits that bypass the solver.
 15. #15 `feat/phase5-student-ridership-mvp` — `Student`/`Stop`/`RidershipOverride`/`student_guardians` (manual entry, scoped from the real spec doc — see "Phase 5" above), `GET /students/my-family` + `PATCH /students/{id}/ridership`, `services/web` `/family` page + `/setup` Students/Stops sections; fixed a real bug where `POST /users` silently dropped `student_id` (see "Gotchas" above)
 16. #16 `feat/phase6-driver-absence-substitutes` — `DriverAbsence`, `GET /drivers/{id}/substitute-candidates` (school-familiarity + same-day-workload ranking, hard-excludes double-bookings/duty-limit violations), backend-only (see "Phase 6" above); test design deliberately avoided a same-school/non-overlapping-runs solver-tie trap (see "Gotchas" above)
 17. #17 `feat/phase6-absence-substitute-ui` — `GET /absences?service_date=` (date-wide overview), `PATCH /crews/{id}` (driver repoint — added mid-PR after manual testing caught `POST /crews` 409ing every time, see "Gotchas" #9), `services/web` "Driver absences" section on `SchedulePage` (report absence, browse/act on ranked substitutes)
+18. #18 `feat/phase6-gis-ors-deadhead-estimator` — Phase 6 GIS slice 1: `isd_solver.ors_deadhead_estimator` (OpenRouteService `driving-hgv` profile), wired into `POST /schedule` opt-in via `ISD_API_ORS_API_KEY`, falls back to the straight-line estimator when unset or on API failure; also fixed a stale doc claim in `architecture.md`/`domain-model.md` that substitute assignment still used `POST /crews` (PR #17 already replaced that with `PATCH /crews/{id}`)
 
-## Key files (current state, post-PR #17)
+## Key files (current state, post-PR #18)
 
 - `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal + revocation check), `LoginRateLimiter`/`login_rate_limiter`, `revoke_token`
 - `services/api/src/isd_api/routers/auth.py` — login rate-limited + sets cookie + returns bearer token; `POST /auth/logout` (still no auth required — a no-op if nothing to revoke, but revokes the current token if one is present)
 - `services/api/src/isd_api/routers/schedule.py` — `POST /schedule` (lock-aware), `PATCH`/`DELETE /schedule/assignments/{id}`, `GET /schedule/{date}/assignments`, `GET /schedule/{date}/my-assignments` + `PATCH /schedule/assignments/{id}/status` (driver-scoped, Phase 4), `_hard_constraint_violation` helper
-- `services/api/src/isd_api/config.py` — `session_inactivity_minutes=30`, `session_absolute_max_hours=12`, `cors_allowed_origins`, `login_rate_limit_attempts=10`/`login_rate_limit_window_seconds=300`, DB pool settings
+- `services/api/src/isd_api/config.py` — `session_inactivity_minutes=30`, `session_absolute_max_hours=12`, `cors_allowed_origins`, `login_rate_limit_attempts=10`/`login_rate_limit_window_seconds=300`, DB pool settings, `ors_api_key`/`ors_base_url`/`ors_profile` (Phase 6 GIS slice 1 — unset key means the straight-line estimator is used, the default for CI/tests/local dev)
+- `services/solver/src/isd_solver/domain.py` — `straight_line_deadhead_estimator` (Phase 1 default/fallback), `osrm_deadhead_estimator` (Phase 1 scaffold, never wired into `services/api`), `ors_deadhead_estimator` (Phase 6 GIS slice 1, the one `routers/schedule.py` actually wires in when `ISD_API_ORS_API_KEY` is set) — all three share the dependency-injected-HTTP-call + per-pair-cache + fallback-or-raise pattern, see `services/solver/tests/test_ors_deadhead_estimator.py` for the test template
 - `services/api/src/isd_api/models.py` — `RevokedToken` (jti denylist), `Assignment.status`/`AssignmentStatus`, `Student`/`Stop`/`RidershipOverride`/`student_guardians` (Phase 5), `User.student_id`, `DriverAbsence`/`AbsenceReason` (Phase 6)
 - `services/api/src/isd_api/routers/students.py` — `POST`/`GET`/`PATCH /students`, `POST /students/{id}/guardians`, `GET /students/my-family`, `PATCH /students/{id}/ridership` — all the Phase 5 RBAC ownership-check logic lives here
 - `services/api/src/isd_api/routers/stops.py` — `POST`/`GET /stops`, admin/dispatcher only
@@ -345,33 +361,50 @@ PATCH edits that bypass the solver.
 ## Exact next step (as of this checkpoint)
 
 Phase 4 MVP (PR #13), auth hardening (PR #14), Phase 5 MVP (PR #15),
-and both of Phase 6's spec §13 increments (PR #16 backend, PR #17 UI
-+ crew-repoint fix) are all **merged**, CI green on all five, local
-`main` synced (commit `e25f3fe`). Every phase in the original roadmap
-(0–6) now has real, working, tested functionality — no phase is at
-"nothing built" anymore.
+both of Phase 6's spec §13 increments (PR #16 backend, PR #17 UI +
+crew-repoint fix), and Phase 6's GIS slice 1 (PR #18, ORS deadhead
+estimator) are all **merged**, CI green on all six, local `main`
+synced (commit `75f0369`). The user explicitly confirmed they wanted
+Phase 6's GIS work started (chose OpenRouteService over HERE — free-
+tier signup was giving them trouble — and over self-hosted
+OSRM/GraphHopper — avoids ops burden for a solo founder for now).
 
 **No known gap is currently blocking further work.** Reasonable next
 candidates, roughly in order of how directly they extend what's just
 shipped:
 
-- The rest of Phase 6 — §6/§7/§8/§10's GIS-dependent routing, §12
-  field trips, §20 historical learning — genuinely needs a new
-  external integration (a real road-network/GIS provider, ADR 0007's
-  "external compute" shape) this project has never built. This is now
-  the largest remaining item in the original roadmap. Don't start it
-  without confirming the user actually wants to take on a new external
-  dependency; it's a materially bigger commitment than anything
-  shipped so far this session.
+- **The rest of Phase 6's GIS work** — PR #18 only swapped the
+  deadhead-estimation number for a real one; nothing else in §6/§7/§8/
+  §10 is built yet:
+  - Per-vehicle HGV restrictions (height/width/weight/length, spec
+    §6) — needs `DeadheadEstimator`'s signature to grow a `Vehicle`
+    parameter (ripples into every `services/solver/src/isd_solver/scheduler.py`
+    call site) plus new `Vehicle` fields end-to-end (domain dataclass,
+    DB column, Pydantic schema, `SetupPage.tsx` form — see gotcha #7,
+    "three places").
+  - §7 turn/dead-end safety costs, §10 dynamic rerouting — need a
+    routing *graph* this system doesn't own; ORS's simple
+    point-to-point directions call (what PR #18 uses) can't express
+    per-turn costs. A materially bigger undertaking than slice 1.
+  - §8 district-specific overrides — this system's own data per ADR
+    0007 ("external compute, not owned data" — overrides are the
+    named exception), needs a new persisted entity + UI. The most
+    naturally scoped *next* GIS increment, once there's a real routing
+    call (there now is) to layer it onto.
+  - Manual verification of PR #18 itself is still outstanding — no
+    live network in this sandbox to confirm real ORS distances
+    end-to-end. Get a free key at openrouteservice.org, set
+    `ISD_API_ORS_API_KEY`, and re-run a `POST /schedule` somewhere
+    with real network access, when convenient.
+- §12 field trips, §20 historical learning — the rest of Phase 6,
+  untouched so far, each its own scoping exercise from the spec text.
 - Follow-ups intentionally left out of Phases 4/5's own MVPs: wiring
   ridership overrides into the solver's `passenger_count`/re-solve
   (spec §4.3), GPS/live position + notifications (§9/§18, needs a real
   telemetry integration, ADR 0007), absence reporting from the driver
   app's own UI (the API already supports a driver reporting their own
   absence — `POST /drivers/{id}/absences`, driver-role ownership check
-  already there — just no `DriverPage.tsx` button for it yet; a small,
-  well-scoped increment following the exact same pattern as this
-  session's other UI-follow-up PRs).
+  already there — just no `DriverPage.tsx` button for it yet).
 - The one remaining minor, non-blocking polish item: `services/api`
   doesn't use the SQLAlchemy 2.0 mypy plugin, so ORM constructor
   kwargs aren't strictly type-checked against column types — the
@@ -379,15 +412,11 @@ shipped:
   mistake that plugin would have caught at type-check time instead of
   requiring manual testing to find.
 
-None of these were asked for and none is as clearly "the" next step
-the way the last several were (each prior checkpoint had one obvious
-already-scoped follow-up; this one doesn't) — check recent
-conversation for explicit user direction before picking one. If none
-exists, the driver-app absence-reporting UI is the smallest, most
-directly precedented candidate (mirrors Phase 4/5/6's own UI-follow-up
-pattern exactly); the GIS-dependent rest of Phase 6 is the largest and
-most consequential, worth surfacing to the user as a real decision
-point rather than assuming.
+District-specific overrides (§8) is the most directly scoped next GIS
+increment (small, precedented shape — new entity + UI, same pattern as
+every prior phase's MVP); the driver-app absence-reporting UI is the
+smallest cross-phase candidate if GIS work should pause. Check recent
+conversation for explicit user direction before picking either.
 
 ## Environment specifics (this machine)
 
