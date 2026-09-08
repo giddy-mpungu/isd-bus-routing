@@ -266,11 +266,12 @@ PATCH edits that bypass the solver.
   solver's re-optimization (§4.3), cutoff/lock rules (§4.4), live
   GPS/ETA and notifications (§18, Phase 6+).
 - **Phase 6** (dynamic rerouting, substitutes, field trips, historical
-  learning) — **spec §13 done (backend+UI), §6 GIS slice 1 done, §8
-  done (persistence + wired into routing)**
+  learning) — **spec §13 done (backend+UI), §8 done (persistence +
+  wired into routing), §6 in progress (routing done, vehicle
+  dimensions persisted, not yet connected)**
   (PR #16 backend, PR #17 UI + a real bug fix — see "Gotchas" #9;
-  PR #18 GIS slice 1; PR #19 §8 persistence; PR #20 §8 routing wiring).
-  `DriverAbsence`
+  PR #18 GIS slice 1; PR #19 §8 persistence; PR #20 §8 routing wiring;
+  PR #21 §6 vehicle dimensions persisted). `DriverAbsence`
   entity (a driver reports their own, or dispatcher/admin reports for
   any driver, `POST /drivers/{id}/absences`; `GET /absences?service_date=`
   for the date-wide overview); `GET /drivers/{id}/substitute-candidates`
@@ -337,12 +338,29 @@ PATCH edits that bypass the solver.
   This closes out spec §8 as originally scoped (persist the knowledge,
   then apply it to routing) — everything else in Phase 6 (§7, §10,
   §12, §20, plus per-vehicle restrictions within §6) is still open.
+  **§6 vehicle dimensions (PR #21)**: `Vehicle` gains
+  `length_m`/`width_m`/`height_m`/`weight_kg` end-to-end (domain
+  dataclass, DB column + migration, schema, `POST /vehicles`,
+  `SetupPage.tsx`'s Vehicles form) — mapped directly to ORS's HGV
+  restriction params, so real usable data, not speculative fields.
+  Deliberately not persisting turning radius (no ORS param for it),
+  wheelchair config (already modeled via `Qualification`), or vehicle
+  type (no per-vehicle ORS profile switching exists). **Persistence
+  only** — `DeadheadEstimator` still doesn't take a `Vehicle`
+  argument, so nothing in the scheduler reads these dimensions yet;
+  wiring them in needs restructuring `scheduler.py`'s pairwise-ordering
+  loop (currently calls the estimator once per job-pair shared across
+  every candidate crew, not once per (job-pair, crew)) — a real,
+  separate design decision, named as the next follow-up. Manually
+  verified live: created a vehicle with all four dimensions and one
+  without, confirmed both round-trip correctly and the fields are
+  genuinely optional.
 - **Auth hardening** (PR #14) — **Done.** Both ADR 0006 follow-ups
   closed: login rate limiting, logout token revocation. See "Auth"
   under Architecture above for detail.
 - **CI**: `.github/workflows/ci.yml`, 4 jobs (solver/api/web/docker),
   runs on every push to `main` and every PR. Currently green (verified
-  via `gh pr checks --watch` on PR #20, not just assumed).
+  via `gh pr checks --watch` on PR #21, not just assumed).
 
 ## PRs merged this session (chronological)
 
@@ -366,8 +384,9 @@ PATCH edits that bypass the solver.
 18. #18 `feat/phase6-gis-ors-deadhead-estimator` — Phase 6 GIS slice 1: `isd_solver.ors_deadhead_estimator` (OpenRouteService `driving-hgv` profile), wired into `POST /schedule` opt-in via `ISD_API_ORS_API_KEY`, falls back to the straight-line estimator when unset or on API failure; also fixed a stale doc claim in `architecture.md`/`domain-model.md` that substitute assignment still used `POST /crews` (PR #17 already replaced that with `PATCH /crews/{id}`)
 19. #19 `feat/phase6-district-geographic-knowledge` — Phase 6 spec §8: `GeographicKnowledgeOverride` entity, `POST`/`GET /geographic-knowledge` (transportation_admin + dispatcher, audited), `services/web` "District geographic knowledge" section on `SetupPage`; persistence only, not yet wired into route calculations (spec §8's own deferral)
 20. #20 `feat/phase6-geo-knowledge-routing-integration` — Phase 6 spec §8 wiring: `isd_solver.avoid_polygons_geojson` + `ors_deadhead_estimator`'s new `avoid_polygons` param, `POST /schedule` turns 3 of 8 `GeographicKnowledgeOverride` categories into a real ORS avoid-zone (`_HARD_AVOID_CATEGORIES` in `routers/schedule.py`), live-verified against a real ORS key to confirm a forced detour actually changes trip duration
+21. #21 `feat/phase6-vehicle-dimensions` — Phase 6 spec §6 slice 2: `Vehicle` gains `length_m`/`width_m`/`height_m`/`weight_kg` end-to-end (domain, DB, schema, router, `SetupPage.tsx`), mapped to ORS's HGV restriction params; persistence only, `DeadheadEstimator` doesn't consume them yet
 
-## Key files (current state, post-PR #20)
+## Key files (current state, post-PR #21)
 
 - `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal + revocation check), `LoginRateLimiter`/`login_rate_limiter`, `revoke_token`
 - `services/api/src/isd_api/routers/auth.py` — login rate-limited + sets cookie + returns bearer token; `POST /auth/logout` (still no auth required — a no-op if nothing to revoke, but revokes the current token if one is present)
@@ -380,6 +399,7 @@ PATCH edits that bypass the solver.
 - `services/api/src/isd_api/routers/absences.py` — `POST`/`GET /drivers/{id}/absences`, `GET /absences?service_date=` (all-drivers overview, `all_absences_router`, second router in this file), `GET /drivers/{id}/substitute-candidates` + `_rank_substitute_candidates` (Phase 6 ranking heuristic, private helper)
 - `services/api/src/isd_api/routers/crews.py` — `POST`/`GET /crews`, `PATCH /crews/{id}` (driver-only repoint — see Gotchas #9 for why this exists instead of a second `POST /crews`)
 - `services/api/src/isd_api/routers/geographic_knowledge.py` — `POST`/`GET /geographic-knowledge` (spec §8 persistence — transportation_admin + dispatcher, audited); `routers/schedule.py`'s `_HARD_AVOID_CATEGORIES` is where 3 of the 8 categories actually get consumed by routing
+- `services/api/src/isd_api/routers/vehicles.py` — `POST`/`GET /vehicles`; `create_vehicle`'s explicit constructor kwargs are the gotcha #7 spot for `Vehicle`'s `length_m`/`width_m`/`height_m`/`weight_kg` (spec §6, persisted but not yet consumed by routing)
 - `services/api/src/isd_api/main.py` — `CORSMiddleware` config, router registration (check here first if a new router's routes 404 — it needs an `app.include_router(...)` call too, not just existing as a file)
 - `services/solver/src/isd_solver/scheduler.py` — CP-SAT model, duty-limit pairwise constraints, busy-interval constraints
 - `services/solver/src/isd_solver/domain.py` — `Crew.busy_intervals` (validated within `available_window`)
@@ -402,45 +422,62 @@ PATCH edits that bypass the solver.
 Phase 4 MVP (PR #13), auth hardening (PR #14), Phase 5 MVP (PR #15),
 both of Phase 6's spec §13 increments (PR #16 backend, PR #17 UI +
 crew-repoint fix), Phase 6's GIS slice 1 (PR #18, ORS deadhead
-estimator), and both of Phase 6's spec §8 increments (PR #19
-persistence, PR #20 routing wiring) are all **merged**, CI green on
-all eight, local `main` synced (commit `c56f387`). PR #18's base
-estimator and PR #20's `avoid_polygons` wiring are both **live-verified
-against a real ORS API key** (a forced detour on a real route's own
-returned geometry measurably changed the trip duration), not just
-unit-tested. The user drove this whole GIS arc with "continue" after
-each merge — PR #19 was picked as the natural §8 follow-up to §6, PR
-#20 as the natural completion of §8 once both the routing call and the
-override data existed.
+estimator), both of Phase 6's spec §8 increments (PR #19 persistence,
+PR #20 routing wiring), and Phase 6's §6 vehicle-dimensions slice
+(PR #21, persistence only) are all **merged**, CI green on all nine,
+local `main` synced (commit `fd8cdbd`). PR #18's base estimator and
+PR #20's `avoid_polygons` wiring are both **live-verified against a
+real ORS API key** (a forced detour on a real route's own returned
+geometry measurably changed the trip duration); PR #21 was manually
+verified live in the browser (dimensions round-trip, fields stay
+optional) rather than live-against-ORS, since it doesn't touch the
+routing call at all yet. The user drove this whole arc with "continue"
+after each merge — each increment was picked as the most directly
+scoped follow-up to what had just shipped.
 
-**No known gap is currently blocking further work.** §8 is now done as
-originally scoped end-to-end (persist the knowledge, then apply it to
-routing) — everything below is genuinely new ground, not a follow-up
-to something half-finished. Reasonable next candidates:
+**§6 is now half-done, and that half is the obvious next step**: PR
+#21 persisted `Vehicle.length_m`/`width_m`/`height_m`/`weight_kg`, but
+`DeadheadEstimator` still doesn't take a `Vehicle` argument, so
+nothing consumes them. Completing §6 means:
 
-- **Per-vehicle HGV restrictions** (height/width/weight/length, spec
-  §6) — the largest remaining piece of §6. Needs
-  `DeadheadEstimator`'s signature to grow a `Vehicle` parameter
-  (ripples into every `services/solver/src/isd_solver/scheduler.py`
-  call site) plus new `Vehicle` fields end-to-end (domain dataclass,
-  DB column, Pydantic schema, `SetupPage.tsx` form — see gotcha #7,
-  "three places"). A real design decision (how the per-call estimator
-  signature should carry vehicle context), not a small addition.
+- **Widen `DeadheadEstimator`** to `Callable[[Location, Location,
+  Vehicle], int]` (or similar) and update all three implementations
+  (`straight_line_deadhead_estimator`/`osrm_deadhead_estimator` just
+  ignore the new arg; `ors_deadhead_estimator` builds ORS's
+  `options.profile_params.restrictions.{length,width,height,weight}`
+  from it when the vehicle has them set).
+- **Restructure `scheduler.py`'s pairwise-ordering loop** — confirmed
+  by reading it directly (not assumed) during PR #21's planning: the
+  estimator is currently called once per job-pair, shared across every
+  crew in `shared_crew_ids`
+  (`services/solver/src/isd_solver/scheduler.py` around the
+  `for crew_id in shared_crew_ids:` loop). Both call sites already
+  have `crew_by_id[crew_id]` in scope right where the estimator is
+  called (used there today for `max_continuous_minutes`), so this is
+  "move the call inside an existing loop and pass `.vehicle`," not a
+  new lookup — contained, but changes the CP-SAT model-building hot
+  path from O(pairs) estimator calls to O(pairs × crews).
+- **Fix the cache key** — `ors_deadhead_estimator`'s per-pair cache is
+  currently keyed on `(origin, destination)` alone; once the request
+  varies by vehicle, two different vehicles between the same two
+  points can get genuinely different ORS results, so the cache key
+  needs the vehicle's restriction signature added too.
+- Live-verify against the real ORS key (same pattern as PR #18/#20):
+  confirm two vehicles with different dimensions actually get
+  different route/duration for the same origin-destination pair.
+
+Other reasonable candidates, in rough order of how directly they
+extend what's shipped:
+
 - **§7 turn/dead-end safety costs, §10 dynamic rerouting** — need a
   routing *graph* this system doesn't own; ORS's simple point-to-point
-  directions call (what §6/§8 both use) can't express per-turn costs
-  or live incident feeds. Materially bigger than anything shipped in
-  Phase 6 so far — the first Phase 6 work that would need a genuinely
-  different technical approach, not just another category on the
-  existing estimator.
+  directions call can't express per-turn costs or live incident feeds.
+  Materially bigger than anything shipped in Phase 6 so far.
 - **The 5 excluded §8 categories** (difficult intersection, congestion
   window, vehicle-size restriction, preferred entrance, other) — each
-  was excluded from PR #20 for a real reason (see that PR's Phase 6
-  entry above), not just missing plumbing; revisiting any one of them
-  is its own small design decision, not a mechanical extension of
-  `_HARD_AVOID_CATEGORIES`.
-- §12 field trips, §20 historical learning — the rest of Phase 6,
-  untouched so far, each its own scoping exercise from the spec text.
+  excluded from PR #20 for a real reason, not missing plumbing.
+- §12 field trips, §20 historical learning — untouched, each its own
+  scoping exercise from the spec text.
 - Follow-ups intentionally left out of Phases 4/5's own MVPs: wiring
   ridership overrides into the solver's `passenger_count`/re-solve
   (spec §4.3), GPS/live position + notifications (§9/§18, needs a real
@@ -450,14 +487,11 @@ to something half-finished. Reasonable next candidates:
   already there — just no `DriverPage.tsx` button for it yet).
 - The one remaining minor, non-blocking polish item: `services/api`
   doesn't use the SQLAlchemy 2.0 mypy plugin, so ORM constructor
-  kwargs aren't strictly type-checked against column types — the
-  Phase 5 `student_id` bug (see "Gotchas" #7) is exactly the class of
-  mistake that plugin would have caught at type-check time instead of
-  requiring manual testing to find.
+  kwargs aren't strictly type-checked against column types.
 
-None of these is clearly "the" next step the way §8's two halves were
-after each other — check recent conversation for explicit user
-direction before picking one.
+Check recent conversation for explicit user direction, but §6's own
+wiring is the most directly scoped default this time — it's a real
+half-finished thread, unlike the last checkpoint's genuine fork.
 
 ## Environment specifics (this machine)
 
