@@ -74,6 +74,10 @@ class VehicleCreate(BaseModel):
     label: str
     nominal_capacity: int | None = Field(default=None, gt=0)
     effective_capacity: int | None = Field(default=None, gt=0)
+    length_m: float | None = Field(default=None, gt=0)
+    width_m: float | None = Field(default=None, gt=0)
+    height_m: float | None = Field(default=None, gt=0)
+    weight_kg: float | None = Field(default=None, gt=0)
     qualification_codes: list[str] = Field(default_factory=list)
 
 
@@ -83,6 +87,10 @@ class VehicleRead(BaseModel):
     label: str
     nominal_capacity: int | None
     effective_capacity: int | None
+    length_m: float | None
+    width_m: float | None
+    height_m: float | None
+    weight_kg: float | None
     qualifications: list[QualificationRead]
 
 

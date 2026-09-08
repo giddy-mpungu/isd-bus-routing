@@ -193,6 +193,10 @@ export function SetupPage() {
   const [vehicleLabel, setVehicleLabel] = useState('')
   const [vehicleNominalCapacity, setVehicleNominalCapacity] = useState('')
   const [vehicleEffectiveCapacity, setVehicleEffectiveCapacity] = useState('')
+  const [vehicleLength, setVehicleLength] = useState('')
+  const [vehicleWidth, setVehicleWidth] = useState('')
+  const [vehicleHeight, setVehicleHeight] = useState('')
+  const [vehicleWeight, setVehicleWeight] = useState('')
   const [vehicleQualCodes, setVehicleQualCodes] = useState<Set<string>>(new Set())
   const [vehicleError, setVehicleError] = useState<string | null>(null)
   const [isSavingVehicle, setIsSavingVehicle] = useState(false)
@@ -218,11 +222,19 @@ export function SetupPage() {
         label: vehicleLabel,
         nominal_capacity: vehicleNominalCapacity ? Number(vehicleNominalCapacity) : undefined,
         effective_capacity: vehicleEffectiveCapacity ? Number(vehicleEffectiveCapacity) : undefined,
+        length_m: vehicleLength ? Number(vehicleLength) : undefined,
+        width_m: vehicleWidth ? Number(vehicleWidth) : undefined,
+        height_m: vehicleHeight ? Number(vehicleHeight) : undefined,
+        weight_kg: vehicleWeight ? Number(vehicleWeight) : undefined,
         qualification_codes: Array.from(vehicleQualCodes),
       })
       setVehicleLabel('')
       setVehicleNominalCapacity('')
       setVehicleEffectiveCapacity('')
+      setVehicleLength('')
+      setVehicleWidth('')
+      setVehicleHeight('')
+      setVehicleWeight('')
       setVehicleQualCodes(new Set())
       await loadAll()
     } catch (err) {
@@ -488,6 +500,9 @@ export function SetupPage() {
             <li key={v.id}>
               {v.label}
               {v.nominal_capacity != null && ` — capacity ${v.nominal_capacity}`}
+              {(v.length_m != null || v.width_m != null || v.height_m != null) &&
+                ` — ${v.length_m ?? '?'}m × ${v.width_m ?? '?'}m × ${v.height_m ?? '?'}m`}
+              {v.weight_kg != null && ` — ${v.weight_kg}kg`}
               {v.qualifications.length > 0 &&
                 ` (${v.qualifications.map((q) => q.code).join(', ')})`}
             </li>
@@ -517,6 +532,42 @@ export function SetupPage() {
               min="1"
               value={vehicleEffectiveCapacity}
               onChange={(event) => setVehicleEffectiveCapacity(event.target.value)}
+            />
+            <label htmlFor="vehicle-length">Length in meters (optional)</label>
+            <input
+              id="vehicle-length"
+              type="number"
+              step="any"
+              min="0.01"
+              value={vehicleLength}
+              onChange={(event) => setVehicleLength(event.target.value)}
+            />
+            <label htmlFor="vehicle-width">Width in meters (optional)</label>
+            <input
+              id="vehicle-width"
+              type="number"
+              step="any"
+              min="0.01"
+              value={vehicleWidth}
+              onChange={(event) => setVehicleWidth(event.target.value)}
+            />
+            <label htmlFor="vehicle-height">Height in meters (optional)</label>
+            <input
+              id="vehicle-height"
+              type="number"
+              step="any"
+              min="0.01"
+              value={vehicleHeight}
+              onChange={(event) => setVehicleHeight(event.target.value)}
+            />
+            <label htmlFor="vehicle-weight">Weight in kg (optional)</label>
+            <input
+              id="vehicle-weight"
+              type="number"
+              step="any"
+              min="0.01"
+              value={vehicleWeight}
+              onChange={(event) => setVehicleWeight(event.target.value)}
             />
             {vehicleQualifications.length > 0 && (
               <fieldset>

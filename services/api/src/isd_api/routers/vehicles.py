@@ -35,6 +35,10 @@ def create_vehicle(
         label=payload.label,
         nominal_capacity=payload.nominal_capacity,
         effective_capacity=payload.effective_capacity,
+        length_m=payload.length_m,
+        width_m=payload.width_m,
+        height_m=payload.height_m,
+        weight_kg=payload.weight_kg,
         qualifications=_resolve_qualifications(db, payload.qualification_codes),
     )
     db.add(vehicle)

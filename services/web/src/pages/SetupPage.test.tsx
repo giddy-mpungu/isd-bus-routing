@@ -65,6 +65,10 @@ const vehicle: Vehicle = {
   label: 'Bus 101',
   nominal_capacity: 48,
   effective_capacity: 44,
+  length_m: null,
+  width_m: null,
+  height_m: null,
+  weight_kg: null,
   qualifications: [],
 }
 
@@ -210,6 +214,35 @@ describe('SetupPage', () => {
         full_name: 'Sam Substitute',
         max_continuous_minutes: undefined,
         qualification_codes: ['CDL_B'],
+      }),
+    )
+  })
+
+  it('creating a vehicle sends the dimension fields', async () => {
+    vi.mocked(api.createVehicle).mockResolvedValue({ ...vehicle, id: 2 })
+    renderAsRole(adminUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Label'), 'Bus 202')
+    await user.type(screen.getByLabelText('Length in meters (optional)'), '10.5')
+    await user.type(screen.getByLabelText('Width in meters (optional)'), '2.5')
+    await user.type(screen.getByLabelText('Height in meters (optional)'), '3.2')
+    await user.type(screen.getByLabelText('Weight in kg (optional)'), '12000')
+    await user.click(screen.getByRole('button', { name: 'Add vehicle' }))
+
+    await waitFor(() =>
+      expect(api.createVehicle).toHaveBeenCalledWith({
+        label: 'Bus 202',
+        nominal_capacity: undefined,
+        effective_capacity: undefined,
+        length_m: 10.5,
+        width_m: 2.5,
+        height_m: 3.2,
+        weight_kg: 12000,
+        qualification_codes: [],
       }),
     )
   })
