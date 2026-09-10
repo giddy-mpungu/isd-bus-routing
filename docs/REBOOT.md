@@ -173,6 +173,19 @@ Monorepo, 3 services, each separately installed:
    driver") more literally than the original design did. If a future
    feature needs to "give someone else this same vehicle today," this
    is the pattern — not `POST /crews`.
+10. **Frontend verification must run `npm run format:check` (Prettier),
+    not just `build`/`lint`/`test`** — a driver-absence-UI commit broke
+    `main`'s CI on 2026-09-10 after all three of those passed locally;
+    `format:check` is a separate check oxlint/vitest/tsc don't
+    subsume, and it was skipped. Also: that same commit was pushed
+    directly to `main` instead of through a branch/PR, compounding the
+    problem (no CI gate before landing) — a real instance of the exact
+    mistake this file's own "Identity / non-negotiable conventions"
+    section already warns about. Fixed with a same-day follow-up commit
+    once caught; `main` was red for a few minutes in between. Always
+    run the *complete* check set `.github/workflows/ci.yml` actually
+    runs before pushing, and always branch first — no exceptions
+    beyond this file itself.
 
 **Auth (revised mid-session — see PR #6, hardened in PR #14):** httpOnly,
 `SameSite=Lax` session cookie (`isd_session`), sliding 30-min
@@ -242,9 +255,14 @@ PATCH edits that bypass the solver.
   `LoginPage.tsx` hardcoded its post-login redirect to `/schedule` —
   broke for a driver login now that one exists (found via manual
   browser testing, not by inspection — see the project's own precedent
-  of catching real bugs this way). Not yet: parent/student views (Phase
-  5), absence reporting, GPS/live position (ADR 0007, Phase 6+),
-  offline support.
+  of catching real bugs this way). A driver can also report their own
+  absence — "Report an absence" section, `POST /drivers/{id}/absences`
+  scoped to the signed-in driver's own `driver_id` (the API already
+  supported this since Phase 6; this just added the button — see PR
+  list below, though this one was mistakenly committed directly to
+  `main` rather than through a branch/PR, see gotcha #10). Not yet:
+  parent/student views (Phase 5), GPS/live position (ADR 0007, Phase
+  6+), offline support.
 - **Phase 5** (parent/student app) — **MVP done** (PR #15). Scoped
   directly from the source spec document (`Bus Program Specifications
   Document.docx`, still present in `C:\Users\gmbug\Downloads\` — not
@@ -444,70 +462,66 @@ PATCH edits that bypass the solver.
 
 ## Exact next step (as of this checkpoint)
 
-Phase 4 MVP (PR #13), auth hardening (PR #14), Phase 5 MVP (PR #15),
-both of Phase 6's spec §13 increments (PR #16 backend, PR #17 UI +
-crew-repoint fix), Phase 6's GIS slice 1 (PR #18), both of Phase 6's
-spec §8 increments (PR #19 persistence, PR #20 routing wiring), and
-both of Phase 6's spec §6 increments (PR #21 vehicle dimensions
-persisted, PR #22 wired into routing) are all **merged**, CI green on
-all ten, local `main` synced (commit `1668559`). PR #18's base
-estimator, PR #20's `avoid_polygons` wiring, and PR #22's per-vehicle
-restrictions are all **live-verified against a real ORS API key** —
-PR #22's live check caught a real bug before it shipped (published ORS
-docs describe a required top-level `vehicle_type` field; the live v2
-API rejects it with a 400 — removed). The user drove this whole arc
-with "continue" after each merge.
+Every PR through #22 (Phase 4 MVP, auth hardening, Phase 5 MVP, both of
+Phase 6's spec §13, §8, and §6 increments) is **merged**, CI green,
+local `main` synced. Live-verified estimator work (PR #18/#20/#22)
+caught a real ORS `vehicle_type` bug before shipping — see PR #22's
+own notes above. The user then said explicitly: **tackle the entire
+remaining candidate list, continuing until it's done or something new
+needs deciding** — not "pick one," work through all of them. Status:
 
-**Spec §6 is now done, as far as an external point-to-point routing
-API can express it.** Only §7 (turn/dead-end safety costs) and §10
-(dynamic rerouting) remain within the original "GIS" arc, and both are
-genuinely different in kind from everything shipped so far — they need
-a routing *graph* this system deliberately doesn't own (ADR 0007), not
-another parameter on `ors_deadhead_estimator`. **No obvious next
-step this time** — reasonable candidates, none clearly "the" one:
-
-- **§7 turn/dead-end safety costs, §10 dynamic rerouting** — the
-  largest remaining item, and the first Phase 6 work needing a
-  genuinely different technical approach (a routing graph/service this
-  system would need to either self-host, e.g. a customized OSRM/
-  GraphHopper instance with weighted edges, or find an external
-  provider exposing per-edge cost customization — neither confirmed to
-  exist yet; would need real research before scoping, same as the
-  original GIS-provider decision).
-- **The 5 excluded §8 categories** (difficult intersection, congestion
-  window, vehicle-size restriction, preferred entrance, other) — each
-  excluded from PR #20 for a real reason, not missing plumbing;
-  revisiting one is its own small design decision.
-- §12 field trips, §20 historical learning — untouched, each its own
-  scoping exercise from the spec text.
-- Follow-ups intentionally left out of Phases 4/5's own MVPs: wiring
-  ridership overrides into the solver's `passenger_count`/re-solve
-  (spec §4.3), GPS/live position + notifications (§9/§18, needs a real
-  telemetry integration, ADR 0007), absence reporting from the driver
-  app's own UI (the API already supports a driver reporting their own
-  absence — `POST /drivers/{id}/absences`, driver-role ownership check
-  already there — just no `DriverPage.tsx` button for it yet).
 - ~~SQLAlchemy 2.0 mypy plugin~~ — **investigated and ruled out**
-  (checked empirically, not assumed): deliberately reintroduced the
-  Phase 5/PR #22-style bug (dropped one kwarg from
-  `routers/vehicles.py`'s `Vehicle(...)` constructor call) and ran
-  mypy both with and without `sqlalchemy.ext.mypy.plugin` enabled —
-  neither caught it, because omitting a kwarg for a field with a
-  default (`Mapped[T | None]`, or `SolverVehicle`'s plain dataclass
-  fields — not even a SQLAlchemy model) is valid Python regardless of
-  any plugin; the plugin only helps mypy infer *types* for legacy
-  `Column(...)`-style declarative models, which this codebase doesn't
-  use (it's on 2.0-native `Mapped[]` typing throughout, where the
-  plugin is redundant by SQLAlchemy's own current docs). No config
-  change would have caught either bug — what actually catches this
-  class of mistake is what this project already does: a real
-  round-trip test asserting a new field reaches the response, not just
-  passes schema validation (see `test_vehicle_dimension_fields_round_trip`,
-  added specifically for this reason in PR #21).
+  (checked empirically: deliberately reintroduced the Phase 5/PR
+  #22-style bug and ran mypy with and without
+  `sqlalchemy.ext.mypy.plugin` — neither caught it, since omitting a
+  kwarg for a field with a default is valid Python regardless, and
+  this codebase's `Mapped[]`-native models don't need the plugin
+  anyway per SQLAlchemy's own current docs). What actually catches
+  this class of bug: a real round-trip test per new field (see
+  `test_vehicle_dimension_fields_round_trip`, PR #21).
+- ~~Driver-app absence-reporting UI~~ — **done** (`DriverPage.tsx`
+  "Report an absence" section, direct commit — see gotcha #10 for the
+  process mistake made shipping it: no branch/PR, and `main` broke CI
+  briefly on a missed `format:check`, fixed same-day). Manually
+  verified live: reported a real absence as a driver-role user,
+  confirmed correct `driver_id` attribution via the admin's own
+  `GET /absences` view.
+- **Ridership → solver wiring (spec §4.3) — in progress.** Grounded in
+  a real code read, not assumed: `Run` has **no `direction` field at
+  all** today, so there's no way to know which leg (AM/PM) a run
+  serves, which blocks any automatic aggregation of `RidershipOverride`
+  rows (keyed by `student, date, direction`) into a run's
+  `passenger_count`. There's also a deeper, unresolved structural gap:
+  a school can have multiple runs on the same date/direction (multiple
+  buses), and this system has no student-to-specific-run or
+  stop-to-route assignment mechanism — so "how many riders does *this*
+  run have" isn't well-defined when more than one run serves the same
+  school+direction. The honest MVP scope: add `Run.direction`, expose
+  a *computed, read-only* expected-rider count (from `Student`/
+  `RidershipOverride`) alongside the still-authoritative
+  `passenger_count` the solver enforces — decision support, not
+  silent/automatic overwriting, matching this project's own §21
+  precedent (ADR 0004) for exactly this kind of ambiguity. Do NOT
+  auto-set `passenger_count` when a school has more than one run for
+  that date+direction; surface that ambiguity instead of guessing.
+- **GPS/live position + notifications (§9/§18)** — needs a real
+  telemetry integration (ADR 0007: "streamed telemetry" shape). Likely
+  needs its own vendor/hardware decision (dedicated GPS hardware vs.
+  the driver's own tablet reporting its position) before scoping —
+  flag to the user when reached, don't assume.
+- **§12 field trips, §20 historical learning** — untouched, each needs
+  fresh scoping from the spec text before a plan can be written.
+- **§7 turn/dead-end safety costs, §10 dynamic rerouting, the 5
+  excluded §8 categories** — deliberately last: §7/§10 need a routing
+  *graph* this system doesn't own (a materially different technical
+  approach, likely its own vendor/architecture research pass); the 5
+  excluded §8 categories were each excluded for a specific reason, not
+  missing plumbing — revisiting any one is its own small design call,
+  not a mechanical follow-up.
 
-Check recent conversation for explicit user direction before picking
-one — this is a genuine fork, not an obvious continuation the way §6
-and §8's own halves were after each other.
+Work through the remaining items in roughly this order — self-contained
+first, decisions-needed items (GPS vendor, §7/§10 architecture) flagged
+to the user when actually reached, not guessed at.
 
 ## Environment specifics (this machine)
 
