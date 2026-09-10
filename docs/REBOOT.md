@@ -487,12 +487,23 @@ step this time** — reasonable candidates, none clearly "the" one:
   app's own UI (the API already supports a driver reporting their own
   absence — `POST /drivers/{id}/absences`, driver-role ownership check
   already there — just no `DriverPage.tsx` button for it yet).
-- The one remaining minor, non-blocking polish item: `services/api`
-  doesn't use the SQLAlchemy 2.0 mypy plugin, so ORM constructor
-  kwargs aren't strictly type-checked against column types — the
-  Phase 5 `student_id` bug and PR #22's `SolverVehicle(...)` gap are
-  exactly the class of mistake that plugin would catch at type-check
-  time instead of requiring a test or manual check to find.
+- ~~SQLAlchemy 2.0 mypy plugin~~ — **investigated and ruled out**
+  (checked empirically, not assumed): deliberately reintroduced the
+  Phase 5/PR #22-style bug (dropped one kwarg from
+  `routers/vehicles.py`'s `Vehicle(...)` constructor call) and ran
+  mypy both with and without `sqlalchemy.ext.mypy.plugin` enabled —
+  neither caught it, because omitting a kwarg for a field with a
+  default (`Mapped[T | None]`, or `SolverVehicle`'s plain dataclass
+  fields — not even a SQLAlchemy model) is valid Python regardless of
+  any plugin; the plugin only helps mypy infer *types* for legacy
+  `Column(...)`-style declarative models, which this codebase doesn't
+  use (it's on 2.0-native `Mapped[]` typing throughout, where the
+  plugin is redundant by SQLAlchemy's own current docs). No config
+  change would have caught either bug — what actually catches this
+  class of mistake is what this project already does: a real
+  round-trip test asserting a new field reaches the response, not just
+  passes schema validation (see `test_vehicle_dimension_fields_round_trip`,
+  added specifically for this reason in PR #21).
 
 Check recent conversation for explicit user direction before picking
 one — this is a genuine fork, not an obvious continuation the way §6
