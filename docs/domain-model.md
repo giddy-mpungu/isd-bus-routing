@@ -47,16 +47,17 @@ route window). Trips (spec §12) will extend this in a later phase.
   these; either or both may be `None` if unknown). `allowable_capacity()`
   returns effective if known, else nominal, else `None`.
 - `length_m`, `width_m`, `height_m`, `weight_kg` (spec §6's vehicle
-  profile, Phase 6 GIS slice — persisted only. `DeadheadEstimator`
-  (below) is still `Callable[[Location, Location], int]`, with no
-  `Vehicle` argument, so nothing in the scheduler reads these yet —
-  see the "DeadheadEstimator" section for exactly what's deferred and
-  why). Deliberately not persisting turning radius (no ORS HGV
-  restriction parameter could consume it), wheelchair configuration
-  (already modeled via the `qualifications` capability-tag system
-  above), vehicle type (no per-vehicle ORS profile switching exists),
-  or "applicable road restrictions" (that's what height/width/weight
-  restrictions already express at the routing-provider level).
+  profile, Phase 6 GIS slice). Consumed by `ors_deadhead_estimator`
+  (below) — `DeadheadEstimator` now takes a `Vehicle` argument, and
+  the scheduler's pairwise-ordering loop calls it once per (job-pair,
+  crew) so each crew's actual dimensions are used, not shared across
+  every candidate crew. Deliberately not persisting turning radius (no
+  ORS HGV restriction parameter could consume it), wheelchair
+  configuration (already modeled via the `qualifications`
+  capability-tag system above), vehicle type (no per-vehicle ORS
+  profile switching exists), or "applicable road restrictions" (that's
+  what height/width/weight restrictions already express at the
+  routing-provider level).
 
 ### Driver
 - `id`
@@ -88,25 +89,30 @@ route window). Trips (spec §12) will extend this in a later phase.
   the pairwise job-vs-job case.
 
 ### DeadheadEstimator
-A pluggable function `(location_a, location_b) -> minutes`. Three
+A pluggable function `(location_a, location_b, vehicle) -> minutes` (widened from a 2-arg
+function in the §6 wiring slice — `scheduler.py`'s pairwise-ordering loop now calls it once
+per (job-pair, crew), not once per job-pair shared across every candidate crew, so two
+different vehicles serving the same pair can get genuinely different numbers). Three
 implementations exist:
 - `straight_line_deadhead_estimator` (Phase 1): haversine distance /
   average speed, explicitly labeled as an approximation. Used whenever
   no routing API key is configured — the default for CI/tests/local
-  dev, and the automatic fallback if a routing API call fails.
+  dev, and the automatic fallback if a routing API call fails. Ignores
+  the `vehicle` argument — distance doesn't depend on it.
 - `osrm_deadhead_estimator` (Phase 1, unwired): calls an
   OSRM-compatible routing HTTP API. Written as a scaffold/pattern
   reference but never wired into `services/api` — superseded in
   practice by `ors_deadhead_estimator` below, which the API layer
-  actually uses.
+  actually uses. Also ignores `vehicle` — OSRM's public HTTP API has
+  no restriction-parameter mechanism to apply it to, unlike ORS.
 - `ors_deadhead_estimator` (Phase 6 GIS slice 1, extended in the §8
-  wiring slice): calls the OpenRouteService Directions API
+  and §6 wiring slices): calls the OpenRouteService Directions API
   (`driving-hgv` profile by default — a real heavy-goods-vehicle
   profile, closer to spec §6's intent than a passenger-car profile).
   `services/api`'s `POST /schedule` wires this in automatically when
   `ISD_API_ORS_API_KEY` is configured (`isd_api.config.settings`),
   falling back to the straight-line estimator (logged at WARNING) if
-  the ORS call fails. Also accepts `avoid_polygons` (a GeoJSON
+  the ORS call fails. Accepts `avoid_polygons` (a GeoJSON
   Polygon/MultiPolygon, built by the `avoid_polygons_geojson` helper
   next to it) — the wiring point for spec §8's district-specific
   geographic knowledge: `routers/schedule.py` queries
@@ -114,23 +120,31 @@ implementations exist:
   genuinely mean "never route through this point"
   (`FREQUENT_FLOODING`, `UNSAFE_TURN`, `INVALID_TURNAROUND` — see
   "Phase 6 entities" below for why the other 5 are deliberately
-  excluded) and passes their locations in. **Still not full bus-legal
-  routing per spec §6** — every crew gets the same `driving-hgv`
-  default regardless of its actual vehicle's dimensions; applying
-  per-vehicle height/width/weight/length restrictions would require
-  widening `DeadheadEstimator`'s signature to also take a `Vehicle`,
-  which ripples into every `scheduler.py` call site — a deliberate
-  follow-up, not part of this estimator. §7 (turn/dead-end safety
-  costs) and §10 (dynamic rerouting from live incident feeds) need a
+  excluded) and passes their locations in. **Now also applies
+  per-vehicle restrictions** (spec §6): when the `Vehicle` passed to
+  `estimate` has any of `length_m`/`width_m`/`height_m`/`weight_kg`
+  set, the request body's `options.profile_params.restrictions` gains
+  the corresponding keys (weight converted from persisted kilograms to
+  the tons ORS expects). **A real live-verification catch, not
+  theoretical**: some published ORS docs describe a required top-level
+  `vehicle_type` field alongside `restrictions`; the live API (v2
+  directions, checked 2026-09) actively rejects an unrecognized
+  `vehicle_type` with a 400, so it's deliberately not sent —
+  `restrictions` alone is accepted. §7 (turn/dead-end safety costs)
+  and §10 (dynamic rerouting from live incident feeds) still need a
   routing *graph* this system doesn't own and can't customize through
-  a simple point-to-point directions call — out of scope here too.
+  a simple point-to-point directions call — out of scope here.
   `osrm_deadhead_estimator` has not been exercised against a live
   routing server in this development environment (network-restricted
   sandbox); `ors_deadhead_estimator` **has** — live-verified with a
   real OpenRouteService API key against real Houston-area coordinates,
-  both for the base estimate and for `avoid_polygons` (confirmed a
-  real detour: forcing a block on a point actually on the route's
-  returned geometry measurably changed the trip duration). Each still
+  for the base estimate, `avoid_polygons` (confirmed a real detour:
+  forcing a block on a point actually on the route's returned geometry
+  measurably changed the trip duration), and vehicle restrictions
+  (confirmed the request shape is accepted without error — the actual
+  test route didn't happen to cross a real restricted segment, so no
+  observable duration change, but that's a property of the specific
+  coordinates chosen, not of the request being malformed). Each still
   takes its HTTP call as a dependency-injected parameter so it can be
   unit-tested without live network access in CI.
 
@@ -218,7 +232,7 @@ produces them rather than duplicated here.
 - Ridership reporting cutoff / route-lock configuration (spec §4.4)
 - A recurring `route` (template) table distinct from dated `run` instances — ADR 0001 named this intention for Phase 2+, never built; Phase 5 worked around its absence rather than building it (see RidershipOverride above)
 - Field trips / Trip conflict detection (spec §12) — Phase 6
-- Full bus-legal routing per spec §6/7 — `ors_deadhead_estimator` (Phase 6 GIS slice 1) gets real road-network travel time on a heavy-vehicle profile, and `Vehicle` now persists length/width/height/weight (Phase 6 GIS slice, above), but the two still aren't connected: `DeadheadEstimator`'s signature doesn't take a `Vehicle` yet, so every crew still gets the same undifferentiated `driving-hgv` profile. Turn/dead-end safety costs (§7) need a routing graph/profile this system doesn't own, not just a point-to-point directions call — out of scope regardless.
+- Spec §6 is now done to the extent an external point-to-point routing API can express it: real road-network travel time, per-vehicle length/width/height/weight restrictions, and district-specific avoid-zones (§8) are all applied via `ors_deadhead_estimator`. Turn/dead-end safety costs (§7) and dynamic rerouting (§10) remain genuinely out of scope — both need a routing *graph* this system doesn't own, not just a point-to-point directions call, a different technical approach than anything built so far.
 - District-specific geographic knowledge / local roadway overrides (spec §8) — persistence done, and 3 of 8 categories now applied to routing via ORS `avoid_polygons` (`GeographicKnowledgeOverride`, above); the other 5 categories (caution/time-dependent/vehicle-dependent/preference/ambiguous) each need a different mechanism than a hard avoid-zone, not just more plumbing
 - Dynamic rerouting around road closures/incidents (spec §10) — Phase 6, same GIS dependency
 - Live GPS bus location, delay/substitution/route-change notifications (spec §18) — Phase 6+, no live-tracking or notification infrastructure exists yet

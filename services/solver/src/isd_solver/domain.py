@@ -250,7 +250,7 @@ class Crew:
         return capacity >= job.passenger_count
 
 
-DeadheadEstimator = Callable[[Location, Location], int]
+DeadheadEstimator = Callable[[Location, Location, Vehicle], int]
 
 
 def straight_line_deadhead_estimator(
@@ -264,12 +264,17 @@ def straight_line_deadhead_estimator(
     used for anything operational. average_speed_kmh must be supplied
     by the caller for their context; 30 km/h is a documented default
     for suburban school-zone-adjacent driving, not a measured figure.
+
+    Takes a Vehicle argument (DeadheadEstimator's shared signature) but
+    ignores it — a haversine straight-line distance doesn't depend on
+    the vehicle's dimensions; only ors_deadhead_estimator actually
+    consumes them (spec section 6's real wiring point).
     """
 
     if average_speed_kmh <= 0:
         raise ValueError("average_speed_kmh must be > 0")
 
-    def estimate(a: Location, b: Location) -> int:
+    def estimate(a: Location, b: Location, vehicle: Vehicle) -> int:
         lat1, lon1, lat2, lon2 = map(radians, (a.lat, a.lon, b.lat, b.lon))
         dlat = lat2 - lat1
         dlon = lon2 - lon1
@@ -335,6 +340,11 @@ def osrm_deadhead_estimator(
     lifetime of the returned estimator, since the scheduler's pairwise
     ordering logic may request the same pair more than once.
 
+    Takes a Vehicle argument (DeadheadEstimator's shared signature) but
+    ignores it — OSRM's public HTTP API has no restriction-parameter
+    mechanism to apply vehicle dimensions to (unlike ORS), and this
+    estimator remains the unwired scaffold it always has been.
+
     If the API call fails (network error, non-2xx, unexpected response
     shape) and `fallback` is provided, the fallback estimator is used
     and the failure is logged at WARNING level. If no fallback is
@@ -350,7 +360,7 @@ def osrm_deadhead_estimator(
     fetch = http_get or _default_http_get
     cache: dict[tuple[Location, Location], int] = {}
 
-    def estimate(a: Location, b: Location) -> int:
+    def estimate(a: Location, b: Location, vehicle: Vehicle) -> int:
         if a == b:
             return 0
         key = (a, b)
@@ -373,7 +383,7 @@ def osrm_deadhead_estimator(
                     b,
                     exc,
                 )
-                return fallback(a, b)
+                return fallback(a, b, vehicle)
             raise DeadheadEstimationError(
                 f"Failed to get routing-API deadhead estimate for {a} -> {b}: {exc}"
             ) from exc
@@ -446,15 +456,29 @@ def ors_deadhead_estimator(
     `profile` defaults to `driving-hgv`, ORS's heavy-goods-vehicle
     profile — meaningfully closer to spec section 6's bus-specific
     routing intent than a passenger-car profile (avoids some
-    truck-prohibited roads by default). IMPORTANT: this does **not**
-    yet apply any *per-vehicle* restrictions (height/width/weight/length,
-    also spec section 6) — every crew gets the same `driving-hgv`
-    default regardless of its actual vehicle's dimensions. Doing so
-    would require `DeadheadEstimator` to carry a `Vehicle` argument,
-    which ripples into every `scheduler.py` call site — a deliberate
-    follow-up, not part of this estimator. Turn/dead-end safety costs
-    (section 7) remain out of scope here — this is a point-to-point
-    travel-time estimate, not a customizable routing graph.
+    truck-prohibited roads by default). Per-vehicle restrictions (spec
+    section 6) are now applied: when the `Vehicle` passed to `estimate`
+    has any of `length_m`/`width_m`/`height_m`/`weight_kg` set, the
+    request body's `options.profile_params.restrictions` gains the
+    corresponding keys (length/width/height in meters, matching how
+    they're persisted; weight converted from the persisted kilograms
+    to the tons ORS expects). A vehicle with no dimensions set sends no
+    `options.profile_params` at all, identical to pre-wiring behavior.
+    IMPORTANT — live-verified against the real API, not just
+    documentation: some published ORS docs describe a top-level
+    `vehicle_type` field as required alongside `restrictions` for them
+    to take effect; this live API instance (v2 directions, confirmed
+    2026-09) actively **rejects** an unrecognized `vehicle_type`
+    parameter with a 400, so it is deliberately NOT sent —
+    `restrictions` alone is accepted and presumably applied (this
+    system has no independent way to prove ORS's internal restriction
+    logic actually changes route selection beyond confirming the
+    request itself is accepted without error; if a future ORS API
+    version reintroduces a required `vehicle_type` field, this is the
+    place to add it back, driven by another live check, not by docs
+    alone). Turn/dead-end safety costs (section 7) remain out of scope
+    here — this is a point-to-point travel-time estimate, not a
+    customizable routing graph.
 
     `avoid_polygons` is the wiring point for spec section 8's
     district-specific geographic knowledge — a GeoJSON Polygon or
@@ -470,9 +494,15 @@ def ors_deadhead_estimator(
     `routers/schedule.py`'s decision, not this function's — it accepts
     whatever geometry it's given.
 
-    Results are cached in-memory per (origin, destination) pair for the
-    lifetime of the returned estimator, since the scheduler's pairwise
-    ordering logic may request the same pair more than once.
+    Results are cached in-memory per (origin, destination, vehicle
+    restriction signature) for the lifetime of the returned estimator,
+    since the scheduler's pairwise ordering logic may request the same
+    pair more than once — the vehicle is part of the key precisely
+    because two different vehicles at the same two points can now get
+    genuinely different ORS results (a cache keyed on location alone
+    would silently reuse one vehicle's result for another's).
+    `avoid_polygons` is NOT part of the key, since it's fixed for the
+    estimator's whole lifetime, not per-call.
 
     If the API call fails (network error, non-2xx, unexpected response
     shape) and `fallback` is provided, the fallback estimator is used
@@ -489,19 +519,39 @@ def ors_deadhead_estimator(
         raise ValueError("base_url must be a non-empty routing API base URL")
 
     post = http_post or _default_http_post
-    cache: dict[tuple[Location, Location], int] = {}
+    cache: dict[tuple[Location, Location, tuple[float | None, ...]], int] = {}
 
-    def estimate(a: Location, b: Location) -> int:
+    def estimate(a: Location, b: Location, vehicle: Vehicle) -> int:
         if a == b:
             return 0
-        key = (a, b)
+        restriction_signature = (
+            vehicle.length_m,
+            vehicle.width_m,
+            vehicle.height_m,
+            vehicle.weight_kg,
+        )
+        key = (a, b, restriction_signature)
         if key in cache:
             return cache[key]
 
         url = f"{base_url}/v2/directions/{profile}"
         body: dict = {"coordinates": [[a.lon, a.lat], [b.lon, b.lat]]}
+        options: dict = {}
         if avoid_polygons is not None:
-            body["options"] = {"avoid_polygons": avoid_polygons}
+            options["avoid_polygons"] = avoid_polygons
+        restrictions: dict = {}
+        if vehicle.length_m is not None:
+            restrictions["length"] = vehicle.length_m
+        if vehicle.width_m is not None:
+            restrictions["width"] = vehicle.width_m
+        if vehicle.height_m is not None:
+            restrictions["height"] = vehicle.height_m
+        if vehicle.weight_kg is not None:
+            restrictions["weight"] = vehicle.weight_kg / 1000.0  # ORS expects tons
+        if restrictions:
+            options["profile_params"] = {"restrictions": restrictions}
+        if options:
+            body["options"] = options
         headers = {"Authorization": api_key}
         try:
             payload = post(url, body, headers, timeout_seconds)
@@ -518,7 +568,7 @@ def ors_deadhead_estimator(
                     b,
                     exc,
                 )
-                return fallback(a, b)
+                return fallback(a, b, vehicle)
             raise DeadheadEstimationError(
                 f"Failed to get routing-API deadhead estimate for {a} -> {b}: {exc}"
             ) from exc
