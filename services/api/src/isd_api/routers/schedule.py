@@ -115,6 +115,10 @@ def _to_solver_inputs(
                 qualifications=frozenset(q.code for q in c.vehicle.qualifications),
                 nominal_capacity=c.vehicle.nominal_capacity,
                 effective_capacity=c.vehicle.effective_capacity,
+                length_m=c.vehicle.length_m,
+                width_m=c.vehicle.width_m,
+                height_m=c.vehicle.height_m,
+                weight_kg=c.vehicle.weight_kg,
             ),
             available_window=SolverTimeWindow(
                 earliest=c.available_window_earliest, latest=c.available_window_latest
