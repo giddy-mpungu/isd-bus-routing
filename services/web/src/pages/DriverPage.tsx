@@ -1,7 +1,21 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { AssignmentStatus, DriverAssignment } from '../api/types'
+import type { AbsenceReason, AssignmentStatus, DriverAssignment } from '../api/types'
+import { useAuth } from '../auth/AuthContext'
+
+const ABSENCE_REASONS: AbsenceReason[] = [
+  'sick_leave',
+  'personal_day',
+  'vacation',
+  'emergency_leave',
+  'training',
+  'approved_leave',
+  'administrative_direction',
+  'injury',
+  'no_call_no_show',
+  'other',
+]
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -32,6 +46,7 @@ function speakAssignment(a: DriverAssignment) {
 }
 
 export function DriverPage() {
+  const { user } = useAuth()
   const [serviceDate] = useState(today)
   const [assignments, setAssignments] = useState<DriverAssignment[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -60,6 +75,45 @@ export function DriverPage() {
       setErrorMessage(err instanceof ApiError ? err.message : 'Failed to update run status.')
     } finally {
       setBusyAssignmentId(null)
+    }
+  }
+
+  // --- Report my own absence (spec section 13: a driver can report
+  // their own absence; POST /drivers/{id}/absences already supports
+  // this — the API only needed a button, per REBOOT.md's own note). ---
+  const [absenceReason, setAbsenceReason] = useState<AbsenceReason>('sick_leave')
+  const [absenceWholeDay, setAbsenceWholeDay] = useState(true)
+  const [absenceStartMinute, setAbsenceStartMinute] = useState('0')
+  const [absenceEndMinute, setAbsenceEndMinute] = useState('1439')
+  const [absenceError, setAbsenceError] = useState<string | null>(null)
+  const [absenceSuccess, setAbsenceSuccess] = useState(false)
+  const [isSavingAbsence, setIsSavingAbsence] = useState(false)
+
+  async function handleReportAbsence(event: FormEvent) {
+    event.preventDefault()
+    setAbsenceError(null)
+    setAbsenceSuccess(false)
+    if (user?.driver_id == null) {
+      setAbsenceError('Your account is not linked to a driver record.')
+      return
+    }
+    setIsSavingAbsence(true)
+    try {
+      await api.createAbsence(user.driver_id, {
+        service_date: serviceDate,
+        start_minute: absenceWholeDay ? 0 : Number(absenceStartMinute),
+        end_minute: absenceWholeDay ? 1439 : Number(absenceEndMinute),
+        reason: absenceReason,
+      })
+      setAbsenceReason('sick_leave')
+      setAbsenceWholeDay(true)
+      setAbsenceStartMinute('0')
+      setAbsenceEndMinute('1439')
+      setAbsenceSuccess(true)
+    } catch (err) {
+      setAbsenceError(err instanceof ApiError ? err.message : 'Failed to report absence.')
+    } finally {
+      setIsSavingAbsence(false)
     }
   }
 
@@ -113,6 +167,65 @@ export function DriverPage() {
           </li>
         ))}
       </ul>
+
+      <section className="driver-absence-section">
+        <h2>Report an absence</h2>
+        <form onSubmit={(event) => void handleReportAbsence(event)}>
+          <label htmlFor="driver-absence-reason">Reason</label>
+          <select
+            id="driver-absence-reason"
+            value={absenceReason}
+            onChange={(event) => setAbsenceReason(event.target.value as AbsenceReason)}
+          >
+            {ABSENCE_REASONS.map((reason) => (
+              <option key={reason} value={reason}>
+                {reason.replace(/_/g, ' ')}
+              </option>
+            ))}
+          </select>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={absenceWholeDay}
+              onChange={(event) => setAbsenceWholeDay(event.target.checked)}
+            />
+            Whole day
+          </label>
+          {!absenceWholeDay && (
+            <>
+              <label htmlFor="driver-absence-start">Start (minute of day)</label>
+              <input
+                id="driver-absence-start"
+                type="number"
+                min="0"
+                max="1439"
+                value={absenceStartMinute}
+                onChange={(event) => setAbsenceStartMinute(event.target.value)}
+                required
+              />
+              <label htmlFor="driver-absence-end">End (minute of day)</label>
+              <input
+                id="driver-absence-end"
+                type="number"
+                min="0"
+                max="1439"
+                value={absenceEndMinute}
+                onChange={(event) => setAbsenceEndMinute(event.target.value)}
+                required
+              />
+            </>
+          )}
+          {absenceError && (
+            <p role="alert" className="error">
+              {absenceError}
+            </p>
+          )}
+          {absenceSuccess && <p className="status">Absence reported.</p>}
+          <button type="submit" disabled={isSavingAbsence}>
+            {isSavingAbsence ? 'Reporting…' : 'Report absence'}
+          </button>
+        </form>
+      </section>
     </div>
   )
 }
