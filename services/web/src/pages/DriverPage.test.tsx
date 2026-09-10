@@ -118,7 +118,7 @@ describe('DriverPage', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Not your run'))
   })
 
-  it('reporting a whole-day absence calls createAbsence with the driver\'s own id', async () => {
+  it("reporting a whole-day absence calls createAbsence with the driver's own id", async () => {
     vi.mocked(api.getMyAssignments).mockResolvedValue([])
     const created: Absence = {
       id: 5,
@@ -184,7 +184,9 @@ describe('DriverPage', () => {
 
   it('shows an error message when reporting an absence fails', async () => {
     vi.mocked(api.getMyAssignments).mockResolvedValue([])
-    vi.mocked(api.createAbsence).mockRejectedValue(new ApiError(400, 'start_minute must be <= end_minute'))
+    vi.mocked(api.createAbsence).mockRejectedValue(
+      new ApiError(400, 'start_minute must be <= end_minute'),
+    )
     renderPage()
     await waitFor(() =>
       expect(screen.getByText('No runs scheduled for today.')).toBeInTheDocument(),
