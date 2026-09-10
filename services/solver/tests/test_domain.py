@@ -116,8 +116,9 @@ def test_straight_line_deadhead_estimator_symmetric_and_positive():
     estimate = straight_line_deadhead_estimator(average_speed_kmh=30.0)
     a = Location(lat=29.7604, lon=-95.3698)  # Houston
     b = Location(lat=29.8, lon=-95.4)
-    minutes_ab = estimate(a, b)
-    minutes_ba = estimate(b, a)
+    vehicle = Vehicle(id="V1")
+    minutes_ab = estimate(a, b, vehicle)
+    minutes_ba = estimate(b, a, vehicle)
     assert minutes_ab == minutes_ba
     assert minutes_ab > 0
 
@@ -125,7 +126,7 @@ def test_straight_line_deadhead_estimator_symmetric_and_positive():
 def test_deadhead_estimator_zero_for_same_location():
     estimate = straight_line_deadhead_estimator()
     a = Location(lat=29.7604, lon=-95.3698)
-    assert estimate(a, a) == 0
+    assert estimate(a, a, Vehicle(id="V1")) == 0
 
 
 def test_deadhead_estimator_rejects_non_positive_speed():

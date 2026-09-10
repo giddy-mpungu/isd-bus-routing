@@ -228,10 +228,11 @@ def solve_multi_school_schedule(
             }
             if not shared_crew_ids:
                 continue
-            deadhead_ab = deadhead_estimator(job_a.location, job_b.location)
-            deadhead_ba = deadhead_estimator(job_b.location, job_a.location)
             order = model.NewBoolVar(f"order_{job_a.id}_before_{job_b.id}")
             for crew_id in shared_crew_ids:
+                vehicle = crew_by_id[crew_id].vehicle
+                deadhead_ab = deadhead_estimator(job_a.location, job_b.location, vehicle)
+                deadhead_ba = deadhead_estimator(job_b.location, job_a.location, vehicle)
                 both = [x[job_a.id][crew_id], x[job_b.id][crew_id]]
                 model.Add(end_vars[job_a.id] + deadhead_ab <= start_vars[job_b.id]).OnlyEnforceIf(
                     both + [order]
@@ -343,7 +344,9 @@ def solve_multi_school_schedule(
             checks.append("it does not overlap this crew's other committed (locked) assignments")
         buffer_to_next = None
         if next_job is not None:
-            deadhead = deadhead_estimator(job.location, next_job.location)
+            deadhead = deadhead_estimator(
+                job.location, next_job.location, crew_by_id[crew_id].vehicle
+            )
             buffer_to_next = (
                 solver.Value(start_vars[next_job.id]) - solver.Value(end_vars[job.id]) - deadhead
             )

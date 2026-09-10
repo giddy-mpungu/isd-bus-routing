@@ -146,7 +146,7 @@ def test_schedule_uses_ors_estimator_when_api_key_configured(client, admin_heade
 
     def fake_ors_deadhead_estimator(**kwargs):
         calls.append(kwargs)
-        return lambda a, b: 5
+        return lambda a, b, v: 5
 
     monkeypatch.setattr(schedule_module, "ors_deadhead_estimator", fake_ors_deadhead_estimator)
 
@@ -156,6 +156,82 @@ def test_schedule_uses_ors_estimator_when_api_key_configured(client, admin_heade
     assert calls[0]["api_key"] == "test-key"
     assert calls[0]["profile"] == "driving-hgv"
     assert "fallback" in calls[0]
+
+
+def test_schedule_passes_vehicle_dimensions_through_to_the_deadhead_estimator(
+    client, admin_headers, monkeypatch
+):
+    """Phase 6 spec section 6 wiring: a vehicle's persisted length_m/
+    width_m/height_m/weight_kg must reach the estimator call inside
+    scheduler.py's pairwise-ordering loop, not just _to_solver_inputs
+    — the exact "three places" gotcha (REBOOT.md #7) this PR fixes at
+    the SolverVehicle(...) constructor call. Two runs are needed (not
+    _seed_single_run_scenario's one) so the pairwise loop that actually
+    invokes deadhead_estimator is exercised at all."""
+    school = client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": "S", "location_lat": 29.70, "location_lon": -95.40},
+    ).json()
+    driver = client.post("/drivers", headers=admin_headers, json={"full_name": "D"}).json()
+    vehicle = client.post(
+        "/vehicles",
+        headers=admin_headers,
+        json={
+            "label": "Big Bus",
+            "length_m": 10.5,
+            "width_m": 2.5,
+            "height_m": 3.2,
+            "weight_kg": 12000.0,
+        },
+    ).json()
+    client.post(
+        "/crews",
+        headers=admin_headers,
+        json={
+            "service_date": "2026-09-01",
+            "driver_id": driver["id"],
+            "vehicle_id": vehicle["id"],
+            "available_window_earliest": 0,
+            "available_window_latest": 1439,
+        },
+    )
+    for earliest, latest in [(360, 410), (420, 470)]:
+        client.post(
+            "/runs",
+            headers=admin_headers,
+            json={
+                "service_date": "2026-09-01",
+                "school_id": school["id"],
+                "window_earliest": earliest,
+                "window_latest": latest,
+                "duration_minutes": 40,
+                "buffer_minutes": 10,
+            },
+        )
+
+    import isd_api.routers.schedule as schedule_module
+
+    monkeypatch.setattr(schedule_module.settings, "ors_api_key", "test-key")
+    seen_vehicles = []
+
+    def fake_ors_deadhead_estimator(**kwargs):
+        def estimate(a, b, vehicle):
+            seen_vehicles.append(vehicle)
+            return 5
+
+        return estimate
+
+    monkeypatch.setattr(schedule_module, "ors_deadhead_estimator", fake_ors_deadhead_estimator)
+
+    response = client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
+    assert response.status_code == 200, response.text
+    assert seen_vehicles  # the pairwise loop actually called the estimator
+    for solver_vehicle in seen_vehicles:
+        assert solver_vehicle.length_m == 10.5
+        assert solver_vehicle.width_m == 2.5
+        assert solver_vehicle.height_m == 3.2
+        assert solver_vehicle.weight_kg == 12000.0
 
 
 def test_schedule_ors_estimator_gets_avoid_polygons_for_hard_avoid_categories_only(
@@ -195,7 +271,7 @@ def test_schedule_ors_estimator_gets_avoid_polygons_for_hard_avoid_categories_on
 
     def fake_ors_deadhead_estimator(**kwargs):
         calls.append(kwargs)
-        return lambda a, b: 5
+        return lambda a, b, v: 5
 
     monkeypatch.setattr(schedule_module, "ors_deadhead_estimator", fake_ors_deadhead_estimator)
 
@@ -227,7 +303,7 @@ def test_schedule_uses_straight_line_estimator_when_no_ors_key_configured(
     monkeypatch.setattr(
         schedule_module,
         "ors_deadhead_estimator",
-        lambda **kwargs: calls.append(kwargs) or (lambda a, b: 5),
+        lambda **kwargs: calls.append(kwargs) or (lambda a, b, v: 5),
     )
 
     response = client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
