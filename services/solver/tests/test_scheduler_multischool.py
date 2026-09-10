@@ -22,9 +22,10 @@ def solve_multi_school_schedule(jobs, crews, deadhead_estimator):
 
 
 def _fixed_deadhead(minutes: int):
-    """A deterministic deadhead estimator for tests, independent of geography."""
+    """A deterministic deadhead estimator for tests, independent of
+    geography and vehicle (the `vehicle` arg is ignored)."""
 
-    def estimate(a: Location, b: Location) -> int:
+    def estimate(a: Location, b: Location, vehicle: Vehicle) -> int:
         return 0 if a == b else minutes
 
     return estimate
@@ -103,6 +104,46 @@ def test_single_crew_infeasible_when_deadhead_exceeds_gap():
 
     assert isinstance(result, InfeasibleResult)
     assert "hard constraint" in result.reason.lower() or "solver status" in result.reason.lower()
+
+
+def _vehicle_keyed_deadhead(minutes_by_vehicle_id: dict[str, int]):
+    """A deadhead estimator that returns a different fixed value per
+    vehicle id, for proving deadhead is genuinely computed per-crew,
+    not shared across every crew that could serve a job pair (the bug
+    this slice fixes — see scheduler.py's pairwise-ordering loop)."""
+
+    def estimate(a: Location, b: Location, vehicle: Vehicle) -> int:
+        if a == b:
+            return 0
+        return minutes_by_vehicle_id[vehicle.id]
+
+    return estimate
+
+
+def test_deadhead_is_computed_per_crew_not_shared_across_every_candidate():
+    """Before this slice, deadhead_ab/deadhead_ba were computed once
+    per job-pair and applied identically to every crew in
+    shared_crew_ids — so two different vehicles serving the same pair
+    got the same number regardless of their actual dimensions. Here,
+    only C2's vehicle has a deadhead that fits the 10-minute gap
+    between the two jobs' windows; if the old shared-per-pair behavior
+    were still in effect, the estimator would only ever be asked for
+    one shared value for this pair, making this distinction
+    unobservable. Minimize-crews-used then forces the solver to prefer
+    C2 alone over using both crews, which is only possible if the
+    solver actually sees C2's shorter deadhead as distinct from C1's."""
+    jobs = _spec_section5_jobs()[:2]  # pre-k + high school, 10-minute gap
+    crew_with_long_deadhead = _crew("C1")  # vehicle id "vehicle-C1"
+    crew_with_short_deadhead = _crew("C2")  # vehicle id "vehicle-C2"
+    estimator = _vehicle_keyed_deadhead({"vehicle-C1": 15, "vehicle-C2": 5})
+
+    result = solve_multi_school_schedule(
+        jobs, [crew_with_long_deadhead, crew_with_short_deadhead], estimator
+    )
+
+    assert isinstance(result, SchedulingResult)
+    assert result.crews_used == 1
+    assert {a.crew_id for a in result.assignments} == {"C2"}
 
 
 def test_two_crews_recover_feasibility_when_one_crew_cannot_chain_all_three():
