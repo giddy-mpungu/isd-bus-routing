@@ -506,16 +506,19 @@ the same pattern:
    incidents needs the same graph, plus a live-incident data source
    this system doesn't have either.
 
-**Flag both to the user when actually starting this work — don't
-guess at a vendor or self-hosted-graph approach.** Everything else
-this session tackled (GPS, GIS provider, ORS vs. HERE) that looked
-like it might need a user decision either genuinely did (and was
-asked) or turned out not to on inspection (GPS/ADR 0009) — §7/§10 read
-like the first case, not the second, but confirm rather than assume.
+**Asked the user directly (2026-09-14): deferred, deliberately, not
+guessed at.** Presented three options (self-host OSRM/Valhalla, research
+a commercial routing API with graph-level controls, or defer) — the
+user picked **defer**. Phase 6's existing ORS-based routing (§6/§8)
+already gives legal/safe HGV routing (weight/height/width restrictions,
+flood/unsafe-turn avoid-zones); §7/§10 are refinements beyond that
+safety baseline, not a gap in it. Revisit only if this becomes a real,
+felt operational pain point — don't self-host or shop for a vendor
+speculatively before then.
 
 Smaller, non-blocking items still open, each its own scoped follow-up
-whenever picked up (not urgent, not part of the "tackle everything"
-list's original scope, listed here so they aren't lost):
+whenever picked up (not urgent, not part of the original "tackle
+everything" list's scope, listed here so they aren't lost):
 - The 5 excluded §8 categories (difficult intersection, congestion
   window, vehicle-size restriction, preferred entrance, other) — each
   excluded for a specific principled reason already documented
@@ -524,8 +527,10 @@ list's original scope, listed here so they aren't lost):
   duration-learning rollup for `FieldTrip.actual_return_at` (§20).
 - Announcements: per-school scoping, auto-generated substitution
   notices from real driver-swap events (needs family-targeting logic).
-- Turn-by-turn navigation and incident/vehicle-defect reporting (the
-  rest of spec §9's driver-app feature list).
+- **§9 incident reporting / vehicle defect reporting — up next.**
+  Tractable and self-contained (no dependency on the deferred routing
+  graph, unlike turn-by-turn navigation, which genuinely is blocked by
+  the §7/§10 decision above and stays deferred with it).
 
 ## Environment specifics (this machine)
 
