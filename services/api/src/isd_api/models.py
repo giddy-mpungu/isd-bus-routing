@@ -81,6 +81,18 @@ class RideDirection(enum.StrEnum):
     PM = "pm"
 
 
+class TripStatus(enum.StrEnum):
+    """spec section 12's enumerated field-trip lifecycle, in order."""
+
+    REQUESTED = "requested"
+    APPROVED = "approved"
+    ASSIGNED = "assigned"
+    DISPATCHED = "dispatched"
+    IN_PROGRESS = "in_progress"
+    RETURNING = "returning"
+    COMPLETED = "completed"
+
+
 class AbsenceReason(enum.StrEnum):
     """spec section 13's enumerated reasons. "Partial-day absence" is
     deliberately not a value here — it's already representable via
@@ -136,6 +148,13 @@ run_required_qualifications = Table(
     "run_required_qualifications",
     Base.metadata,
     Column("run_id", ForeignKey("runs.id"), primary_key=True),
+    Column("qualification_id", ForeignKey("qualifications.id"), primary_key=True),
+)
+
+field_trip_required_qualifications = Table(
+    "field_trip_required_qualifications",
+    Base.metadata,
+    Column("field_trip_id", ForeignKey("field_trips.id"), primary_key=True),
     Column("qualification_id", ForeignKey("qualifications.id"), primary_key=True),
 )
 
@@ -480,6 +499,63 @@ class VehiclePosition(Base):
     )
 
     crew: Mapped[Crew] = relationship()
+
+
+class FieldTrip(Base):
+    """spec section 12: a field trip / special assignment, scheduled
+    through the same engine as regular routes but NOT run through the
+    CP-SAT solver -- driver/vehicle assignment here is a manual
+    dispatcher decision (spec section 21: decision support), matching
+    how Phase 6's substitute-coverage ranking works, not an
+    auto-optimized job. `assigned_driver_id`/`assigned_vehicle_id` are
+    direct FKs rather than a `Crew` pairing, since spec section 11's
+    "Daily Operational Assignment" (a driver's day as a dynamic
+    sequence of jobs, of which a field trip is one kind) isn't built as
+    its own abstraction -- a field trip doesn't need a day-long
+    Crew row, just a driver+vehicle for this one trip.
+
+    Deliberately minimal versus the full spec section 12 field list:
+    `origin`/`destination` are free text (no geocoding/lat-lon, no
+    reusable "Destination Profile" entity -- section 12.3's own
+    deferral, named as a follow-up, same shape as section 8's
+    persist-then-wire split); "Vehicle requirements" and "Accessibility
+    requirements" share one `required_qualifications` (this system
+    already models both through `Qualification`, e.g. a wheelchair-lift
+    tag covers both without inventing a second namespace);
+    `bus_assistant_name` is free text, not a second staff entity (no
+    other staff type exists in this schema to justify one)."""
+
+    __tablename__ = "field_trips"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    requesting_party: Mapped[str] = mapped_column(String(255), nullable=False)
+    origin: Mapped[str] = mapped_column(String(255), nullable=False)
+    destination: Mapped[str] = mapped_column(String(255), nullable=False)
+    departure_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expected_return_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    actual_return_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    passenger_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    assigned_driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
+    assigned_vehicle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehicles.id"), nullable=True
+    )
+    bus_assistant_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    trip_contact: Mapped[str] = mapped_column(String(255), nullable=False)
+    special_instructions: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    status: Mapped[TripStatus] = mapped_column(
+        SAEnum(TripStatus, native_enum=False, length=20),
+        default=TripStatus.REQUESTED,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    required_qualifications: Mapped[list[Qualification]] = relationship(
+        secondary=field_trip_required_qualifications
+    )
+    assigned_driver: Mapped[Driver | None] = relationship(foreign_keys=[assigned_driver_id])
+    assigned_vehicle: Mapped[Vehicle | None] = relationship(foreign_keys=[assigned_vehicle_id])
 
 
 class AuditLogEntry(Base):

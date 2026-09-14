@@ -258,6 +258,32 @@ produces them rather than duplicated here.
   one run serves the same school/date/direction). MVP scope
   deliberately stores only the latest position, not a breadcrumb
   trail — see ADR 0009 for why.
+- **FieldTrip** (spec §12, backend-only first slice): a trip record —
+  `requesting_party`/`origin`/`destination` (free text, no geocoding
+  or reusable "Destination Profile" entity yet — §12.3's own
+  deferral), `departure_at`/`expected_return_at` (same calendar date
+  only in this slice — overnight trips are a named follow-up, not
+  silently mishandled), `actual_return_at`, `passenger_count`,
+  `assigned_driver_id`/`assigned_vehicle_id` (direct FKs, not a `Crew`
+  pairing — spec §11's "Daily Operational Assignment" isn't built as
+  its own abstraction, and a trip doesn't need a day-long crew row),
+  `bus_assistant_name` (free text, no second staff entity),
+  `trip_contact`, `special_instructions`, `status` (spec §12's 7-value
+  lifecycle), and `required_qualifications` (shared for both "vehicle
+  requirements" and "accessibility requirements" — this system already
+  expresses both through `Qualification`, e.g. a wheelchair-lift tag).
+  **Not run through the CP-SAT solver** — assigning a driver/vehicle
+  is a manual dispatcher action (spec §21), same shape as Phase 6's
+  substitute-coverage ranking. `GET /field-trips/{id}/conflicts` (spec
+  §12.1) checks overlapping regular-route `Assignment`s and other
+  `FieldTrip`s for a proposed driver/vehicle — training, maintenance,
+  and required-break conflicts are named in the spec but have no
+  corresponding entity in this schema, so they're not checked (not a
+  missed case — nothing exists to check against). Spec §12.2's "delay
+  management" is not a separate mechanism: re-calling the conflicts
+  endpoint after a `PATCH` to `expected_return_at` *is* the
+  reevaluation. Deliberately no UI yet — same backend-first split as
+  PR #16 → #17's driver-absence work.
 
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
@@ -265,7 +291,7 @@ produces them rather than duplicated here.
 - Spec §4.3's actual behavior — stop-sequence route shortening ("if all riders at a stop don't ride, remove that stop, recalculate sequence/ETAs") — needs a `Route`/stop-sequence model this system has never built (ADR 0001 named the intent, never built). What *is* done: `GET /runs/{id}/expected-riders` computes a real rider count from `Student`/`RidershipOverride` as decision support for `Run.passenger_count` (see "Phase 6 entities" above) — closer to reality than the fully-manual guess it replaced, but not the stop-shortening optimization spec §4.3 describes
 - Ridership reporting cutoff / route-lock configuration (spec §4.4)
 - A recurring `route` (template) table distinct from dated `run` instances — ADR 0001 named this intention for Phase 2+, never built; Phase 5 worked around its absence rather than building it (see RidershipOverride above)
-- Field trips / Trip conflict detection (spec §12) — Phase 6
+- Field trips (spec §12) backend is done (`FieldTrip`, above) — not yet: `services/web` UI (named follow-up, same shape as PR #16→#17), overnight trips, destination profiles (§12.3), and conflict-checking against training/maintenance (no such entity exists)
 - Spec §6 is now done to the extent an external point-to-point routing API can express it: real road-network travel time, per-vehicle length/width/height/weight restrictions, and district-specific avoid-zones (§8) are all applied via `ors_deadhead_estimator`. Turn/dead-end safety costs (§7) and dynamic rerouting (§10) remain genuinely out of scope — both need a routing *graph* this system doesn't own, not just a point-to-point directions call, a different technical approach than anything built so far.
 - District-specific geographic knowledge / local roadway overrides (spec §8) — persistence done, and 3 of 8 categories now applied to routing via ORS `avoid_polygons` (`GeographicKnowledgeOverride`, above); the other 5 categories (caution/time-dependent/vehicle-dependent/preference/ambiguous) each need a different mechanism than a hard avoid-zone, not just more plumbing
 - Dynamic rerouting around road closures/incidents (spec §10) — Phase 6, same GIS dependency
