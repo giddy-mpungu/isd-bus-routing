@@ -167,6 +167,18 @@ class ExpectedRidersRead(BaseModel):
     riding_student_names: list[str]
 
 
+class ObservedRunDurationRead(BaseModel):
+    """spec section 20: historical learning, applied to Run.duration_minutes.
+    See routers/runs.py's get_observed_run_duration for how this is
+    computed entirely from data already persisted -- no new history
+    table."""
+
+    sample_count: int
+    average_actual_minutes: float | None
+    most_recent_actual_minutes: int | None
+    most_recent_service_date: date | None
+
+
 class AssignmentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
