@@ -22,6 +22,7 @@ import type {
   Driver,
   DriverAssignment,
   DriverCreate,
+  ExpectedRiders,
   FamilyMember,
   GeographicKnowledgeOverride,
   GeographicKnowledgeOverrideCreate,
@@ -30,6 +31,7 @@ import type {
   RidershipOverrideUpdate,
   Run,
   RunCreate,
+  RunUpdate,
   School,
   SchoolCreate,
   ScheduleResult,
@@ -153,6 +155,14 @@ export async function updateCrewDriver(crewId: number, driverId: number): Promis
 
 export async function createRun(payload: RunCreate): Promise<Run> {
   return request<Run>('/runs', jsonInit('POST', payload))
+}
+
+export async function updateRun(runId: number, payload: RunUpdate): Promise<Run> {
+  return request<Run>(`/runs/${runId}`, jsonInit('PATCH', payload))
+}
+
+export async function getExpectedRiders(runId: number): Promise<ExpectedRiders> {
+  return request<ExpectedRiders>(`/runs/${runId}/expected-riders`)
 }
 
 export async function getAssignments(serviceDate: string): Promise<Assignment[]> {

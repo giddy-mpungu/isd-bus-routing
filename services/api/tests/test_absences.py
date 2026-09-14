@@ -64,6 +64,7 @@ def _seed_driver_crew_and_run(
     run_payload = {
         "service_date": service_date,
         "school_id": school_id,
+        "direction": "am",
         "window_earliest": window_earliest,
         "window_latest": window_latest,
         "duration_minutes": duration_minutes,
@@ -344,6 +345,7 @@ def test_substitute_candidates_ranks_school_familiarity_higher(client, admin_hea
         json={
             "service_date": earlier_date,
             "school_id": school_id,
+            "direction": "am",
             "window_earliest": 360,
             "window_latest": 410,
             "duration_minutes": 40,

@@ -93,6 +93,7 @@ def _seed_spec_section5_scenario(client, admin_headers):
             json={
                 "service_date": "2026-09-01",
                 "school_id": school["id"],
+                "direction": "am",
                 "window_earliest": earliest,
                 "window_latest": latest,
                 "duration_minutes": duration,
@@ -203,6 +204,7 @@ def test_schedule_passes_vehicle_dimensions_through_to_the_deadhead_estimator(
             json={
                 "service_date": "2026-09-01",
                 "school_id": school["id"],
+                "direction": "am",
                 "window_earliest": earliest,
                 "window_latest": latest,
                 "duration_minutes": 40,
@@ -352,6 +354,7 @@ def test_schedule_endpoint_reports_infeasible_clearly(client, admin_headers):
         json={
             "service_date": "2026-09-01",
             "school_id": school["id"],
+            "direction": "am",
             "window_earliest": 360,
             "window_latest": 420,
             "duration_minutes": 40,
@@ -452,6 +455,7 @@ def _seed_single_run_scenario(
         json={
             "service_date": service_date,
             "school_id": school["id"],
+            "direction": "am",
             "window_earliest": 360,
             "window_latest": 420,
             "duration_minutes": 40,
@@ -542,6 +546,7 @@ def test_patch_assignment_rejects_overlapping_crew_assignment(client, admin_head
         json={
             "service_date": "2026-09-01",
             "school_id": school["id"],
+            "direction": "am",
             "window_earliest": 360,
             "window_latest": 410,
             "duration_minutes": 40,
@@ -554,6 +559,7 @@ def test_patch_assignment_rejects_overlapping_crew_assignment(client, admin_head
         json={
             "service_date": "2026-09-01",
             "school_id": school["id"],
+            "direction": "am",
             "window_earliest": 380,
             "window_latest": 430,
             "duration_minutes": 40,
@@ -735,6 +741,7 @@ def test_reschedule_still_infeasible_when_a_locked_busy_interval_blocks_the_only
         json={
             "service_date": "2026-09-01",
             "school_id": school["id"],
+            "direction": "am",
             "window_earliest": 360,
             "window_latest": 410,
             "duration_minutes": 40,
@@ -761,6 +768,7 @@ def test_reschedule_still_infeasible_when_a_locked_busy_interval_blocks_the_only
         json={
             "service_date": "2026-09-01",
             "school_id": school["id"],
+            "direction": "am",
             "window_earliest": 400,
             "window_latest": 450,
             "duration_minutes": 40,
