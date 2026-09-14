@@ -9,6 +9,7 @@ from isd_api.models import (
     AnnouncementAudience,
     AnnouncementCategory,
     AssignmentStatus,
+    DriverReportType,
     GeographicKnowledgeCategory,
     QualificationKind,
     RideDirection,
@@ -338,6 +339,23 @@ class AbsenceRead(BaseModel):
     start_minute: int
     end_minute: int
     reason: AbsenceReason
+
+
+class DriverReportCreate(BaseModel):
+    service_date: date
+    report_type: DriverReportType
+    description: str = Field(min_length=1, max_length=1000)
+
+
+class DriverReportRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    driver_id: int
+    vehicle_id: int | None
+    service_date: date
+    report_type: DriverReportType
+    description: str
+    created_at: datetime
 
 
 class GeographicKnowledgeOverrideCreate(BaseModel):

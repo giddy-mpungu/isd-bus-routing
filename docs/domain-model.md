@@ -312,6 +312,15 @@ produces them rather than duplicated here.
   actually affected by one specific run's crew change — is a named,
   plausible follow-up, not attempted here. District-wide only in this
   first slice, no per-school scoping (no `school_id` on the row).
+- **DriverReport** (spec §9): the driver app's "Incident reporting" and
+  "Vehicle defect reporting" — one entity with a `report_type`
+  discriminator (`incident`/`vehicle_defect`) rather than two nearly
+  identical entities. `vehicle_id` is deliberately not driver-supplied:
+  the router resolves it from the driver's own `Crew` for
+  `service_date` (the vehicle they were actually driving that day), so
+  the driver-app form only ever needs a type and a description (spec
+  §9: "minimal typing"). Nullable when the driver has no crew that
+  date, or the incident doesn't involve a specific vehicle.
 
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
@@ -323,5 +332,5 @@ produces them rather than duplicated here.
 - Spec §6 is now done to the extent an external point-to-point routing API can express it: real road-network travel time, per-vehicle length/width/height/weight restrictions, and district-specific avoid-zones (§8) are all applied via `ors_deadhead_estimator`. Turn/dead-end safety costs (§7) and dynamic rerouting (§10) remain genuinely out of scope — both need a routing *graph* this system doesn't own, not just a point-to-point directions call, a different technical approach than anything built so far.
 - District-specific geographic knowledge / local roadway overrides (spec §8) — persistence done, and 3 of 8 categories now applied to routing via ORS `avoid_polygons` (`GeographicKnowledgeOverride`, above); the other 5 categories (caution/time-dependent/vehicle-dependent/preference/ambiguous) each need a different mechanism than a hard avoid-zone, not just more plumbing
 - Dynamic rerouting around road closures/incidents (spec §10) — Phase 6, same GIS dependency
-- Live GPS bus location (spec §9/§18) is done for position itself (`VehiclePosition`, ADR 0009, above) — dispatcher fleet view and per-child "locate bus." Delay/substitution/route-change/general notifications (spec §18) and "messages from dispatch" (spec §9) are now done too (`Announcement`, above), always dispatcher-authored, never auto-detected — this system has no ETA engine or automatic event-to-notification pipeline. Still unbuilt: turn-by-turn navigation, incident/vehicle-defect reporting (the rest of spec §9), and per-school announcement scoping
+- Live GPS bus location (spec §9/§18) is done for position itself (`VehiclePosition`, ADR 0009, above) — dispatcher fleet view and per-child "locate bus." Delay/substitution/route-change/general notifications (spec §18) and "messages from dispatch" (spec §9) are now done too (`Announcement`, above), always dispatcher-authored, never auto-detected — this system has no ETA engine or automatic event-to-notification pipeline. Incident reporting / vehicle defect reporting (spec §9) is now done too (`DriverReport`, above). Still unbuilt: turn-by-turn navigation (spec §9 — deliberately deferred alongside §7/§10, since it needs the same routing graph this system doesn't own) and per-school announcement scoping
 - Historical operational data / learning-adjusted estimates (spec §20) — duration learning for `Run.duration_minutes` is done (`GET /runs/observed-duration`, above). Not yet: traffic-delay and route-deviation tracking (both need a planned route geometry and live position history this system doesn't have — ADR 0009 deliberately keeps only the latest GPS position, no breadcrumb trail) and field-trip duration learning (though `FieldTrip.actual_return_at` already captures the raw data needed, no aggregation endpoint exists for it yet, unlike regular runs)
