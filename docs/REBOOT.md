@@ -444,8 +444,9 @@ PATCH edits that bypass the solver.
 24. #24 `feat/gps-live-position` — spec §9/§18, ADR 0009: `VehiclePosition` (one row per crew, latest position only), `PUT /drivers/{id}/position` (driver's own tablet, browser Geolocation API, auto-reports while a run is `in_progress` — no dedicated GPS/AVL hardware/vendor needed, closing the "flag to the user" note from the prior checkpoint without actually needing to ask), `GET /schedule/{date}/fleet-positions` (dispatcher, polled every 20s on `SchedulePage`), `GET /students/{id}/bus-position` (family "Locate bus," `available`/`ambiguous`-shaped like PR #23's expected-riders); notifications (the rest of §18) and turn-by-turn nav/incident reporting/dispatch messaging (the rest of §9) explicitly named as still-unbuilt, not implied done
 25. #25 `feat/phase6-field-trips-backend` — spec §12, backend only: `FieldTrip` (not run through the CP-SAT solver — driver/vehicle assignment is a manual decision, spec §21, same shape as §13's substitute ranking), `POST`/`GET`/`GET {id}`/`PATCH /field-trips`, `GET /field-trips/{id}/conflicts` (§12.1 — checks overlapping regular-route `Assignment`s and other field trips only, no Training/Maintenance entity exists to check against); §12.2's "delay management" reuses the same conflicts endpoint rather than a new mechanism. First slice: same-day trips only (overnight rejected with a 400), backend only — UI followed in PR #26, same split as #16→#17
 26. #26 `feat/phase6-field-trips-ui` — spec §12 UI: new `/field-trips` page (add a trip, list by date, pick a candidate driver/vehicle, check conflicts, assign when clear, step through the status lifecycle). **Manual browser verification caught and fixed a real bug**: `formatDateTime` ran a naive backend timestamp through `new Date()` then `getUTCHours()`/`getUTCMinutes()`, which silently applied the browser's local-UTC offset (06:30 entered displayed as 11:30) — fixed by extracting the `HH:MM` digits directly instead of going through `Date`/timezone conversion, matching the backend's own naive-wall-clock design. Verified live end-to-end: a trip overlapping a real solved regular route showed the conflict and disabled Assign; a non-overlapping trip showed "No conflicts" and Assign correctly PATCHed the driver/vehicle
+27. #27 `feat/phase6-historical-duration-learning` — spec §20: `GET /runs/observed-duration?school_id=&direction=`, computed entirely from data already persisted — a completed `Assignment`'s actual start/end are read off its own `status_changed` audit entries (spec §14), no new breadcrumb/history table. Runs have no recurring-route identity, so "this route" is approximated as completed runs sharing a `(school_id, direction)` pair across any `service_date`. Decision support only (spec §21): `SchedulePage`'s "Add run" form gets a "Check observed duration" / "Use average" flow, never auto-applied. Manually verified live: adjusted real audit timestamps to simulate a 48-minute actual duration, confirmed the UI showed it and "Use average" correctly filled the duration field
 
-## Key files (current state, post-PR #26)
+## Key files (current state, post-PR #27)
 
 - `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal + revocation check), `LoginRateLimiter`/`login_rate_limiter`, `revoke_token`
 - `services/api/src/isd_api/routers/auth.py` — login rate-limited + sets cookie + returns bearer token; `POST /auth/logout` (still no auth required — a no-op if nothing to revoke, but revokes the current token if one is present)
@@ -464,6 +465,7 @@ PATCH edits that bypass the solver.
 - `services/api/src/isd_api/models.py` — `VehiclePosition` (ADR 0009: `crew_id` unique, one row per crew, overwritten in place — no breadcrumb trail); `FieldTrip`/`TripStatus` (spec §12: direct `assigned_driver_id`/`assigned_vehicle_id` FKs, not a `Crew` pairing — not run through the solver)
 - `services/api/src/isd_api/routers/field_trips.py` — `POST`/`GET`/`GET {id}`/`PATCH /field-trips`, `GET /field-trips/{id}/conflicts` (same-day-only minute-of-day overlap check against regular `Assignment`s and other `FieldTrip`s — module docstring explains what it deliberately doesn't check and why)
 - `services/web/src/pages/FieldTripsPage.tsx` — `/field-trips`: add/list trips, candidate driver/vehicle + conflict check + assign, status lifecycle `<select>`. `formatDateTime` extracts `HH:MM` via regex, deliberately NOT `new Date(...).getUTCHours()` — see PR #26's real bug fix if tempted to "simplify" this back
+- `services/api/src/isd_api/routers/runs.py` — `GET /runs/observed-duration` (spec §20): reads a completed `Assignment`'s actual start/end off its own `status_changed` `AuditLogEntry` rows rather than any new column — if extending this, resist adding an `actual_start_at`/`actual_end_at` column before checking whether the audit log already has what's needed
 - `services/api/src/isd_api/main.py` — `CORSMiddleware` config, router registration (check here first if a new router's routes 404 — it needs an `app.include_router(...)` call too, not just existing as a file)
 - `services/solver/src/isd_solver/scheduler.py` — CP-SAT model, duty-limit pairwise constraints, busy-interval constraints
 - `services/solver/src/isd_solver/domain.py` — `Crew.busy_intervals` (validated within `available_window`)
@@ -483,60 +485,60 @@ PATCH edits that bypass the solver.
 
 ## Exact next step (as of this checkpoint)
 
-Every PR through #26 (Phase 4 MVP, auth hardening, Phase 5 MVP, all of
-Phase 6's spec §13/§8/§6/§9(partial)/§18(partial)/§12 increments) is
-**merged**, CI green, local `main` synced (commit `e8f7c94`). The user
-said explicitly: **tackle the entire remaining candidate list,
-continuing until it's done or something new needs deciding** — not
-"pick one," work through all of them. Status:
+Every PR through #27 is **merged**, CI green, local `main` synced
+(commit `5a3c99a`). The user said explicitly: **tackle the entire
+remaining candidate list, continuing until it's done or something new
+needs deciding** — not "pick one," work through all of them. Status of
+everything that's been on this list:
 
-- ~~SQLAlchemy 2.0 mypy plugin~~ — **investigated and ruled out**
-  (checked empirically — see gotcha-list-adjacent note above; what
-  actually catches this class of bug is a real round-trip test per
-  new field).
-- ~~Driver-app absence-reporting UI~~ — **done**, though shipped with
-  a process mistake (direct-to-main commit, briefly broke CI on a
-  missed `format:check` — see gotcha #10). Manually verified live.
-- ~~Ridership → passenger_count decision support (spec §4.3, scoped)~~
-  — **done** (PR #23). Reading spec §4.3 directly (not this file's own
-  prior shorthand) revealed it's actually about stop-sequence route
-  shortening, which needs a `Route` model this system doesn't have —
-  that part remains genuinely undone, named explicitly rather than
-  silently reinterpreted as "done."
-- ~~GPS/live position (§9/§18)~~ — **done** (PR #24, ADR 0009).
-  Investigating the "likely needs a vendor/hardware decision" flag
-  from the prior checkpoint found it didn't: ADR 0008 already put the
-  driver app on a tablet, so that tablet's own browser Geolocation API
-  is the position source — no vendor, no cost, no user decision
-  actually needed. `VehiclePosition` (latest-only), dispatcher fleet
-  view, family "Locate bus." **Not done**, named explicitly: delay/
-  substitution/route-change *notifications* (rest of §18), turn-by-
-  turn nav/incident reporting/dispatch messaging (rest of §9).
-- ~~§12 field trips~~ — **done** (PR #25 backend, PR #26 UI).
-  `FieldTrip`, not run through the solver (manual driver/vehicle
-  assignment, spec §21); `GET /field-trips/{id}/conflicts` (§12.1)
-  checks regular-route and other-field-trip overlaps only (no
-  Training/Maintenance entity exists); §12.2's "delay management"
-  reuses that same endpoint. First slice: same-day trips only. PR
-  #26's manual verification caught a real timezone display bug (see
-  "Key files" above) — fixed before merging, not after.
-- **§20 historical learning — next.** Untouched, needs fresh scoping
-  from the spec text (read directly, not from any paraphrase — that's
-  bitten this project three times now: §4.3, the mypy-plugin claim,
-  and worth remembering going in here too).
-- **§7 turn/dead-end safety costs, §10 dynamic rerouting, the 5
-  excluded §8 categories** — deliberately last: §7/§10 need a routing
-  *graph* this system doesn't own (a materially different technical
-  approach, likely its own vendor/architecture research pass); the 5
-  excluded §8 categories were each excluded for a specific reason, not
-  missing plumbing — revisiting any one is its own small design call,
-  not a mechanical follow-up.
+- ~~SQLAlchemy 2.0 mypy plugin~~ — investigated and **ruled out**
+  empirically (see gotcha-list-adjacent note above).
+- ~~Driver-app absence-reporting UI~~ — **done**, shipped with a
+  process mistake (gotcha #10, since fixed and documented).
+- ~~Ridership → passenger_count decision support (§4.3, scoped)~~ —
+  **done** (PR #23). Reading the spec directly showed §4.3's literal
+  behavior (stop-sequence shortening) needs a `Route` model this
+  system doesn't have — named as genuinely undone, not silently
+  claimed.
+- ~~GPS/live position (§9/§18, ADR 0009)~~ — **done** (PR #24). The
+  prior checkpoint's "needs a vendor/hardware decision" flag turned
+  out to be stale once checked: ADR 0008 already answered it. Not
+  done: delay/substitution/route-change notifications, turn-by-turn
+  nav, incident reporting, dispatch messaging.
+- ~~§12 field trips~~ — **done** (PR #25 backend, PR #26 UI). Manual
+  verification caught and fixed a real timezone display bug before
+  merging.
+- ~~§20 historical duration learning~~ — **done** (PR #27).
+  `GET /runs/observed-duration` reads actual start/end off completed
+  assignments' own audit entries — no new history table needed.
+  Decision support only, surfaced on `SchedulePage`'s "Add run" form.
+  Not done: traffic-delay/route-deviation tracking (needs planned
+  route geometry + GPS history this system doesn't keep) and
+  field-trip duration aggregation (the raw data exists on `FieldTrip`,
+  no rollup endpoint built yet).
+- **What's left, roughly in this order:**
+  1. **§9/§18 notifications** (delay/substitution/route-change alerts
+     to families and staff) — untouched, needs fresh scoping from the
+     spec text directly (not from any paraphrase — that gap has bitten
+     this project multiple times already: §4.3, the mypy-plugin claim).
+     Likely tractable without a new user decision, same as GPS turned
+     out to be — worth checking before assuming otherwise.
+  2. **§7 turn/dead-end safety costs, §10 dynamic rerouting** —
+     deliberately last: both need a routing *graph* this system
+     doesn't own (ADR 0007), a materially different technical approach
+     than anything built so far, likely its own vendor/architecture
+     research pass **and genuinely likely to need a real user
+     decision** — flag it when actually reached, don't guess.
+  3. **The 5 excluded §8 categories** (difficult intersection,
+     congestion window, vehicle-size restriction, preferred entrance,
+     other) — each excluded for a specific principled reason already
+     documented (`docs/domain-model.md`'s "Phase 6 entities"), not
+     missing plumbing. Revisiting any one is its own small design call,
+     not urgent, not mechanical.
 
-Work through the remaining items in roughly this order — self-contained
-first (§20), decisions-needed items (§7/§10 architecture) flagged to
-the user when actually reached, not guessed at. §9/§18 notifications
-could also slot in before §7/§10 if it turns out tractable once
-scoped — not committed to a strict order, just a rough one.
+This is not a strict order — just the current best guess at what's
+self-contained (§9/§18 notifications) versus what's genuinely likely to
+need a real user decision (§7/§10's routing-graph architecture).
 
 ## Environment specifics (this machine)
 
