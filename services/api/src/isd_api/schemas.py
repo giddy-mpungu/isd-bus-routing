@@ -133,6 +133,7 @@ class CrewDriverUpdate(BaseModel):
 class RunCreate(BaseModel):
     service_date: date
     school_id: int
+    direction: RideDirection
     window_earliest: int = Field(ge=0, lt=1440)
     window_latest: int = Field(ge=0, lt=1440)
     duration_minutes: int = Field(gt=0)
@@ -146,12 +147,23 @@ class RunRead(BaseModel):
     id: int
     service_date: date
     school_id: int
+    direction: RideDirection
     window_earliest: int
     window_latest: int
     duration_minutes: int
     buffer_minutes: int
     passenger_count: int
     required_qualifications: list[QualificationRead]
+
+
+class RunUpdate(BaseModel):
+    passenger_count: int | None = Field(default=None, ge=0)
+
+
+class ExpectedRidersRead(BaseModel):
+    expected_passenger_count: int
+    ambiguous: bool
+    riding_student_names: list[str]
 
 
 class AssignmentRead(BaseModel):

@@ -55,6 +55,7 @@ export interface Run {
   id: number
   service_date: string
   school_id: number
+  direction: RideDirection
   window_earliest: number
   window_latest: number
   duration_minutes: number
@@ -147,12 +148,23 @@ export interface CrewCreate {
 export interface RunCreate {
   service_date: string
   school_id: number
+  direction: RideDirection
   window_earliest: number
   window_latest: number
   duration_minutes: number
   buffer_minutes: number
   passenger_count: number
   required_qualification_codes: string[]
+}
+
+export interface RunUpdate {
+  passenger_count?: number
+}
+
+export interface ExpectedRiders {
+  expected_passenger_count: number
+  ambiguous: boolean
+  riding_student_names: string[]
 }
 
 export interface Stop {

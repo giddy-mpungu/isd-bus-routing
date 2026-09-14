@@ -174,6 +174,27 @@ produces them rather than duplicated here.
   student's standing assignment can't point at one without needing
   re-linking every day. Also spec §4.5's "late request to ride" — same
   mechanism, no separate code path.
+- **`Run.direction`** (added for the ridership decision-support slice
+  below): which leg (`am`/`pm`) a run serves — needed to join a run
+  against `RidershipOverride` rows at all, since they're keyed by
+  direction and `Run` didn't record one before this. Purely an
+  API/DB-layer field; the solver's `Job` dataclass has no direction
+  concept and doesn't need one (deadhead/scheduling don't depend on
+  which leg a run is).
+- **Expected-riders decision support** (`GET /runs/{id}/expected-riders`,
+  spec §4.3 — see "Not yet implemented" below for the scope boundary):
+  not a persisted entity, a read-only computed endpoint resolving each
+  student at the run's school via the same override-with-default-
+  fallback logic `GET /students/my-family` already uses, then counting
+  riders for that run's exact `(service_date, direction)`. Flags
+  `ambiguous=true` when more than one `Run` shares the same
+  `(school_id, service_date, direction)` — this system has no
+  student-to-specific-run assignment, so the count can't be correctly
+  attributed to just one of several runs serving the same school/leg
+  that day. `PATCH /runs/{id}` (passenger_count only) lets a dispatcher
+  apply the computed count manually; nothing applies it automatically
+  (spec §21: decision support, not autonomous authority — same
+  precedent as Phase 6's substitute-candidate ranking).
 
 ## Phase 6 entities (`services/api/src/isd_api/models.py`, first slice — spec §13 only)
 
@@ -228,7 +249,7 @@ produces them rather than duplicated here.
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)
-- Wiring ridership declarations into the solver (dropping empty stops, recalculating ETAs, spec §4.3) — `Run.passenger_count` is still a static admin-entered int; a natural follow-up to the Phase 5 MVP, not part of it
+- Spec §4.3's actual behavior — stop-sequence route shortening ("if all riders at a stop don't ride, remove that stop, recalculate sequence/ETAs") — needs a `Route`/stop-sequence model this system has never built (ADR 0001 named the intent, never built). What *is* done: `GET /runs/{id}/expected-riders` computes a real rider count from `Student`/`RidershipOverride` as decision support for `Run.passenger_count` (see "Phase 6 entities" above) — closer to reality than the fully-manual guess it replaced, but not the stop-shortening optimization spec §4.3 describes
 - Ridership reporting cutoff / route-lock configuration (spec §4.4)
 - A recurring `route` (template) table distinct from dated `run` instances — ADR 0001 named this intention for Phase 2+, never built; Phase 5 worked around its absence rather than building it (see RidershipOverride above)
 - Field trips / Trip conflict detection (spec §12) — Phase 6
