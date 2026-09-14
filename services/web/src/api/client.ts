@@ -31,6 +31,7 @@ import type {
   FieldTripUpdate,
   GeographicKnowledgeOverride,
   GeographicKnowledgeOverrideCreate,
+  ObservedRunDuration,
   PositionUpdate,
   Qualification,
   QualificationCreate,
@@ -171,6 +172,15 @@ export async function updateRun(runId: number, payload: RunUpdate): Promise<Run>
 
 export async function getExpectedRiders(runId: number): Promise<ExpectedRiders> {
   return request<ExpectedRiders>(`/runs/${runId}/expected-riders`)
+}
+
+export async function getObservedRunDuration(
+  schoolId: number,
+  direction: RideDirection,
+): Promise<ObservedRunDuration> {
+  return request<ObservedRunDuration>(
+    `/runs/observed-duration?school_id=${schoolId}&direction=${direction}`,
+  )
 }
 
 export async function getAssignments(serviceDate: string): Promise<Assignment[]> {

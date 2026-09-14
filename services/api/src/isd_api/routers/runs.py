@@ -7,9 +7,26 @@ from sqlalchemy.orm import Session
 
 from isd_api.audit import record as record_audit
 from isd_api.db import get_db
-from isd_api.models import RidershipOverride, Role, Run, School, Student, User
+from isd_api.models import (
+    Assignment,
+    AssignmentStatus,
+    AuditLogEntry,
+    RideDirection,
+    RidershipOverride,
+    Role,
+    Run,
+    School,
+    Student,
+    User,
+)
 from isd_api.routers.vehicles import _resolve_qualifications
-from isd_api.schemas import ExpectedRidersRead, RunCreate, RunRead, RunUpdate
+from isd_api.schemas import (
+    ExpectedRidersRead,
+    ObservedRunDurationRead,
+    RunCreate,
+    RunRead,
+    RunUpdate,
+)
 from isd_api.security import get_current_user, require_role
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -81,6 +98,83 @@ def list_runs(
             detail=f"Role '{current_user.role.value}' cannot list runs directly",
         )
     return list(query.order_by(Run.id).all())
+
+
+@router.get("/observed-duration", response_model=ObservedRunDurationRead)
+def get_observed_run_duration(
+    school_id: int,
+    direction: RideDirection,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role(*_WRITE_ROLES)),
+) -> ObservedRunDurationRead:
+    """spec section 20: "if a route consistently requires 48 minutes
+    despite an initial estimate of 40 minutes, future schedules should
+    be capable of adjusting toward the observed operational duration."
+    Computed entirely from data this system already persists -- no new
+    breadcrumb/history table. Runs have no recurring-route identity
+    (ADR 0001's never-built Route/template table), so "this route" is
+    approximated as every completed Assignment for a Run sharing this
+    (school_id, direction) across any service_date. A completed
+    assignment's actual start/end aren't new columns either -- they're
+    read straight off its own status_changed audit entries (spec
+    section 14): the timestamp the audit log recorded when a driver's
+    PATCH .../status flipped it to in_progress, and again to completed.
+    Decision support only (spec section 21) -- a dispatcher reads this
+    and manually sets duration_minutes on a new run; nothing here
+    writes to Run.duration_minutes automatically."""
+    assignments = (
+        db.query(Assignment)
+        .join(Run, Assignment.run_id == Run.id)
+        .filter(
+            Run.school_id == school_id,
+            Run.direction == direction,
+            Assignment.status == AssignmentStatus.COMPLETED,
+        )
+        .all()
+    )
+
+    samples: list[tuple[date, float]] = []
+    for assignment in assignments:
+        entries = (
+            db.query(AuditLogEntry)
+            .filter(
+                AuditLogEntry.entity_type == "assignment",
+                AuditLogEntry.entity_id == assignment.id,
+                AuditLogEntry.action == "status_changed",
+            )
+            .order_by(AuditLogEntry.created_at)
+            .all()
+        )
+        started_at = next(
+            (e.created_at for e in entries if (e.after_state or {}).get("status") == "in_progress"),
+            None,
+        )
+        completed_at = next(
+            (e.created_at for e in entries if (e.after_state or {}).get("status") == "completed"),
+            None,
+        )
+        if started_at is not None and completed_at is not None and completed_at > started_at:
+            samples.append(
+                (assignment.run.service_date, (completed_at - started_at).total_seconds() / 60)
+            )
+
+    if not samples:
+        return ObservedRunDurationRead(
+            sample_count=0,
+            average_actual_minutes=None,
+            most_recent_actual_minutes=None,
+            most_recent_service_date=None,
+        )
+
+    samples.sort(key=lambda s: s[0])
+    average = sum(minutes for _, minutes in samples) / len(samples)
+    most_recent_date, most_recent_minutes = samples[-1]
+    return ObservedRunDurationRead(
+        sample_count=len(samples),
+        average_actual_minutes=round(average, 1),
+        most_recent_actual_minutes=round(most_recent_minutes),
+        most_recent_service_date=most_recent_date,
+    )
 
 
 @router.patch("/{run_id}", response_model=RunRead)
