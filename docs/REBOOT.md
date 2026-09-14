@@ -446,8 +446,9 @@ PATCH edits that bypass the solver.
 26. #26 `feat/phase6-field-trips-ui` — spec §12 UI: new `/field-trips` page (add a trip, list by date, pick a candidate driver/vehicle, check conflicts, assign when clear, step through the status lifecycle). **Manual browser verification caught and fixed a real bug**: `formatDateTime` ran a naive backend timestamp through `new Date()` then `getUTCHours()`/`getUTCMinutes()`, which silently applied the browser's local-UTC offset (06:30 entered displayed as 11:30) — fixed by extracting the `HH:MM` digits directly instead of going through `Date`/timezone conversion, matching the backend's own naive-wall-clock design. Verified live end-to-end: a trip overlapping a real solved regular route showed the conflict and disabled Assign; a non-overlapping trip showed "No conflicts" and Assign correctly PATCHed the driver/vehicle
 27. #27 `feat/phase6-historical-duration-learning` — spec §20: `GET /runs/observed-duration?school_id=&direction=`, computed entirely from data already persisted — a completed `Assignment`'s actual start/end are read off its own `status_changed` audit entries (spec §14), no new breadcrumb/history table. Runs have no recurring-route identity, so "this route" is approximated as completed runs sharing a `(school_id, direction)` pair across any `service_date`. Decision support only (spec §21): `SchedulePage`'s "Add run" form gets a "Check observed duration" / "Use average" flow, never auto-applied. Manually verified live: adjusted real audit timestamps to simulate a 48-minute actual duration, confirmed the UI showed it and "Use average" correctly filled the duration field
 28. #28 `feat/phase6-transportation-announcements` — spec §9/§18: `Announcement` (`message`, `category` — general/delay/substitution/route_change, informational label only — `audience` — all/family/driver), `POST`/`GET /announcements` (management) + `GET /announcements/mine` (audience-filtered). Deliberately always human-authored, never auto-detected — no ETA engine, no automatic event-to-notification pipeline exists to turn a real driver-swap (§13) into a targeted family notice, so that targeting problem is named as a follow-up, not attempted. District-wide only, no per-school scoping. `/setup` gained an "Announcements" section; `DriverPage` shows "Messages from dispatch," `FamilyPage` shows "Transportation announcements." Manually verified live: posted a family-audience notice and a driver-audience notice, confirmed each surfaced only to its intended audience through the actual browser
+29. #29 `feat/phase6-driver-incident-defect-reports` — spec §9: `DriverReport` (`report_type` discriminator: incident/vehicle_defect, one entity not two). `vehicle_id` resolved server-side from the driver's own `Crew` for `service_date` rather than driver-supplied — the form only needs a type and a description. `POST /drivers/{id}/reports` (self or staff-on-behalf, audited) + `GET /reports?service_date=` (dispatcher overview). New form on `DriverPage`, new "Driver reports" section on `SchedulePage`. This closes out spec §9's driver-app list except turn-by-turn navigation, deferred with §7/§10. Manually verified live: submitted a vehicle defect report as a driver, confirmed it appeared on the dispatcher's `SchedulePage` with the vehicle correctly auto-resolved from that driver's actual crew
 
-## Key files (current state, post-PR #28)
+## Key files (current state, post-PR #29)
 
 - `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal + revocation check), `LoginRateLimiter`/`login_rate_limiter`, `revoke_token`
 - `services/api/src/isd_api/routers/auth.py` — login rate-limited + sets cookie + returns bearer token; `POST /auth/logout` (still no auth required — a no-op if nothing to revoke, but revokes the current token if one is present)
@@ -468,6 +469,7 @@ PATCH edits that bypass the solver.
 - `services/web/src/pages/FieldTripsPage.tsx` — `/field-trips`: add/list trips, candidate driver/vehicle + conflict check + assign, status lifecycle `<select>`. `formatDateTime` extracts `HH:MM` via regex, deliberately NOT `new Date(...).getUTCHours()` — see PR #26's real bug fix if tempted to "simplify" this back
 - `services/api/src/isd_api/routers/runs.py` — `GET /runs/observed-duration` (spec §20): reads a completed `Assignment`'s actual start/end off its own `status_changed` `AuditLogEntry` rows rather than any new column — if extending this, resist adding an `actual_start_at`/`actual_end_at` column before checking whether the audit log already has what's needed
 - `services/api/src/isd_api/routers/announcements.py` — `POST`/`GET /announcements` (management, transportation_admin/dispatcher), `GET /announcements/mine` (audience-filtered: driver role → all+driver, student/parent → all+family). Always human-authored (spec §9/§18) — no auto-generation from real events (driver-swaps, delays) exists; that targeting problem is a named follow-up, not built
+- `services/api/src/isd_api/routers/driver_reports.py` — `POST /drivers/{id}/reports` (spec §9 incident/vehicle-defect reporting, one `DriverReport` entity with a `report_type` discriminator), `GET /reports?service_date=`. `vehicle_id` is resolved from the driver's own `Crew` for that date server-side, never driver-supplied
 - `services/api/src/isd_api/main.py` — `CORSMiddleware` config, router registration (check here first if a new router's routes 404 — it needs an `app.include_router(...)` call too, not just existing as a file)
 - `services/solver/src/isd_solver/scheduler.py` — CP-SAT model, duty-limit pairwise constraints, busy-interval constraints
 - `services/solver/src/isd_solver/domain.py` — `Crew.busy_intervals` (validated within `available_window`)
@@ -487,38 +489,34 @@ PATCH edits that bypass the solver.
 
 ## Exact next step (as of this checkpoint)
 
-Every PR through #28 is **merged**, CI green, local `main` synced
-(commit `9850d3c`). The user said explicitly: **tackle the entire
-remaining candidate list, continuing until it's done or something new
-needs deciding** — not "pick one," work through all of them.
+Every PR through #29 is **merged**, CI green, local `main` synced
+(commit `c25e9cf`). The user's standing instruction this session was:
+**tackle the entire remaining candidate list, continuing until it's
+done or something new needs deciding.**
 
-Everything that was ever on this session's candidate list is now
-**done** except two items, both deliberately saved for last because
-they need a routing *graph* this system doesn't own (ADR 0007), a
-materially different technical approach than anything built in Phase
-6 so far — real vendor/architecture research, not another slice of
-the same pattern:
+**The entire original candidate list is now done.** Every spec section
+that was ever named as a target this session (§4.3 scoped, §6, §8, §9,
+§12, §13, §18, §20) has real, tested, manually-verified functionality
+behind it. The one genuine decision point the list produced — §7/§10's
+routing-graph work — was asked directly rather than guessed at; the
+user chose to **defer** it (see below), which is itself the resolution,
+not an open question waiting on the next session.
 
-1. **§7 turn/dead-end safety costs** — routing-graph-level segment/
-   turn costs; this system only ever calls a point-to-point directions
-   API (ORS), which has no concept of "penalize this specific turn."
-2. **§10 dynamic rerouting** — live rerouting around closures/
-   incidents needs the same graph, plus a live-incident data source
-   this system doesn't have either.
+**§7 (turn/dead-end safety costs) and §10 (dynamic rerouting) — deferred
+by explicit user choice (2026-09-14), not forgotten.** Both need a
+routing *graph* this system doesn't own (ADR 0007) — self-hosting
+(OSRM/Valhalla) or a new paid vendor, a materially different
+commitment than anything else in Phase 6. Presented three options;
+user picked "defer for now." Phase 6's existing ORS-based routing
+(§6/§8) already gives legal/safe HGV routing; §7/§10 are refinements
+beyond that safety baseline. **Don't re-raise this as an open question
+in a future session — it's decided.** Revisit only if the user brings
+it up, or if it becomes a real, felt operational pain point they
+mention. Turn-by-turn navigation (the last piece of spec §9) is
+deferred along with it for the same reason.
 
-**Asked the user directly (2026-09-14): deferred, deliberately, not
-guessed at.** Presented three options (self-host OSRM/Valhalla, research
-a commercial routing API with graph-level controls, or defer) — the
-user picked **defer**. Phase 6's existing ORS-based routing (§6/§8)
-already gives legal/safe HGV routing (weight/height/width restrictions,
-flood/unsafe-turn avoid-zones); §7/§10 are refinements beyond that
-safety baseline, not a gap in it. Revisit only if this becomes a real,
-felt operational pain point — don't self-host or shop for a vendor
-speculatively before then.
-
-Smaller, non-blocking items still open, each its own scoped follow-up
-whenever picked up (not urgent, not part of the original "tackle
-everything" list's scope, listed here so they aren't lost):
+**What's left is small, optional, non-urgent follow-ups only** — pick
+any one if continuing, or treat the project as caught up:
 - The 5 excluded §8 categories (difficult intersection, congestion
   window, vehicle-size restriction, preferred entrance, other) — each
   excluded for a specific principled reason already documented
@@ -527,10 +525,14 @@ everything" list's scope, listed here so they aren't lost):
   duration-learning rollup for `FieldTrip.actual_return_at` (§20).
 - Announcements: per-school scoping, auto-generated substitution
   notices from real driver-swap events (needs family-targeting logic).
-- **§9 incident reporting / vehicle defect reporting — up next.**
-  Tractable and self-contained (no dependency on the deferred routing
-  graph, unlike turn-by-turn navigation, which genuinely is blocked by
-  the §7/§10 decision above and stays deferred with it).
+- Phase 6 §19 integrations (SIS/HR/SSO/fleet-maintenance) — ADR 0007
+  wrote the shape, nothing actually integrated yet; no phase has
+  needed one badly enough to force the question.
+
+If the user gives another open-ended "keep going" instruction with no
+specific target, these are the candidates — otherwise wait for
+explicit direction, since the driving instruction that shaped this
+whole session has now been fully satisfied.
 
 ## Environment specifics (this machine)
 
