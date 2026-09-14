@@ -4,6 +4,7 @@ import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AppLayout } from './layout/AppLayout'
 import { DriverPage } from './pages/DriverPage'
 import { FamilyPage } from './pages/FamilyPage'
+import { FieldTripsPage } from './pages/FieldTripsPage'
 import { LoginPage } from './pages/LoginPage'
 import { SchedulePage } from './pages/SchedulePage'
 import { SetupPage } from './pages/SetupPage'
@@ -50,6 +51,17 @@ function App() {
                 deniedMessage="the dispatcher console"
               >
                 <SetupPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/field-trips"
+            element={
+              <ProtectedRoute
+                allowedRoles={['dispatcher', 'transportation_admin']}
+                deniedMessage="the dispatcher console"
+              >
+                <FieldTripsPage />
               </ProtectedRoute>
             }
           />
