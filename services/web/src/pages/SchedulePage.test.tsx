@@ -48,6 +48,7 @@ vi.mock('../api/client', async (importOriginal) => {
     createAbsence: vi.fn(),
     getSubstituteCandidates: vi.fn(),
     getFleetPositions: vi.fn(),
+    getObservedRunDuration: vi.fn(),
   }
 })
 
@@ -312,6 +313,49 @@ describe('SchedulePage', () => {
       ),
     )
     expect(api.getRuns).toHaveBeenCalledTimes(2) // initial load + reload after create
+  })
+
+  it('checking observed duration shows the average and lets the dispatcher use it', async () => {
+    vi.mocked(api.getObservedRunDuration).mockResolvedValue({
+      sample_count: 2,
+      average_actual_minutes: 48,
+      most_recent_actual_minutes: 56,
+      most_recent_service_date: '2026-09-02',
+    })
+    render(<SchedulePage />)
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByLabelText('School'), String(school.id))
+    await user.click(screen.getByRole('button', { name: 'Check observed duration' }))
+
+    await waitFor(() => expect(api.getObservedRunDuration).toHaveBeenCalledWith(school.id, 'am'))
+    expect(screen.getByText(/2 completed run\(s\) — average 48 min/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Use average' }))
+    expect(screen.getByLabelText('Duration (minutes)')).toHaveValue(48)
+  })
+
+  it('shows a message and no Use-average button when there are no observed runs yet', async () => {
+    vi.mocked(api.getObservedRunDuration).mockResolvedValue({
+      sample_count: 0,
+      average_actual_minutes: null,
+      most_recent_actual_minutes: null,
+      most_recent_service_date: null,
+    })
+    render(<SchedulePage />)
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByLabelText('School'), String(school.id))
+    await user.click(screen.getByRole('button', { name: 'Check observed duration' }))
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('No completed runs yet for this school/direction.'),
+      ).toBeInTheDocument(),
+    )
+    expect(screen.queryByRole('button', { name: 'Use average' })).not.toBeInTheDocument()
   })
 
   it('checking expected riders shows the computed count and lets the dispatcher apply it', async () => {

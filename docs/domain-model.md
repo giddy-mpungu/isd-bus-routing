@@ -282,18 +282,32 @@ produces them rather than duplicated here.
   missed case — nothing exists to check against). Spec §12.2's "delay
   management" is not a separate mechanism: re-calling the conflicts
   endpoint after a `PATCH` to `expected_return_at` *is* the
-  reevaluation. Deliberately no UI yet — same backend-first split as
-  PR #16 → #17's driver-absence work.
+  reevaluation. `services/web`'s `/field-trips` page (PR #26) closed
+  out the UI half of this slice.
+- **Observed run duration** (spec §20, `GET /runs/observed-duration`):
+  historical learning applied to `Run.duration_minutes` — spec §20's
+  own worked example ("a route consistently requires 48 minutes
+  despite an initial estimate of 40"). Computed entirely from data
+  this system already persists, no new table: a completed
+  `Assignment`'s actual start/end are read straight off its own
+  `status_changed` audit entries (spec §14) rather than a new
+  breadcrumb/history column. Runs have no recurring-route identity
+  (the never-built `Route`/template table, above), so "this route" is
+  approximated as every completed run sharing a `(school_id,
+  direction)` pair across any `service_date`. Decision support only
+  (spec §21) — `SchedulePage`'s "Add run" form shows the computed
+  average/most-recent for a dispatcher to read and manually copy into
+  `duration_minutes`; nothing writes to it automatically.
 
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)
 - Spec §4.3's actual behavior — stop-sequence route shortening ("if all riders at a stop don't ride, remove that stop, recalculate sequence/ETAs") — needs a `Route`/stop-sequence model this system has never built (ADR 0001 named the intent, never built). What *is* done: `GET /runs/{id}/expected-riders` computes a real rider count from `Student`/`RidershipOverride` as decision support for `Run.passenger_count` (see "Phase 6 entities" above) — closer to reality than the fully-manual guess it replaced, but not the stop-shortening optimization spec §4.3 describes
 - Ridership reporting cutoff / route-lock configuration (spec §4.4)
-- A recurring `route` (template) table distinct from dated `run` instances — ADR 0001 named this intention for Phase 2+, never built; Phase 5 worked around its absence rather than building it (see RidershipOverride above)
-- Field trips (spec §12) backend is done (`FieldTrip`, above) — not yet: `services/web` UI (named follow-up, same shape as PR #16→#17), overnight trips, destination profiles (§12.3), and conflict-checking against training/maintenance (no such entity exists)
+- A recurring `route` (template) table distinct from dated `run` instances — ADR 0001 named this intention for Phase 2+, never built; Phase 5 worked around its absence rather than building it (see RidershipOverride above). Observed-run-duration (§20, above) approximates route identity via (school_id, direction) instead of a real template — good enough for learning, not a substitute for the real table
+- Field trips (spec §12) is done end-to-end (`FieldTrip` + `/field-trips` UI, above) — not yet: overnight trips, destination profiles (§12.3), and conflict-checking against training/maintenance (no such entity exists)
 - Spec §6 is now done to the extent an external point-to-point routing API can express it: real road-network travel time, per-vehicle length/width/height/weight restrictions, and district-specific avoid-zones (§8) are all applied via `ors_deadhead_estimator`. Turn/dead-end safety costs (§7) and dynamic rerouting (§10) remain genuinely out of scope — both need a routing *graph* this system doesn't own, not just a point-to-point directions call, a different technical approach than anything built so far.
 - District-specific geographic knowledge / local roadway overrides (spec §8) — persistence done, and 3 of 8 categories now applied to routing via ORS `avoid_polygons` (`GeographicKnowledgeOverride`, above); the other 5 categories (caution/time-dependent/vehicle-dependent/preference/ambiguous) each need a different mechanism than a hard avoid-zone, not just more plumbing
 - Dynamic rerouting around road closures/incidents (spec §10) — Phase 6, same GIS dependency
 - Live GPS bus location (spec §9/§18) is now done for position itself (`VehiclePosition`, ADR 0009, above) — dispatcher fleet view and per-child "locate bus." Still unbuilt: delay/substitution/route-change *notifications* (spec §18's other half), turn-by-turn navigation, incident/vehicle-defect reporting, and dispatch messaging (spec §9's other pieces) — none of these share GPS position's data model, each is its own follow-up
-- Historical operational data / learning-adjusted estimates (spec §20) — Phase 6
+- Historical operational data / learning-adjusted estimates (spec §20) — duration learning for `Run.duration_minutes` is done (`GET /runs/observed-duration`, above). Not yet: traffic-delay and route-deviation tracking (both need a planned route geometry and live position history this system doesn't have — ADR 0009 deliberately keeps only the latest GPS position, no breadcrumb trail) and field-trip duration learning (though `FieldTrip.actual_return_at` already captures the raw data needed, no aggregation endpoint exists for it yet, unlike regular runs)

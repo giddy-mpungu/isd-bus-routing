@@ -167,6 +167,14 @@ export interface ExpectedRiders {
   riding_student_names: string[]
 }
 
+// spec §20: historical learning applied to Run.duration_minutes.
+export interface ObservedRunDuration {
+  sample_count: number
+  average_actual_minutes: number | null
+  most_recent_actual_minutes: number | null
+  most_recent_service_date: string | null
+}
+
 export interface Stop {
   id: number
   label: string

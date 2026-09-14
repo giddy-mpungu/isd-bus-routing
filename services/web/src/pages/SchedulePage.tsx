@@ -9,6 +9,7 @@ import type {
   Crew,
   Driver,
   ExpectedRiders,
+  ObservedRunDuration,
   Qualification,
   RideDirection,
   Run,
@@ -233,6 +234,32 @@ export function SchedulePage() {
   const [runQualCodes, setRunQualCodes] = useState<Set<string>>(new Set())
   const [runError, setRunError] = useState<string | null>(null)
   const [isSavingRun, setIsSavingRun] = useState(false)
+
+  // spec §20: historical learning, decision support for duration_minutes
+  // -- computed from completed assignments' actual timestamps, never
+  // auto-applied (see routers/runs.py's get_observed_run_duration).
+  const [observedDuration, setObservedDuration] = useState<ObservedRunDuration | null>(null)
+  const [observedDurationError, setObservedDurationError] = useState<string | null>(null)
+  const [isCheckingObservedDuration, setIsCheckingObservedDuration] = useState(false)
+
+  async function handleCheckObservedDuration() {
+    setObservedDurationError(null)
+    setObservedDuration(null)
+    if (!runSchoolId) {
+      setObservedDurationError('Select a school first.')
+      return
+    }
+    setIsCheckingObservedDuration(true)
+    try {
+      setObservedDuration(await api.getObservedRunDuration(Number(runSchoolId), runDirection))
+    } catch (err) {
+      setObservedDurationError(
+        err instanceof ApiError ? err.message : 'Failed to load observed duration.',
+      )
+    } finally {
+      setIsCheckingObservedDuration(false)
+    }
+  }
 
   function toggleRunQual(code: string) {
     setRunQualCodes((prev) => {
@@ -730,6 +757,46 @@ export function SchedulePage() {
               onChange={(event) => setRunDuration(event.target.value)}
               required
             />
+            <button
+              type="button"
+              onClick={() => void handleCheckObservedDuration()}
+              disabled={isCheckingObservedDuration}
+            >
+              {isCheckingObservedDuration ? 'Checking…' : 'Check observed duration'}
+            </button>
+            {observedDurationError && (
+              <p role="alert" className="error">
+                {observedDurationError}
+              </p>
+            )}
+            {observedDuration && (
+              <div className="observed-duration-panel">
+                {observedDuration.sample_count === 0 ? (
+                  <p className="status">No completed runs yet for this school/direction.</p>
+                ) : (
+                  <>
+                    <p>
+                      {observedDuration.sample_count} completed run(s) — average{' '}
+                      {observedDuration.average_actual_minutes} min, most recent{' '}
+                      {observedDuration.most_recent_actual_minutes} min (
+                      {observedDuration.most_recent_service_date})
+                    </p>
+                    {observedDuration.average_actual_minutes != null && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRunDuration(
+                            String(Math.round(observedDuration.average_actual_minutes as number)),
+                          )
+                        }
+                      >
+                        Use average
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
             <label htmlFor="run-buffer">Buffer (minutes)</label>
             <input
               id="run-buffer"
