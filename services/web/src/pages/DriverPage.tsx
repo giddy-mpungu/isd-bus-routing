@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { AbsenceReason, AssignmentStatus, DriverAssignment } from '../api/types'
+import type { AbsenceReason, Announcement, AssignmentStatus, DriverAssignment } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 
 const ABSENCE_REASONS: AbsenceReason[] = [
@@ -51,6 +51,9 @@ export function DriverPage() {
   const [assignments, setAssignments] = useState<DriverAssignment[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [busyAssignmentId, setBusyAssignmentId] = useState<number | null>(null)
+  // spec section 9: "Messages from dispatch" -- dispatcher-authored,
+  // never auto-generated (see routers/announcements.py).
+  const [announcements, setAnnouncements] = useState<Announcement[]>([])
 
   const loadAssignments = useCallback(async (date: string) => {
     setErrorMessage(null)
@@ -64,6 +67,13 @@ export function DriverPage() {
   useEffect(() => {
     void loadAssignments(serviceDate)
   }, [serviceDate, loadAssignments])
+
+  useEffect(() => {
+    api
+      .getMyAnnouncements()
+      .then(setAnnouncements)
+      .catch(() => undefined)
+  }, [])
 
   // ADR 0009: report this vehicle's position periodically while a run
   // is actually in progress -- automatic, no driver interaction (spec
@@ -153,6 +163,20 @@ export function DriverPage() {
   return (
     <div className="driver-page">
       <h1>My runs — {serviceDate}</h1>
+
+      {announcements.length > 0 && (
+        <section className="announcements-panel">
+          <h2>Messages from dispatch</h2>
+          <ul>
+            {announcements.map((a) => (
+              <li key={a.id}>
+                [{a.category.replace(/_/g, ' ')}] {a.message}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {errorMessage && (
         <p role="alert" className="error">
           {errorMessage}

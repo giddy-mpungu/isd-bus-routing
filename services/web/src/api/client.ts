@@ -13,6 +13,8 @@ import type {
   Absence,
   AbsenceCreate,
   AffectedAssignmentSubstitutes,
+  Announcement,
+  AnnouncementCreate,
   Assignment,
   AssignmentPatch,
   AssignmentStatus,
@@ -269,6 +271,18 @@ export async function createGeographicKnowledgeOverride(
   payload: GeographicKnowledgeOverrideCreate,
 ): Promise<GeographicKnowledgeOverride> {
   return request<GeographicKnowledgeOverride>('/geographic-knowledge', jsonInit('POST', payload))
+}
+
+export async function getAnnouncements(): Promise<Announcement[]> {
+  return request<Announcement[]>('/announcements')
+}
+
+export async function getMyAnnouncements(): Promise<Announcement[]> {
+  return request<Announcement[]>('/announcements/mine')
+}
+
+export async function createAnnouncement(payload: AnnouncementCreate): Promise<Announcement> {
+  return request<Announcement>('/announcements', jsonInit('POST', payload))
 }
 
 export async function reportPosition(driverId: number, payload: PositionUpdate): Promise<void> {
