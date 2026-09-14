@@ -16,6 +16,7 @@ import type {
   Assignment,
   AssignmentPatch,
   AssignmentStatus,
+  BusPosition,
   Crew,
   CrewCreate,
   CurrentUser,
@@ -26,8 +27,10 @@ import type {
   FamilyMember,
   GeographicKnowledgeOverride,
   GeographicKnowledgeOverrideCreate,
+  PositionUpdate,
   Qualification,
   QualificationCreate,
+  RideDirection,
   RidershipOverrideUpdate,
   Run,
   RunCreate,
@@ -41,6 +44,7 @@ import type {
   StudentCreate,
   Vehicle,
   VehicleCreate,
+  VehiclePosition,
 } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
@@ -251,4 +255,22 @@ export async function createGeographicKnowledgeOverride(
   payload: GeographicKnowledgeOverrideCreate,
 ): Promise<GeographicKnowledgeOverride> {
   return request<GeographicKnowledgeOverride>('/geographic-knowledge', jsonInit('POST', payload))
+}
+
+export async function reportPosition(driverId: number, payload: PositionUpdate): Promise<void> {
+  await request<void>(`/drivers/${driverId}/position`, jsonInit('PUT', payload))
+}
+
+export async function getFleetPositions(serviceDate: string): Promise<VehiclePosition[]> {
+  return request<VehiclePosition[]>(`/schedule/${serviceDate}/fleet-positions`)
+}
+
+export async function getBusPosition(
+  studentId: number,
+  serviceDate: string,
+  direction: RideDirection,
+): Promise<BusPosition> {
+  return request<BusPosition>(
+    `/students/${studentId}/bus-position?service_date=${serviceDate}&direction=${direction}`,
+  )
 }

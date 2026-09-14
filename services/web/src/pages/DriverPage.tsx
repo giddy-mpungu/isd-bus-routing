@@ -65,6 +65,39 @@ export function DriverPage() {
     void loadAssignments(serviceDate)
   }, [serviceDate, loadAssignments])
 
+  // ADR 0009: report this vehicle's position periodically while a run
+  // is actually in progress -- automatic, no driver interaction (spec
+  // section 9: "limited driver interaction while moving"). Silently
+  // does nothing if the browser has no geolocation, permission was
+  // denied, or this login isn't linked to a driver record -- position
+  // reporting is a best-effort enhancement, not something that should
+  // block or alarm a driver just trying to run their route.
+  useEffect(() => {
+    const driverId = user?.driver_id
+    const hasActiveAssignment = assignments.some((a) => a.status === 'in_progress')
+    if (driverId == null || !hasActiveAssignment || !('geolocation' in navigator)) {
+      return
+    }
+    const reportPosition = () => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          void api
+            .reportPosition(driverId, {
+              service_date: serviceDate,
+              location_lat: position.coords.latitude,
+              location_lon: position.coords.longitude,
+              recorded_at: new Date(position.timestamp).toISOString(),
+            })
+            .catch(() => undefined)
+        },
+        () => undefined,
+      )
+    }
+    reportPosition()
+    const intervalId = window.setInterval(reportPosition, 20000)
+    return () => window.clearInterval(intervalId)
+  }, [assignments, user, serviceDate])
+
   async function handleSetStatus(assignmentId: number, status: AssignmentStatus) {
     setErrorMessage(null)
     setBusyAssignmentId(assignmentId)

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { FamilyMember } from '../api/types'
+import type { BusPosition, FamilyMember } from '../api/types'
 import { FamilyPage } from './FamilyPage'
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -12,6 +12,7 @@ vi.mock('../api/client', async (importOriginal) => {
     ...actual,
     getMyFamily: vi.fn(),
     updateRidership: vi.fn(),
+    getBusPosition: vi.fn(),
   }
 })
 
@@ -83,5 +84,51 @@ describe('FamilyPage', () => {
     await user.click(screen.getByRole('button', { name: 'Mark not riding AM' }))
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('your own family'))
+  })
+
+  it('locating the AM bus shows driver/vehicle/coordinates when available', async () => {
+    vi.mocked(api.getMyFamily).mockResolvedValue([child])
+    const position: BusPosition = {
+      available: true,
+      ambiguous: false,
+      location_lat: 29.71,
+      location_lon: -95.41,
+      recorded_at: '2026-09-01T12:00:00Z',
+      driver_full_name: 'Jordan Driver',
+      vehicle_label: 'Bus 101',
+    }
+    vi.mocked(api.getBusPosition).mockResolvedValue(position)
+    render(<FamilyPage />)
+    await waitFor(() => expect(screen.getByText('Jamie Student')).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.click(screen.getAllByRole('button', { name: 'Locate bus' })[0])
+
+    expect(api.getBusPosition).toHaveBeenCalledWith(10, today(), 'am')
+    await waitFor(() => expect(screen.getByText(/Jordan Driver, Bus 101/)).toBeInTheDocument())
+  })
+
+  it('locating the bus shows an ambiguous notice when multiple runs share the leg', async () => {
+    vi.mocked(api.getMyFamily).mockResolvedValue([child])
+    vi.mocked(api.getBusPosition).mockResolvedValue({
+      available: false,
+      ambiguous: true,
+      location_lat: null,
+      location_lon: null,
+      recorded_at: null,
+      driver_full_name: null,
+      vehicle_label: null,
+    })
+    render(<FamilyPage />)
+    await waitFor(() => expect(screen.getByText('Jamie Student')).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.click(screen.getAllByRole('button', { name: 'Locate bus' })[0])
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/more than one run serves this school\/leg today/),
+      ).toBeInTheDocument(),
+    )
   })
 })
