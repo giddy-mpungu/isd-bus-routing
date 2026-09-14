@@ -10,6 +10,7 @@ from isd_api.config import settings
 from isd_api.db import Base, engine
 from isd_api.routers import (
     absences,
+    announcements,
     auth,
     crews,
     drivers,
@@ -71,6 +72,7 @@ app.include_router(geographic_knowledge.router)
 app.include_router(positions.driver_router)
 app.include_router(positions.fleet_router)
 app.include_router(field_trips.router)
+app.include_router(announcements.router)
 
 
 @app.get("/health")

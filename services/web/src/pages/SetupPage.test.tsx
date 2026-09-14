@@ -19,6 +19,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getStops: vi.fn(),
     getStudents: vi.fn(),
     getGeographicKnowledgeOverrides: vi.fn(),
+    getAnnouncements: vi.fn(),
     createSchool: vi.fn(),
     createQualification: vi.fn(),
     createDriver: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('../api/client', async (importOriginal) => {
     createStop: vi.fn(),
     createStudent: vi.fn(),
     createGeographicKnowledgeOverride: vi.fn(),
+    createAnnouncement: vi.fn(),
   }
 })
 
@@ -80,6 +82,7 @@ function mockLoad() {
   vi.mocked(api.getStops).mockResolvedValue([])
   vi.mocked(api.getStudents).mockResolvedValue([])
   vi.mocked(api.getGeographicKnowledgeOverrides).mockResolvedValue([])
+  vi.mocked(api.getAnnouncements).mockResolvedValue([])
 }
 
 function renderAsRole(user: CurrentUser) {
@@ -154,6 +157,35 @@ describe('SetupPage', () => {
       }),
     )
     expect(api.getGeographicKnowledgeOverrides).toHaveBeenCalledTimes(2) // initial load + reload after create
+  })
+
+  it('creating an announcement calls the API with message/category/audience and reloads', async () => {
+    vi.mocked(api.createAnnouncement).mockResolvedValue({
+      id: 1,
+      message: 'Buses running 15 minutes late today.',
+      category: 'delay',
+      audience: 'family',
+      created_at: '2026-09-14T12:00:00Z',
+    })
+    renderAsRole(dispatcherUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Message'), 'Buses running 15 minutes late today.')
+    await user.selectOptions(screen.getByLabelText('Announcement category'), 'delay')
+    await user.selectOptions(screen.getByLabelText('Audience'), 'family')
+    await user.click(screen.getByRole('button', { name: 'Post announcement' }))
+
+    await waitFor(() =>
+      expect(api.createAnnouncement).toHaveBeenCalledWith({
+        message: 'Buses running 15 minutes late today.',
+        category: 'delay',
+        audience: 'family',
+      }),
+    )
+    expect(api.getAnnouncements).toHaveBeenCalledTimes(2) // initial load + reload after create
   })
 
   it('only offers license qualifications on the driver form and vehicle_capability ones on the vehicle form', async () => {

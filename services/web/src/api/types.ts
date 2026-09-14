@@ -296,6 +296,24 @@ export interface GeographicKnowledgeOverrideCreate {
   note: string
 }
 
+// spec §9/§18: dispatcher-authored notices for drivers and/or families.
+export type AnnouncementAudience = 'all' | 'family' | 'driver'
+export type AnnouncementCategory = 'general' | 'delay' | 'substitution' | 'route_change'
+
+export interface Announcement {
+  id: number
+  message: string
+  category: AnnouncementCategory
+  audience: AnnouncementAudience
+  created_at: string
+}
+
+export interface AnnouncementCreate {
+  message: string
+  category?: AnnouncementCategory
+  audience: AnnouncementAudience
+}
+
 // ADR 0009: GPS telemetry pipeline.
 export interface PositionUpdate {
   service_date: string

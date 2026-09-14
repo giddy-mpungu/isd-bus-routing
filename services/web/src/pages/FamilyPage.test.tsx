@@ -13,6 +13,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getMyFamily: vi.fn(),
     updateRidership: vi.fn(),
     getBusPosition: vi.fn(),
+    getMyAnnouncements: vi.fn(),
   }
 })
 
@@ -33,6 +34,7 @@ const child: FamilyMember = {
 describe('FamilyPage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    vi.mocked(api.getMyAnnouncements).mockResolvedValue([])
   })
 
   it('renders a card per linked child with school/stop and ridership state', async () => {
@@ -44,6 +46,24 @@ describe('FamilyPage', () => {
     expect(screen.getByText('Stop: Oak & 5th')).toBeInTheDocument()
     expect(screen.getByText('AM: Riding')).toBeInTheDocument()
     expect(screen.getByText('PM: Riding')).toBeInTheDocument()
+  })
+
+  it('renders transportation announcements for the family audience', async () => {
+    vi.mocked(api.getMyFamily).mockResolvedValue([child])
+    vi.mocked(api.getMyAnnouncements).mockResolvedValue([
+      {
+        id: 1,
+        message: 'Route 12 substitute driver today.',
+        category: 'substitution',
+        audience: 'family',
+        created_at: '2026-09-14T12:00:00Z',
+      },
+    ])
+    render(<FamilyPage />)
+
+    await waitFor(() =>
+      expect(screen.getByText(/Route 12 substitute driver today\./)).toBeInTheDocument(),
+    )
   })
 
   it('shows a friendly message when there are no linked students', async () => {

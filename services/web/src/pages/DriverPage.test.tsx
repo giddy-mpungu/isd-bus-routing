@@ -16,6 +16,7 @@ vi.mock('../api/client', async (importOriginal) => {
     updateAssignmentStatus: vi.fn(),
     createAbsence: vi.fn(),
     reportPosition: vi.fn(),
+    getMyAnnouncements: vi.fn(),
   }
 })
 
@@ -58,6 +59,25 @@ function renderPage() {
 describe('DriverPage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    vi.mocked(api.getMyAnnouncements).mockResolvedValue([])
+  })
+
+  it('renders messages from dispatch when there are announcements for drivers', async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([assignment])
+    vi.mocked(api.getMyAnnouncements).mockResolvedValue([
+      {
+        id: 1,
+        message: 'Route 12 substitute driver today.',
+        category: 'substitution',
+        audience: 'driver',
+        created_at: '2026-09-14T12:00:00Z',
+      },
+    ])
+    renderPage()
+
+    await waitFor(() =>
+      expect(screen.getByText(/Route 12 substitute driver today\./)).toBeInTheDocument(),
+    )
   })
 
   it('renders a run card with resolved school/vehicle names and time window', async () => {
