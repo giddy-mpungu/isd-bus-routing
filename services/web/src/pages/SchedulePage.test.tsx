@@ -13,6 +13,7 @@ import type {
   Run,
   School,
   Vehicle,
+  VehiclePosition,
 } from '../api/types'
 import { SchedulePage } from './SchedulePage'
 
@@ -46,6 +47,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getAbsencesForDate: vi.fn(),
     createAbsence: vi.fn(),
     getSubstituteCandidates: vi.fn(),
+    getFleetPositions: vi.fn(),
   }
 })
 
@@ -153,6 +155,7 @@ function mockLoad() {
   vi.mocked(api.getQualifications).mockResolvedValue([vehicleQual])
   vi.mocked(api.getAssignments).mockResolvedValue([assignment])
   vi.mocked(api.getAbsencesForDate).mockResolvedValue([absence])
+  vi.mocked(api.getFleetPositions).mockResolvedValue([])
 }
 
 describe('SchedulePage', () => {
@@ -169,6 +172,35 @@ describe('SchedulePage', () => {
     expect(select).toHaveValue(String(crew.id))
     expect(screen.getByRole('option', { name: 'Jordan Driver — Bus 101' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Sam Substitute — Bus 202' })).toBeInTheDocument()
+  })
+
+  it('renders a reported fleet position with driver/vehicle names and coordinates', async () => {
+    const position: VehiclePosition = {
+      crew_id: crew.id,
+      driver_id: driverRecord.id,
+      driver_full_name: driverRecord.full_name,
+      vehicle_id: vehicle.id,
+      vehicle_label: vehicle.label,
+      location_lat: 29.71,
+      location_lon: -95.41,
+      recorded_at: new Date().toISOString(),
+    }
+    vi.mocked(api.getFleetPositions).mockResolvedValue([position])
+    render(<SchedulePage />)
+
+    await waitFor(() =>
+      expect(screen.getByText(/Jordan Driver — Bus 101: 29.71000, -95.41000/)).toBeInTheDocument(),
+    )
+  })
+
+  it('shows a status message when no vehicle has reported a position yet', async () => {
+    render(<SchedulePage />)
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('No vehicle has reported a position for this date yet.'),
+      ).toBeInTheDocument(),
+    )
   })
 
   it('reassigning the crew via the dropdown calls the API and reloads', async () => {

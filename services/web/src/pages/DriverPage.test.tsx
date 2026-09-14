@@ -15,6 +15,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getMyAssignments: vi.fn(),
     updateAssignmentStatus: vi.fn(),
     createAbsence: vi.fn(),
+    reportPosition: vi.fn(),
   }
 })
 
@@ -116,6 +117,44 @@ describe('DriverPage', () => {
     await user.click(screen.getByRole('button', { name: 'Start' }))
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Not your run'))
+  })
+
+  it('reports position automatically (ADR 0009) when a run is in progress', async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([{ ...assignment, status: 'in_progress' }])
+    vi.mocked(api.reportPosition).mockResolvedValue(undefined)
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      success({
+        coords: { latitude: 29.71, longitude: -95.41 } as GeolocationCoordinates,
+        timestamp: 1_700_000_000_000,
+      } as GeolocationPosition)
+    })
+    vi.stubGlobal('navigator', { ...navigator, geolocation: { getCurrentPosition } })
+
+    renderPage()
+
+    await waitFor(() =>
+      expect(api.reportPosition).toHaveBeenCalledWith(
+        100,
+        expect.objectContaining({
+          service_date: today(),
+          location_lat: 29.71,
+          location_lon: -95.41,
+        }),
+      ),
+    )
+    vi.unstubAllGlobals()
+  })
+
+  it('does not report position when no run is in progress', async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([assignment]) // status: 'scheduled'
+    const getCurrentPosition = vi.fn()
+    vi.stubGlobal('navigator', { ...navigator, geolocation: { getCurrentPosition } })
+
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
+
+    expect(getCurrentPosition).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
   })
 
   it("reporting a whole-day absence calls createAbsence with the driver's own id", async () => {

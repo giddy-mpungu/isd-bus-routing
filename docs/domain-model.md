@@ -245,6 +245,19 @@ produces them rather than duplicated here.
   follow-up); `PREFERRED_ENTRANCE` is a positive preference, the
   opposite of an avoidance, needing a different mechanism entirely;
   `OTHER` is too ambiguous to apply an unpredictable effect for.
+- **VehiclePosition** (spec §9/§18, ADR 0009): the latest known GPS
+  position for a crew's vehicle — `crew_id` (unique: one row per crew,
+  overwritten in place), lat/lon, `recorded_at`. Reported by the
+  driver's own tablet (`PUT /drivers/{id}/position`, browser
+  Geolocation API — no dedicated GPS/AVL hardware, per ADR 0009) while
+  a run is in progress; read via `GET /schedule/{date}/fleet-positions`
+  (dispatcher's spec §17 "GPS fleet view") or
+  `GET /students/{id}/bus-position` (a family's spec §18 "approximate
+  bus location" for one child's leg — `available`/`ambiguous`-shaped
+  like `ExpectedRidersRead`, never guessing which bus when more than
+  one run serves the same school/date/direction). MVP scope
+  deliberately stores only the latest position, not a breadcrumb
+  trail — see ADR 0009 for why.
 
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
@@ -256,5 +269,5 @@ produces them rather than duplicated here.
 - Spec §6 is now done to the extent an external point-to-point routing API can express it: real road-network travel time, per-vehicle length/width/height/weight restrictions, and district-specific avoid-zones (§8) are all applied via `ors_deadhead_estimator`. Turn/dead-end safety costs (§7) and dynamic rerouting (§10) remain genuinely out of scope — both need a routing *graph* this system doesn't own, not just a point-to-point directions call, a different technical approach than anything built so far.
 - District-specific geographic knowledge / local roadway overrides (spec §8) — persistence done, and 3 of 8 categories now applied to routing via ORS `avoid_polygons` (`GeographicKnowledgeOverride`, above); the other 5 categories (caution/time-dependent/vehicle-dependent/preference/ambiguous) each need a different mechanism than a hard avoid-zone, not just more plumbing
 - Dynamic rerouting around road closures/incidents (spec §10) — Phase 6, same GIS dependency
-- Live GPS bus location, delay/substitution/route-change notifications (spec §18) — Phase 6+, no live-tracking or notification infrastructure exists yet
+- Live GPS bus location (spec §9/§18) is now done for position itself (`VehiclePosition`, ADR 0009, above) — dispatcher fleet view and per-child "locate bus." Still unbuilt: delay/substitution/route-change *notifications* (spec §18's other half), turn-by-turn navigation, incident/vehicle-defect reporting, and dispatch messaging (spec §9's other pieces) — none of these share GPS position's data model, each is its own follow-up
 - Historical operational data / learning-adjusted estimates (spec §20) — Phase 6
