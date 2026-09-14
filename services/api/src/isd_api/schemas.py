@@ -349,6 +349,49 @@ class SubstituteCandidate(BaseModel):
     reasons: list[str]
 
 
+class PositionUpdate(BaseModel):
+    """ADR 0009: a driver tablet's periodic position ping."""
+
+    service_date: date
+    location_lat: float = Field(ge=-90, le=90)
+    location_lon: float = Field(ge=-180, le=180)
+    recorded_at: datetime
+
+
+class VehiclePositionRead(BaseModel):
+    """Denormalized fleet-view row (dispatcher/transportation_admin,
+    spec section 17's "GPS fleet view") -- resolved driver/vehicle
+    names, mirroring DriverAssignmentRead's reasoning."""
+
+    crew_id: int
+    driver_id: int
+    driver_full_name: str
+    vehicle_id: int
+    vehicle_label: str
+    location_lat: float
+    location_lon: float
+    recorded_at: datetime
+
+
+class BusPositionRead(BaseModel):
+    """spec section 18: a family's "approximate bus location" for one
+    child's leg. Deliberately decision-support-shaped like
+    ExpectedRidersRead (PR #23): `available=False` covers every reason
+    there's nothing to show yet (no run, no assignment, no position
+    reported), and `ambiguous=True` -- the same multi-run-per-leg gap
+    PR #23 named -- means this system can't yet tell which of several
+    runs serves this child, so it deliberately shows nothing rather
+    than guessing."""
+
+    available: bool
+    ambiguous: bool
+    location_lat: float | None = None
+    location_lon: float | None = None
+    recorded_at: datetime | None = None
+    driver_full_name: str | None = None
+    vehicle_label: str | None = None
+
+
 class AffectedAssignmentSubstitutes(BaseModel):
     """spec section 13.1: one of the absent driver's assignments for
     the date, plus ranked substitute candidates. `crew_id` is the

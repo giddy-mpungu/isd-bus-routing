@@ -15,6 +15,7 @@ import type {
   School,
   SubstituteCandidate,
   Vehicle,
+  VehiclePosition,
 } from '../api/types'
 
 const ABSENCE_REASONS: AbsenceReason[] = [
@@ -40,6 +41,14 @@ function formatMinuteOfDay(minute: number): string {
   return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
 }
 
+function formatSecondsAgo(isoTimestamp: string): string {
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(isoTimestamp).getTime()) / 1000))
+  if (seconds < 60) {
+    return `${seconds}s ago`
+  }
+  return `${Math.round(seconds / 60)}m ago`
+}
+
 export function SchedulePage() {
   const [serviceDate, setServiceDate] = useState(today)
   const [runs, setRuns] = useState<Run[]>([])
@@ -50,6 +59,7 @@ export function SchedulePage() {
   const [qualifications, setQualifications] = useState<Qualification[]>([])
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [absences, setAbsences] = useState<Absence[]>([])
+  const [fleetPositions, setFleetPositions] = useState<VehiclePosition[]>([])
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
@@ -66,6 +76,7 @@ export function SchedulePage() {
         qualificationsData,
         assignmentsData,
         absencesData,
+        fleetPositionsData,
       ] = await Promise.all([
         api.getRuns(date),
         api.getCrews(date),
@@ -75,6 +86,7 @@ export function SchedulePage() {
         api.getQualifications(),
         api.getAssignments(date),
         api.getAbsencesForDate(date),
+        api.getFleetPositions(date),
       ])
       setRuns(runsData)
       setCrews(crewsData)
@@ -84,6 +96,7 @@ export function SchedulePage() {
       setQualifications(qualificationsData)
       setAssignments(assignmentsData)
       setAbsences(absencesData)
+      setFleetPositions(fleetPositionsData)
     } catch (err) {
       setErrorMessage(err instanceof ApiError ? err.message : 'Failed to load schedule data.')
     }
@@ -92,6 +105,20 @@ export function SchedulePage() {
   useEffect(() => {
     void loadAll(serviceDate)
   }, [serviceDate, loadAll])
+
+  // ADR 0009: positions are polled, not pushed -- a lightweight refresh
+  // of just this one list, separate from loadAll's full reload, so the
+  // dispatcher's fleet view stays roughly live without refetching
+  // everything else every 20s.
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      api
+        .getFleetPositions(serviceDate)
+        .then(setFleetPositions)
+        .catch(() => undefined)
+    }, 20000)
+    return () => window.clearInterval(intervalId)
+  }, [serviceDate])
 
   const schoolsById = new Map(schools.map((s) => [s.id, s]))
   const driversById = new Map(drivers.map((d) => [d.id, d]))
@@ -500,6 +527,26 @@ export function SchedulePage() {
       )}
 
       {runs.length === 0 && <p>No runs exist for this date yet.</p>}
+
+      <section className="fleet-positions-section">
+        <h2>Live fleet positions</h2>
+        {fleetPositions.length === 0 ? (
+          <p className="status">No vehicle has reported a position for this date yet.</p>
+        ) : (
+          <ul>
+            {fleetPositions.map((position) => (
+              <li key={position.crew_id}>
+                {position.driver_full_name} — {position.vehicle_label}
+                {': '}
+                {position.location_lat.toFixed(5)}, {position.location_lon.toFixed(5)}
+                {' ('}
+                {formatSecondsAgo(position.recorded_at)}
+                {')'}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section className="add-forms">
         <div>
