@@ -25,6 +25,8 @@ import type {
   Driver,
   DriverAssignment,
   DriverCreate,
+  DriverReport,
+  DriverReportCreate,
   ExpectedRiders,
   FamilyMember,
   FieldTrip,
@@ -271,6 +273,17 @@ export async function createGeographicKnowledgeOverride(
   payload: GeographicKnowledgeOverrideCreate,
 ): Promise<GeographicKnowledgeOverride> {
   return request<GeographicKnowledgeOverride>('/geographic-knowledge', jsonInit('POST', payload))
+}
+
+export async function createDriverReport(
+  driverId: number,
+  payload: DriverReportCreate,
+): Promise<DriverReport> {
+  return request<DriverReport>(`/drivers/${driverId}/reports`, jsonInit('POST', payload))
+}
+
+export async function getDriverReportsForDate(serviceDate: string): Promise<DriverReport[]> {
+  return request<DriverReport[]>(`/reports?service_date=${serviceDate}`)
 }
 
 export async function getAnnouncements(): Promise<Announcement[]> {
