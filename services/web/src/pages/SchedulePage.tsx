@@ -8,6 +8,7 @@ import type {
   Assignment,
   Crew,
   Driver,
+  DriverReport,
   ExpectedRiders,
   ObservedRunDuration,
   Qualification,
@@ -61,6 +62,7 @@ export function SchedulePage() {
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [absences, setAbsences] = useState<Absence[]>([])
   const [fleetPositions, setFleetPositions] = useState<VehiclePosition[]>([])
+  const [driverReports, setDriverReports] = useState<DriverReport[]>([])
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
@@ -78,6 +80,7 @@ export function SchedulePage() {
         assignmentsData,
         absencesData,
         fleetPositionsData,
+        driverReportsData,
       ] = await Promise.all([
         api.getRuns(date),
         api.getCrews(date),
@@ -88,6 +91,7 @@ export function SchedulePage() {
         api.getAssignments(date),
         api.getAbsencesForDate(date),
         api.getFleetPositions(date),
+        api.getDriverReportsForDate(date),
       ])
       setRuns(runsData)
       setCrews(crewsData)
@@ -98,6 +102,7 @@ export function SchedulePage() {
       setAssignments(assignmentsData)
       setAbsences(absencesData)
       setFleetPositions(fleetPositionsData)
+      setDriverReports(driverReportsData)
     } catch (err) {
       setErrorMessage(err instanceof ApiError ? err.message : 'Failed to load schedule data.')
     }
@@ -838,6 +843,26 @@ export function SchedulePage() {
             </button>
           </form>
         </div>
+      </section>
+
+      <section className="driver-reports-section">
+        <h2>Driver reports for {serviceDate}</h2>
+        {driverReports.length === 0 ? (
+          <p className="status">No incident or vehicle defect reports for this date.</p>
+        ) : (
+          <ul>
+            {driverReports.map((r) => (
+              <li key={r.id}>
+                [{r.report_type.replace(/_/g, ' ')}]{' '}
+                {driversById.get(r.driver_id)?.full_name ?? `Driver #${r.driver_id}`}
+                {r.vehicle_id != null &&
+                  ` — ${vehiclesById.get(r.vehicle_id)?.label ?? `Vehicle #${r.vehicle_id}`}`}
+                {': '}
+                {r.description}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="absences-section">

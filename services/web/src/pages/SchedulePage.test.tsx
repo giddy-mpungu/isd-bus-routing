@@ -49,6 +49,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getSubstituteCandidates: vi.fn(),
     getFleetPositions: vi.fn(),
     getObservedRunDuration: vi.fn(),
+    getDriverReportsForDate: vi.fn(),
   }
 })
 
@@ -157,6 +158,7 @@ function mockLoad() {
   vi.mocked(api.getAssignments).mockResolvedValue([assignment])
   vi.mocked(api.getAbsencesForDate).mockResolvedValue([absence])
   vi.mocked(api.getFleetPositions).mockResolvedValue([])
+  vi.mocked(api.getDriverReportsForDate).mockResolvedValue([])
 }
 
 describe('SchedulePage', () => {
@@ -200,6 +202,35 @@ describe('SchedulePage', () => {
     await waitFor(() =>
       expect(
         screen.getByText('No vehicle has reported a position for this date yet.'),
+      ).toBeInTheDocument(),
+    )
+  })
+
+  it('renders a driver report with resolved driver/vehicle names', async () => {
+    vi.mocked(api.getDriverReportsForDate).mockResolvedValue([
+      {
+        id: 1,
+        driver_id: driverRecord.id,
+        vehicle_id: vehicle.id,
+        service_date: '2026-09-01',
+        report_type: 'vehicle_defect',
+        description: 'Squeaky brakes.',
+        created_at: '2026-09-01T12:00:00Z',
+      },
+    ])
+    render(<SchedulePage />)
+
+    await waitFor(() =>
+      expect(screen.getByText(/Jordan Driver — Bus 101: Squeaky brakes\./)).toBeInTheDocument(),
+    )
+  })
+
+  it('shows a status message when there are no driver reports yet', async () => {
+    render(<SchedulePage />)
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('No incident or vehicle defect reports for this date.'),
       ).toBeInTheDocument(),
     )
   })

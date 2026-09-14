@@ -17,6 +17,7 @@ vi.mock('../api/client', async (importOriginal) => {
     createAbsence: vi.fn(),
     reportPosition: vi.fn(),
     getMyAnnouncements: vi.fn(),
+    createDriverReport: vi.fn(),
   }
 })
 
@@ -257,5 +258,51 @@ describe('DriverPage', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('start_minute must be <= end_minute'),
     )
+  })
+
+  it("submitting a vehicle defect report calls createDriverReport with the driver's own id", async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([])
+    vi.mocked(api.createDriverReport).mockResolvedValue({
+      id: 1,
+      driver_id: 100,
+      vehicle_id: 5,
+      service_date: today(),
+      report_type: 'vehicle_defect',
+      description: 'Brake pedal feels soft.',
+      created_at: today(),
+    })
+    renderPage()
+    await waitFor(() =>
+      expect(screen.getByText('No runs scheduled for today.')).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByLabelText('Type'), 'vehicle_defect')
+    await user.type(screen.getByLabelText('Description'), 'Brake pedal feels soft.')
+    await user.click(screen.getByRole('button', { name: 'Submit report' }))
+
+    await waitFor(() =>
+      expect(api.createDriverReport).toHaveBeenCalledWith(100, {
+        service_date: today(),
+        report_type: 'vehicle_defect',
+        description: 'Brake pedal feels soft.',
+      }),
+    )
+    await waitFor(() => expect(screen.getByText('Report submitted.')).toBeInTheDocument())
+  })
+
+  it('shows an error message when submitting a report fails', async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([])
+    vi.mocked(api.createDriverReport).mockRejectedValue(new ApiError(403, 'Not linked'))
+    renderPage()
+    await waitFor(() =>
+      expect(screen.getByText('No runs scheduled for today.')).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Description'), 'Something happened.')
+    await user.click(screen.getByRole('button', { name: 'Submit report' }))
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Not linked'))
   })
 })

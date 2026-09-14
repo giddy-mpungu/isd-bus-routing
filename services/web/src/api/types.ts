@@ -314,6 +314,25 @@ export interface AnnouncementCreate {
   audience: AnnouncementAudience
 }
 
+// spec §9: driver-app incident reporting / vehicle defect reporting.
+export type DriverReportType = 'incident' | 'vehicle_defect'
+
+export interface DriverReport {
+  id: number
+  driver_id: number
+  vehicle_id: number | null
+  service_date: string
+  report_type: DriverReportType
+  description: string
+  created_at: string
+}
+
+export interface DriverReportCreate {
+  service_date: string
+  report_type: DriverReportType
+  description: string
+}
+
 // ADR 0009: GPS telemetry pipeline.
 export interface PositionUpdate {
   service_date: string

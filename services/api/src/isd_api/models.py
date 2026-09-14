@@ -368,6 +368,39 @@ class DriverAbsence(Base):
     driver: Mapped[Driver] = relationship()
 
 
+class DriverReportType(enum.StrEnum):
+    """spec section 9's driver-app "Incident reporting" and "Vehicle
+    defect reporting" -- one type discriminator rather than two nearly
+    identical entities, same shape as GeographicKnowledgeCategory."""
+
+    INCIDENT = "incident"
+    VEHICLE_DEFECT = "vehicle_defect"
+
+
+class DriverReport(Base):
+    """spec section 9. `vehicle_id` is deliberately not driver-supplied
+    -- the router resolves it from the driver's own Crew for
+    `service_date` (the vehicle they were actually driving), so the
+    driver-app form only ever needs a type and a description (spec
+    section 9: "minimal typing"). Nullable because a driver may have no
+    crew that date, or an incident may not involve a specific vehicle."""
+
+    __tablename__ = "driver_reports"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    driver_id: Mapped[int] = mapped_column(ForeignKey("drivers.id"), nullable=False)
+    vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"), nullable=True)
+    service_date: Mapped[date] = mapped_column(Date, nullable=False)
+    report_type: Mapped[DriverReportType] = mapped_column(
+        SAEnum(DriverReportType, native_enum=False, length=20), nullable=False
+    )
+    description: Mapped[str] = mapped_column(String(1000), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    driver: Mapped[Driver] = relationship()
+    vehicle: Mapped[Vehicle | None] = relationship()
+
+
 class GeographicKnowledgeCategory(enum.StrEnum):
     """spec section 8's example list of local roadway knowledge."""
 

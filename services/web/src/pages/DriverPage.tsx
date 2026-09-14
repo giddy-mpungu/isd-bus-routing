@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { AbsenceReason, Announcement, AssignmentStatus, DriverAssignment } from '../api/types'
+import type {
+  AbsenceReason,
+  Announcement,
+  AssignmentStatus,
+  DriverAssignment,
+  DriverReportType,
+} from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 
 const ABSENCE_REASONS: AbsenceReason[] = [
@@ -160,6 +166,38 @@ export function DriverPage() {
     }
   }
 
+  // --- Report an incident / vehicle defect (spec section 9) ---
+  const [reportType, setReportType] = useState<DriverReportType>('incident')
+  const [reportDescription, setReportDescription] = useState('')
+  const [reportError, setReportError] = useState<string | null>(null)
+  const [reportSuccess, setReportSuccess] = useState(false)
+  const [isSavingReport, setIsSavingReport] = useState(false)
+
+  async function handleSubmitReport(event: FormEvent) {
+    event.preventDefault()
+    setReportError(null)
+    setReportSuccess(false)
+    if (user?.driver_id == null) {
+      setReportError('Your account is not linked to a driver record.')
+      return
+    }
+    setIsSavingReport(true)
+    try {
+      await api.createDriverReport(user.driver_id, {
+        service_date: serviceDate,
+        report_type: reportType,
+        description: reportDescription,
+      })
+      setReportType('incident')
+      setReportDescription('')
+      setReportSuccess(true)
+    } catch (err) {
+      setReportError(err instanceof ApiError ? err.message : 'Failed to submit report.')
+    } finally {
+      setIsSavingReport(false)
+    }
+  }
+
   return (
     <div className="driver-page">
       <h1>My runs — {serviceDate}</h1>
@@ -280,6 +318,37 @@ export function DriverPage() {
           {absenceSuccess && <p className="status">Absence reported.</p>}
           <button type="submit" disabled={isSavingAbsence}>
             {isSavingAbsence ? 'Reporting…' : 'Report absence'}
+          </button>
+        </form>
+      </section>
+
+      <section className="driver-report-section">
+        <h2>Report an incident or vehicle defect</h2>
+        <form onSubmit={(event) => void handleSubmitReport(event)}>
+          <label htmlFor="driver-report-type">Type</label>
+          <select
+            id="driver-report-type"
+            value={reportType}
+            onChange={(event) => setReportType(event.target.value as DriverReportType)}
+          >
+            <option value="incident">Incident</option>
+            <option value="vehicle_defect">Vehicle defect</option>
+          </select>
+          <label htmlFor="driver-report-description">Description</label>
+          <textarea
+            id="driver-report-description"
+            value={reportDescription}
+            onChange={(event) => setReportDescription(event.target.value)}
+            required
+          />
+          {reportError && (
+            <p role="alert" className="error">
+              {reportError}
+            </p>
+          )}
+          {reportSuccess && <p className="status">Report submitted.</p>}
+          <button type="submit" disabled={isSavingReport}>
+            {isSavingReport ? 'Submitting…' : 'Submit report'}
           </button>
         </form>
       </section>
