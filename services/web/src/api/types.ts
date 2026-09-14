@@ -287,3 +287,32 @@ export interface GeographicKnowledgeOverrideCreate {
   category: GeographicKnowledgeCategory
   note: string
 }
+
+// ADR 0009: GPS telemetry pipeline.
+export interface PositionUpdate {
+  service_date: string
+  location_lat: number
+  location_lon: number
+  recorded_at: string
+}
+
+export interface VehiclePosition {
+  crew_id: number
+  driver_id: number
+  driver_full_name: string
+  vehicle_id: number
+  vehicle_label: string
+  location_lat: number
+  location_lon: number
+  recorded_at: string
+}
+
+export interface BusPosition {
+  available: boolean
+  ambiguous: boolean
+  location_lat: number | null
+  location_lon: number | null
+  recorded_at: string | null
+  driver_full_name: string | null
+  vehicle_label: string | null
+}

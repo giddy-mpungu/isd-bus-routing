@@ -14,8 +14,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from isd_api.db import get_db
-from isd_api.models import RideDirection, RidershipOverride, Role, Student, User
+from isd_api.models import (
+    Assignment,
+    RideDirection,
+    RidershipOverride,
+    Role,
+    Run,
+    Student,
+    User,
+    VehiclePosition,
+)
 from isd_api.schemas import (
+    BusPositionRead,
     FamilyMemberRead,
     GuardianLink,
     RidershipOverrideUpdate,
@@ -146,6 +156,66 @@ def get_my_family(
         )
         for s in students
     ]
+
+
+@router.get("/{student_id}/bus-position", response_model=BusPositionRead)
+def get_bus_position(
+    student_id: int,
+    service_date: date,
+    direction: RideDirection,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.STUDENT, Role.PARENT)),
+) -> BusPositionRead:
+    """spec section 18: "approximate bus location" for one child's leg.
+    See BusPositionRead's docstring for the available/ambiguous shape --
+    this deliberately never guesses which bus is "the" bus when more
+    than one run could serve this leg (same gap PR #23 named for
+    expected-riders)."""
+    student = db.get(Student, student_id)
+    if student is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
+    is_self = current_user.role == Role.STUDENT and current_user.student_id == student_id
+    is_guardian = current_user.role == Role.PARENT and student in current_user.guardian_of
+    if not (is_self or is_guardian):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view your own family's bus position",
+        )
+
+    runs = (
+        db.query(Run)
+        .filter(
+            Run.school_id == student.school_id,
+            Run.service_date == service_date,
+            Run.direction == direction,
+        )
+        .all()
+    )
+    if len(runs) == 0:
+        return BusPositionRead(available=False, ambiguous=False)
+    if len(runs) > 1:
+        return BusPositionRead(available=False, ambiguous=True)
+
+    assignment = db.query(Assignment).filter(Assignment.run_id == runs[0].id).one_or_none()
+    if assignment is None:
+        return BusPositionRead(available=False, ambiguous=False)
+    position = (
+        db.query(VehiclePosition)
+        .filter(VehiclePosition.crew_id == assignment.crew_id)
+        .one_or_none()
+    )
+    if position is None:
+        return BusPositionRead(available=False, ambiguous=False)
+
+    return BusPositionRead(
+        available=True,
+        ambiguous=False,
+        location_lat=position.location_lat,
+        location_lon=position.location_lon,
+        recorded_at=position.recorded_at,
+        driver_full_name=position.crew.driver.full_name,
+        vehicle_label=position.crew.vehicle.label,
+    )
 
 
 @router.patch("/{student_id}/ridership", status_code=status.HTTP_204_NO_CONTENT)

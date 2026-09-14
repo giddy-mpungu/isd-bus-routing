@@ -457,6 +457,31 @@ class Assignment(Base):
     crew: Mapped[Crew] = relationship(back_populates="assignments")
 
 
+class VehiclePosition(Base):
+    """spec section 9/18 (ADR 0009): the latest known GPS position for a
+    crew's vehicle. One row per crew, overwritten in place -- MVP scope
+    is "where is the bus right now," not a breadcrumb trail (ADR 0009
+    names that as a deliberate, unbuilt follow-up for spec section 20).
+    Reported by the driver's own tablet (browser Geolocation API, ADR
+    0009) via PUT /drivers/{id}/position, keyed to a crew rather than a
+    specific assignment since a crew's position is meaningful for the
+    whole day, not just its current run."""
+
+    __tablename__ = "vehicle_positions"
+    __table_args__ = (UniqueConstraint("crew_id", name="uq_vehicle_position_one_per_crew"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    crew_id: Mapped[int] = mapped_column(ForeignKey("crews.id"), nullable=False)
+    location_lat: Mapped[float] = mapped_column(nullable=False)
+    location_lon: Mapped[float] = mapped_column(nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    crew: Mapped[Crew] = relationship()
+
+
 class AuditLogEntry(Base):
     """Append-only audit trail (spec section 14, ADR 0004).
 
