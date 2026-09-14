@@ -279,10 +279,22 @@ PATCH edits that bypass the solver.
   **not** a `Run` row — there's no recurring `Route` template table
   (ADR 0001 named that intent, never built), so this keeps the whole
   slice out of `Run`/`Assignment`/the solver entirely; see "Gotchas"
-  above for a real bug this shipped with and fixed. Not yet: automated
-  stop generation (§3.1, needs GIS), wiring ridership into the
-  solver's re-optimization (§4.3), cutoff/lock rules (§4.4), live
-  GPS/ETA and notifications (§18, Phase 6+).
+  above for a real bug this shipped with and fixed.
+  **§4.3, scoped (PR #23)**: `Run` gained `direction` (it had none —
+  needed at all to join against `RidershipOverride`, keyed by
+  `student, date, direction`); `GET /runs/{id}/expected-riders`
+  computes a real rider count as decision support for
+  `Run.passenger_count`, `PATCH /runs/{id}` lets a dispatcher apply it
+  manually, `ambiguous=true` when >1 run shares a school/date/direction
+  (no student-to-specific-run assignment exists) disables Apply on the
+  frontend. **This is not spec §4.3's literal behavior** — reading the
+  spec text directly (not this file's own prior shorthand) showed §4.3
+  is actually stop-sequence route shortening, needing a `Route`/
+  stop-sequence model that doesn't exist; that remains genuinely
+  undone, named explicitly rather than silently reinterpreted. Not
+  yet: automated stop generation (§3.1, needs GIS), §4.3's real
+  stop-shortening, cutoff/lock rules (§4.4), live GPS/ETA and
+  notifications (§18, Phase 6+).
 - **Phase 6** (dynamic rerouting, substitutes, field trips, historical
   learning) — **spec §13 done (backend+UI), §6 done (modulo §7's
   routing-graph dependency), §8 done (persistence + wired into
@@ -428,8 +440,9 @@ PATCH edits that bypass the solver.
 20. #20 `feat/phase6-geo-knowledge-routing-integration` — Phase 6 spec §8 wiring: `isd_solver.avoid_polygons_geojson` + `ors_deadhead_estimator`'s new `avoid_polygons` param, `POST /schedule` turns 3 of 8 `GeographicKnowledgeOverride` categories into a real ORS avoid-zone (`_HARD_AVOID_CATEGORIES` in `routers/schedule.py`), live-verified against a real ORS key to confirm a forced detour actually changes trip duration
 21. #21 `feat/phase6-vehicle-dimensions` — Phase 6 spec §6 slice 2: `Vehicle` gains `length_m`/`width_m`/`height_m`/`weight_kg` end-to-end (domain, DB, schema, router, `SetupPage.tsx`), mapped to ORS's HGV restriction params; persistence only, `DeadheadEstimator` doesn't consume them yet
 22. #22 `feat/phase6-vehicle-dimensions-routing-wiring` — Phase 6 spec §6 completion: `DeadheadEstimator` widened to carry a `Vehicle`, `scheduler.py`'s pairwise loop restructured to call it per-crew, `ors_deadhead_estimator` builds ORS restrictions from vehicle dimensions; fixed the `SolverVehicle(...)` constructor gap this depended on; live verification caught a real bug (published docs' `vehicle_type` field is rejected by the live API) before it shipped
+23. #23 `feat/ridership-expected-riders` — spec §4.3, scoped: `Run.direction`, `PATCH /runs/{id}`, `GET /runs/{id}/expected-riders` (decision support for `passenger_count` from real `Student`/`RidershipOverride` data, flags `ambiguous` when >1 run shares a school/date/direction); explicitly NOT §4.3's literal stop-sequence route shortening, which needs a `Route` model this system doesn't have — scope boundary documented, not silently reinterpreted
 
-## Key files (current state, post-PR #22)
+## Key files (current state, post-PR #23)
 
 - `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal + revocation check), `LoginRateLimiter`/`login_rate_limiter`, `revoke_token`
 - `services/api/src/isd_api/routers/auth.py` — login rate-limited + sets cookie + returns bearer token; `POST /auth/logout` (still no auth required — a no-op if nothing to revoke, but revokes the current token if one is present)
@@ -443,6 +456,7 @@ PATCH edits that bypass the solver.
 - `services/api/src/isd_api/routers/crews.py` — `POST`/`GET /crews`, `PATCH /crews/{id}` (driver-only repoint — see Gotchas #9 for why this exists instead of a second `POST /crews`)
 - `services/api/src/isd_api/routers/geographic_knowledge.py` — `POST`/`GET /geographic-knowledge` (spec §8 persistence — transportation_admin + dispatcher, audited); `routers/schedule.py`'s `_HARD_AVOID_CATEGORIES` is where 3 of the 8 categories actually get consumed by routing
 - `services/api/src/isd_api/routers/vehicles.py` — `POST`/`GET /vehicles`; `create_vehicle`'s explicit constructor kwargs carry `Vehicle`'s `length_m`/`width_m`/`height_m`/`weight_kg` (spec §6, now consumed by routing — see `schedule.py`'s `SolverVehicle(...)` for the second gotcha #7 spot this depended on)
+- `services/api/src/isd_api/routers/runs.py` — `POST`/`GET /runs`, `PATCH /runs/{id}` (passenger_count only), `GET /runs/{id}/expected-riders` (spec §4.3 decision support — not the spec's literal stop-shortening behavior, see "Status by phase" Phase 5 entry above)
 - `services/api/src/isd_api/main.py` — `CORSMiddleware` config, router registration (check here first if a new router's routes 404 — it needs an `app.include_router(...)` call too, not just existing as a file)
 - `services/solver/src/isd_solver/scheduler.py` — CP-SAT model, duty-limit pairwise constraints, busy-interval constraints
 - `services/solver/src/isd_solver/domain.py` — `Crew.busy_intervals` (validated within `available_window`)
@@ -462,53 +476,36 @@ PATCH edits that bypass the solver.
 
 ## Exact next step (as of this checkpoint)
 
-Every PR through #22 (Phase 4 MVP, auth hardening, Phase 5 MVP, both of
-Phase 6's spec §13, §8, and §6 increments) is **merged**, CI green,
-local `main` synced. Live-verified estimator work (PR #18/#20/#22)
-caught a real ORS `vehicle_type` bug before shipping — see PR #22's
-own notes above. The user then said explicitly: **tackle the entire
-remaining candidate list, continuing until it's done or something new
-needs deciding** — not "pick one," work through all of them. Status:
+Every PR through #23 (Phase 4 MVP, auth hardening, Phase 5 MVP, all of
+Phase 6's spec §13/§8/§6 increments) is **merged**, CI green, local
+`main` synced (commit `24fa14f`). The user said explicitly: **tackle
+the entire remaining candidate list, continuing until it's done or
+something new needs deciding** — not "pick one," work through all of
+them. Status:
 
 - ~~SQLAlchemy 2.0 mypy plugin~~ — **investigated and ruled out**
-  (checked empirically: deliberately reintroduced the Phase 5/PR
-  #22-style bug and ran mypy with and without
-  `sqlalchemy.ext.mypy.plugin` — neither caught it, since omitting a
-  kwarg for a field with a default is valid Python regardless, and
-  this codebase's `Mapped[]`-native models don't need the plugin
-  anyway per SQLAlchemy's own current docs). What actually catches
-  this class of bug: a real round-trip test per new field (see
-  `test_vehicle_dimension_fields_round_trip`, PR #21).
-- ~~Driver-app absence-reporting UI~~ — **done** (`DriverPage.tsx`
-  "Report an absence" section, direct commit — see gotcha #10 for the
-  process mistake made shipping it: no branch/PR, and `main` broke CI
-  briefly on a missed `format:check`, fixed same-day). Manually
-  verified live: reported a real absence as a driver-role user,
-  confirmed correct `driver_id` attribution via the admin's own
-  `GET /absences` view.
-- **Ridership → solver wiring (spec §4.3) — in progress.** Grounded in
-  a real code read, not assumed: `Run` has **no `direction` field at
-  all** today, so there's no way to know which leg (AM/PM) a run
-  serves, which blocks any automatic aggregation of `RidershipOverride`
-  rows (keyed by `student, date, direction`) into a run's
-  `passenger_count`. There's also a deeper, unresolved structural gap:
-  a school can have multiple runs on the same date/direction (multiple
-  buses), and this system has no student-to-specific-run or
-  stop-to-route assignment mechanism — so "how many riders does *this*
-  run have" isn't well-defined when more than one run serves the same
-  school+direction. The honest MVP scope: add `Run.direction`, expose
-  a *computed, read-only* expected-rider count (from `Student`/
-  `RidershipOverride`) alongside the still-authoritative
-  `passenger_count` the solver enforces — decision support, not
-  silent/automatic overwriting, matching this project's own §21
-  precedent (ADR 0004) for exactly this kind of ambiguity. Do NOT
-  auto-set `passenger_count` when a school has more than one run for
-  that date+direction; surface that ambiguity instead of guessing.
-- **GPS/live position + notifications (§9/§18)** — needs a real
-  telemetry integration (ADR 0007: "streamed telemetry" shape). Likely
-  needs its own vendor/hardware decision (dedicated GPS hardware vs.
-  the driver's own tablet reporting its position) before scoping —
-  flag to the user when reached, don't assume.
+  (checked empirically — see gotcha-list-adjacent note above; what
+  actually catches this class of bug is a real round-trip test per
+  new field).
+- ~~Driver-app absence-reporting UI~~ — **done**, though shipped with
+  a process mistake (direct-to-main commit, briefly broke CI on a
+  missed `format:check` — see gotcha #10). Manually verified live.
+- ~~Ridership → passenger_count decision support (spec §4.3, scoped)~~
+  — **done** (PR #23). `Run.direction`, `PATCH /runs/{id}`,
+  `GET /runs/{id}/expected-riders`. Reading spec §4.3 directly (not
+  this file's own prior shorthand) revealed it's actually about
+  stop-sequence route shortening, which needs a `Route` model this
+  system doesn't have — that part remains genuinely undone, named
+  explicitly in `docs/domain-model.md`/`docs/architecture.md` rather
+  than silently reinterpreted as "done." Manually verified live,
+  including the ambiguous-multiple-runs case.
+- **GPS/live position + notifications (§9/§18) — next.** Needs a real
+  telemetry integration (ADR 0007: "streamed telemetry" shape).
+  Likely needs its own vendor/hardware decision (dedicated GPS
+  hardware vs. the driver's own tablet reporting its position via the
+  existing `/driver` page) before scoping — **flag to the user when
+  reached, don't assume**, same as the GIS-provider decision earlier
+  this session.
 - **§12 field trips, §20 historical learning** — untouched, each needs
   fresh scoping from the spec text before a plan can be written.
 - **§7 turn/dead-end safety costs, §10 dynamic rerouting, the 5
