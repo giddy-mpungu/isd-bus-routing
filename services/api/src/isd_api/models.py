@@ -81,6 +81,29 @@ class RideDirection(enum.StrEnum):
     PM = "pm"
 
 
+class AnnouncementAudience(enum.StrEnum):
+    """Who a dispatcher-authored Announcement is for -- matches spec
+    section 9's "Messages from dispatch" (driver) and section 18's
+    "Transportation announcements"/"Delay notifications"/"Bus
+    substitution notices"/"Route-change notices" (family)."""
+
+    ALL = "all"
+    FAMILY = "family"
+    DRIVER = "driver"
+
+
+class AnnouncementCategory(enum.StrEnum):
+    """Informational only -- doesn't change delivery, just lets the UI
+    label a notice the way spec sections 9/18 name their categories.
+    See Announcement's own docstring for why these are always
+    dispatcher-authored, never auto-detected."""
+
+    GENERAL = "general"
+    DELAY = "delay"
+    SUBSTITUTION = "substitution"
+    ROUTE_CHANGE = "route_change"
+
+
 class TripStatus(enum.StrEnum):
     """spec section 12's enumerated field-trip lifecycle, in order."""
 
@@ -556,6 +579,42 @@ class FieldTrip(Base):
     )
     assigned_driver: Mapped[Driver | None] = relationship(foreign_keys=[assigned_driver_id])
     assigned_vehicle: Mapped[Vehicle | None] = relationship(foreign_keys=[assigned_vehicle_id])
+
+
+class Announcement(Base):
+    """spec sections 9/18: a dispatcher-authored notice for drivers
+    and/or families -- covers "Messages from dispatch" (section 9),
+    and "Transportation announcements" / "Delay notifications" / "Bus
+    substitution notices" / "Route-change notices" (section 18).
+
+    Deliberately always human-authored, never auto-generated: this
+    system has no ETA-calculation engine (no route geometry exists to
+    compute one against, ADR 0001) and no automatic event-to-
+    notification pipeline, so a "delay" or "substitution" category
+    doesn't mean this system detected one -- it means a dispatcher
+    chose to tag a message that way. Auto-generating a substitution
+    notice from a real driver-swap event (spec section 13) is a named,
+    plausible follow-up, not built here: it would need to resolve
+    which families are actually affected by one specific run's crew
+    change, a bigger targeting problem than this first slice takes on.
+
+    District-wide only in this first slice -- no per-school scoping
+    (no `school_id`), named as a deferred, small follow-up rather than
+    built speculatively before any UI actually needs it."""
+
+    __tablename__ = "announcements"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message: Mapped[str] = mapped_column(String(1000), nullable=False)
+    category: Mapped[AnnouncementCategory] = mapped_column(
+        SAEnum(AnnouncementCategory, native_enum=False, length=20),
+        default=AnnouncementCategory.GENERAL,
+        nullable=False,
+    )
+    audience: Mapped[AnnouncementAudience] = mapped_column(
+        SAEnum(AnnouncementAudience, native_enum=False, length=10), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class AuditLogEntry(Base):

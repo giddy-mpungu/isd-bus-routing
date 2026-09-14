@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type {
+  Announcement,
+  AnnouncementAudience,
+  AnnouncementCategory,
   Driver,
   GeographicKnowledgeCategory,
   GeographicKnowledgeOverride,
@@ -35,6 +38,14 @@ const GEO_CATEGORIES: GeographicKnowledgeCategory[] = [
   'other',
 ]
 
+const ANNOUNCEMENT_CATEGORIES: AnnouncementCategory[] = [
+  'general',
+  'delay',
+  'substitution',
+  'route_change',
+]
+const ANNOUNCEMENT_AUDIENCES: AnnouncementAudience[] = ['all', 'family', 'driver']
+
 export function SetupPage() {
   const { user } = useAuth()
   const canCreate = user?.role === 'transportation_admin'
@@ -45,6 +56,10 @@ export function SetupPage() {
   // broader gate than canCreate above.
   const canCreateDistrictKnowledge =
     user?.role === 'transportation_admin' || user?.role === 'dispatcher'
+  // Same RBAC as canCreateDistrictKnowledge (services/api/src/isd_api/
+  // routers/announcements.py's _WRITE_ROLES) -- day-to-day operational
+  // communication, not structural master data.
+  const canCreateAnnouncement = canCreateDistrictKnowledge
 
   const [schools, setSchools] = useState<School[]>([])
   const [qualifications, setQualifications] = useState<Qualification[]>([])
@@ -53,6 +68,7 @@ export function SetupPage() {
   const [stops, setStops] = useState<Stop[]>([])
   const [students, setStudents] = useState<Student[]>([])
   const [geoOverrides, setGeoOverrides] = useState<GeographicKnowledgeOverride[]>([])
+  const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const loadAll = useCallback(async () => {
@@ -66,6 +82,7 @@ export function SetupPage() {
         stopsData,
         studentsData,
         geoOverridesData,
+        announcementsData,
       ] = await Promise.all([
         api.getSchools(),
         api.getQualifications(),
@@ -74,6 +91,7 @@ export function SetupPage() {
         api.getStops(),
         api.getStudents(),
         api.getGeographicKnowledgeOverrides(),
+        api.getAnnouncements(),
       ])
       setSchools(schoolsData)
       setQualifications(qualificationsData)
@@ -82,6 +100,7 @@ export function SetupPage() {
       setStops(stopsData)
       setStudents(studentsData)
       setGeoOverrides(geoOverridesData)
+      setAnnouncements(announcementsData)
     } catch (err) {
       setErrorMessage(err instanceof ApiError ? err.message : 'Failed to load setup data.')
     }
@@ -300,6 +319,34 @@ export function SetupPage() {
       setGeoError(err instanceof ApiError ? err.message : 'Failed to create override.')
     } finally {
       setIsSavingGeo(false)
+    }
+  }
+
+  // --- Announcements (spec section 9/18) ---
+  const [announcementMessage, setAnnouncementMessage] = useState('')
+  const [announcementCategory, setAnnouncementCategory] = useState<AnnouncementCategory>('general')
+  const [announcementAudience, setAnnouncementAudience] = useState<AnnouncementAudience>('all')
+  const [announcementError, setAnnouncementError] = useState<string | null>(null)
+  const [isSavingAnnouncement, setIsSavingAnnouncement] = useState(false)
+
+  async function handleCreateAnnouncement(event: FormEvent) {
+    event.preventDefault()
+    setAnnouncementError(null)
+    setIsSavingAnnouncement(true)
+    try {
+      await api.createAnnouncement({
+        message: announcementMessage,
+        category: announcementCategory,
+        audience: announcementAudience,
+      })
+      setAnnouncementMessage('')
+      setAnnouncementCategory('general')
+      setAnnouncementAudience('all')
+      await loadAll()
+    } catch (err) {
+      setAnnouncementError(err instanceof ApiError ? err.message : 'Failed to post announcement.')
+    } finally {
+      setIsSavingAnnouncement(false)
     }
   }
 
@@ -701,6 +748,64 @@ export function SetupPage() {
             )}
             <button type="submit" disabled={isSavingGeo}>
               {isSavingGeo ? 'Saving…' : 'Add override'}
+            </button>
+          </form>
+        )}
+      </section>
+
+      <section>
+        <h2>Announcements</h2>
+        <ul>
+          {announcements.map((a) => (
+            <li key={a.id}>
+              [{a.category.replace(/_/g, ' ')} — {a.audience}] {a.message}
+            </li>
+          ))}
+        </ul>
+        {canCreateAnnouncement && (
+          <form onSubmit={(event) => void handleCreateAnnouncement(event)}>
+            <label htmlFor="announcement-message">Message</label>
+            <textarea
+              id="announcement-message"
+              value={announcementMessage}
+              onChange={(event) => setAnnouncementMessage(event.target.value)}
+              required
+            />
+            <label htmlFor="announcement-category">Announcement category</label>
+            <select
+              id="announcement-category"
+              value={announcementCategory}
+              onChange={(event) =>
+                setAnnouncementCategory(event.target.value as AnnouncementCategory)
+              }
+            >
+              {ANNOUNCEMENT_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {category.replace(/_/g, ' ')}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="announcement-audience">Audience</label>
+            <select
+              id="announcement-audience"
+              value={announcementAudience}
+              onChange={(event) =>
+                setAnnouncementAudience(event.target.value as AnnouncementAudience)
+              }
+            >
+              {ANNOUNCEMENT_AUDIENCES.map((audience) => (
+                <option key={audience} value={audience}>
+                  {audience}
+                </option>
+              ))}
+            </select>
+            {announcementError && (
+              <p role="alert" className="error">
+                {announcementError}
+              </p>
+            )}
+            <button type="submit" disabled={isSavingAnnouncement}>
+              {isSavingAnnouncement ? 'Posting…' : 'Post announcement'}
             </button>
           </form>
         )}

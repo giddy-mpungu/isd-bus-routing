@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from isd_api.models import (
     AbsenceReason,
+    AnnouncementAudience,
+    AnnouncementCategory,
     AssignmentStatus,
     GeographicKnowledgeCategory,
     QualificationKind,
@@ -457,6 +459,21 @@ class FieldTripUpdate(BaseModel):
 
 class FieldTripConflictCheck(BaseModel):
     conflicts: list[str]
+
+
+class AnnouncementCreate(BaseModel):
+    message: str = Field(min_length=1, max_length=1000)
+    category: AnnouncementCategory = AnnouncementCategory.GENERAL
+    audience: AnnouncementAudience
+
+
+class AnnouncementRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    message: str
+    category: AnnouncementCategory
+    audience: AnnouncementAudience
+    created_at: datetime
 
 
 class AffectedAssignmentSubstitutes(BaseModel):

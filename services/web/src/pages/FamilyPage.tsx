@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { BusPosition, FamilyMember, RideDirection } from '../api/types'
+import type { Announcement, BusPosition, FamilyMember, RideDirection } from '../api/types'
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -18,6 +18,11 @@ export function FamilyPage() {
   const [busPositions, setBusPositions] = useState<Record<string, BusPosition>>({})
   const [busPositionErrors, setBusPositionErrors] = useState<Record<string, string>>({})
   const [locatingKey, setLocatingKey] = useState<string | null>(null)
+  // spec section 18: "Delay notifications" / "Bus substitution notices"
+  // / "Route-change notices" / "Transportation announcements" --
+  // dispatcher-authored, never auto-generated (see
+  // routers/announcements.py).
+  const [announcements, setAnnouncements] = useState<Announcement[]>([])
 
   const loadFamily = useCallback(async (date: string) => {
     setErrorMessage(null)
@@ -31,6 +36,13 @@ export function FamilyPage() {
   useEffect(() => {
     void loadFamily(serviceDate)
   }, [serviceDate, loadFamily])
+
+  useEffect(() => {
+    api
+      .getMyAnnouncements()
+      .then(setAnnouncements)
+      .catch(() => undefined)
+  }, [])
 
   async function handleSetRiding(studentId: number, direction: RideDirection, isRiding: boolean) {
     const key = `${studentId}-${direction}`
@@ -113,6 +125,20 @@ export function FamilyPage() {
   return (
     <div className="family-page">
       <h1>My family — {serviceDate}</h1>
+
+      {announcements.length > 0 && (
+        <section className="announcements-panel">
+          <h2>Transportation announcements</h2>
+          <ul>
+            {announcements.map((a) => (
+              <li key={a.id}>
+                [{a.category.replace(/_/g, ' ')}] {a.message}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {errorMessage && (
         <p role="alert" className="error">
           {errorMessage}
