@@ -39,6 +39,7 @@ def _seed_single_run_scenario(client, admin_headers, *, service_date="2026-09-01
         json={
             "service_date": service_date,
             "school_id": school["id"],
+            "direction": "am",
             "window_earliest": 360,
             "window_latest": 420,
             "duration_minutes": 40,

@@ -175,6 +175,7 @@ def test_school_admin_sees_only_own_school_runs(client, admin_headers, db_sessio
             json={
                 "service_date": "2026-09-01",
                 "school_id": school["id"],
+                "direction": "am",
                 "window_earliest": 360,
                 "window_latest": 420,
                 "duration_minutes": 40,
@@ -205,6 +206,7 @@ def test_school_admin_without_school_link_is_forbidden(client, db_session, admin
         json={
             "service_date": "2026-09-01",
             "school_id": school["id"],
+            "direction": "am",
             "window_earliest": 360,
             "window_latest": 420,
             "duration_minutes": 40,
@@ -231,6 +233,7 @@ def test_driver_role_cannot_list_runs(client, db_session, admin_headers):
         json={
             "service_date": "2026-09-01",
             "school_id": school["id"],
+            "direction": "am",
             "window_earliest": 360,
             "window_latest": 420,
             "duration_minutes": 40,
