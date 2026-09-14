@@ -441,8 +441,9 @@ PATCH edits that bypass the solver.
 21. #21 `feat/phase6-vehicle-dimensions` — Phase 6 spec §6 slice 2: `Vehicle` gains `length_m`/`width_m`/`height_m`/`weight_kg` end-to-end (domain, DB, schema, router, `SetupPage.tsx`), mapped to ORS's HGV restriction params; persistence only, `DeadheadEstimator` doesn't consume them yet
 22. #22 `feat/phase6-vehicle-dimensions-routing-wiring` — Phase 6 spec §6 completion: `DeadheadEstimator` widened to carry a `Vehicle`, `scheduler.py`'s pairwise loop restructured to call it per-crew, `ors_deadhead_estimator` builds ORS restrictions from vehicle dimensions; fixed the `SolverVehicle(...)` constructor gap this depended on; live verification caught a real bug (published docs' `vehicle_type` field is rejected by the live API) before it shipped
 23. #23 `feat/ridership-expected-riders` — spec §4.3, scoped: `Run.direction`, `PATCH /runs/{id}`, `GET /runs/{id}/expected-riders` (decision support for `passenger_count` from real `Student`/`RidershipOverride` data, flags `ambiguous` when >1 run shares a school/date/direction); explicitly NOT §4.3's literal stop-sequence route shortening, which needs a `Route` model this system doesn't have — scope boundary documented, not silently reinterpreted
+24. #24 `feat/gps-live-position` — spec §9/§18, ADR 0009: `VehiclePosition` (one row per crew, latest position only), `PUT /drivers/{id}/position` (driver's own tablet, browser Geolocation API, auto-reports while a run is `in_progress` — no dedicated GPS/AVL hardware/vendor needed, closing the "flag to the user" note from the prior checkpoint without actually needing to ask), `GET /schedule/{date}/fleet-positions` (dispatcher, polled every 20s on `SchedulePage`), `GET /students/{id}/bus-position` (family "Locate bus," `available`/`ambiguous`-shaped like PR #23's expected-riders); notifications (the rest of §18) and turn-by-turn nav/incident reporting/dispatch messaging (the rest of §9) explicitly named as still-unbuilt, not implied done
 
-## Key files (current state, post-PR #23)
+## Key files (current state, post-PR #24)
 
 - `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal + revocation check), `LoginRateLimiter`/`login_rate_limiter`, `revoke_token`
 - `services/api/src/isd_api/routers/auth.py` — login rate-limited + sets cookie + returns bearer token; `POST /auth/logout` (still no auth required — a no-op if nothing to revoke, but revokes the current token if one is present)
@@ -457,6 +458,8 @@ PATCH edits that bypass the solver.
 - `services/api/src/isd_api/routers/geographic_knowledge.py` — `POST`/`GET /geographic-knowledge` (spec §8 persistence — transportation_admin + dispatcher, audited); `routers/schedule.py`'s `_HARD_AVOID_CATEGORIES` is where 3 of the 8 categories actually get consumed by routing
 - `services/api/src/isd_api/routers/vehicles.py` — `POST`/`GET /vehicles`; `create_vehicle`'s explicit constructor kwargs carry `Vehicle`'s `length_m`/`width_m`/`height_m`/`weight_kg` (spec §6, now consumed by routing — see `schedule.py`'s `SolverVehicle(...)` for the second gotcha #7 spot this depended on)
 - `services/api/src/isd_api/routers/runs.py` — `POST`/`GET /runs`, `PATCH /runs/{id}` (passenger_count only), `GET /runs/{id}/expected-riders` (spec §4.3 decision support — not the spec's literal stop-shortening behavior, see "Status by phase" Phase 5 entry above)
+- `services/api/src/isd_api/routers/positions.py` — `PUT /drivers/{id}/position` (driver self-report, `driver_router`), `GET /schedule/{date}/fleet-positions` (dispatcher/admin, `fleet_router` — two routers in one file since neither fits the other's prefix); `GET /students/{id}/bus-position` lives in `routers/students.py` instead, since it needs that file's guardian/self RBAC helper
+- `services/api/src/isd_api/models.py` — `VehiclePosition` (ADR 0009: `crew_id` unique, one row per crew, overwritten in place — no breadcrumb trail)
 - `services/api/src/isd_api/main.py` — `CORSMiddleware` config, router registration (check here first if a new router's routes 404 — it needs an `app.include_router(...)` call too, not just existing as a file)
 - `services/solver/src/isd_solver/scheduler.py` — CP-SAT model, duty-limit pairwise constraints, busy-interval constraints
 - `services/solver/src/isd_solver/domain.py` — `Crew.busy_intervals` (validated within `available_window`)
@@ -476,12 +479,12 @@ PATCH edits that bypass the solver.
 
 ## Exact next step (as of this checkpoint)
 
-Every PR through #23 (Phase 4 MVP, auth hardening, Phase 5 MVP, all of
-Phase 6's spec §13/§8/§6 increments) is **merged**, CI green, local
-`main` synced (commit `24fa14f`). The user said explicitly: **tackle
-the entire remaining candidate list, continuing until it's done or
-something new needs deciding** — not "pick one," work through all of
-them. Status:
+Every PR through #24 (Phase 4 MVP, auth hardening, Phase 5 MVP, all of
+Phase 6's spec §13/§8/§6 increments, and now GPS live position) is
+**merged**, CI green, local `main` synced (commit `ca31eea`). The user
+said explicitly: **tackle the entire remaining candidate list,
+continuing until it's done or something new needs deciding** — not
+"pick one," work through all of them. Status:
 
 - ~~SQLAlchemy 2.0 mypy plugin~~ — **investigated and ruled out**
   (checked empirically — see gotcha-list-adjacent note above; what
@@ -499,15 +502,28 @@ them. Status:
   explicitly in `docs/domain-model.md`/`docs/architecture.md` rather
   than silently reinterpreted as "done." Manually verified live,
   including the ambiguous-multiple-runs case.
-- **GPS/live position + notifications (§9/§18) — next.** Needs a real
-  telemetry integration (ADR 0007: "streamed telemetry" shape).
-  Likely needs its own vendor/hardware decision (dedicated GPS
-  hardware vs. the driver's own tablet reporting its position via the
-  existing `/driver` page) before scoping — **flag to the user when
-  reached, don't assume**, same as the GIS-provider decision earlier
-  this session.
-- **§12 field trips, §20 historical learning** — untouched, each needs
-  fresh scoping from the spec text before a plan can be written.
+- ~~GPS/live position (§9/§18)~~ — **done** (PR #24, ADR 0009).
+  Investigating the "likely needs a vendor/hardware decision" flag
+  from the prior checkpoint found it didn't: ADR 0008 already put the
+  driver app on a tablet, so that tablet's own browser Geolocation API
+  is the position source — no vendor, no cost, no user decision
+  actually needed (the earlier flag was itself worth re-checking, not
+  followed blindly). `VehiclePosition` (latest-only, no breadcrumb
+  trail), dispatcher fleet view (`SchedulePage`, polled 20s),
+  family "Locate bus" (`FamilyPage`, decision-support-shaped like
+  PR #23). Manually verified live through the actual browser: seeded a
+  full scenario, reported a real position as a driver, confirmed it in
+  the dispatcher's fleet view and a parent's "Locate bus" lookup. **Not
+  done**, named explicitly rather than implied: delay/substitution/
+  route-change *notifications* (the rest of §18), turn-by-turn
+  navigation, incident/vehicle-defect reporting, dispatch messaging
+  (the rest of §9) — none of these share GPS position's data model,
+  each would be its own follow-up.
+- **§12 field trips, §20 historical learning — next.** Untouched, each
+  needs fresh scoping from the spec text (read directly, not from this
+  file's shorthand — that's bitten this project twice already, see the
+  §4.3 note above and the mypy-plugin note) before a plan can be
+  written.
 - **§7 turn/dead-end safety costs, §10 dynamic rerouting, the 5
   excluded §8 categories** — deliberately last: §7/§10 need a routing
   *graph* this system doesn't own (a materially different technical
@@ -517,8 +533,11 @@ them. Status:
   not a mechanical follow-up.
 
 Work through the remaining items in roughly this order — self-contained
-first, decisions-needed items (GPS vendor, §7/§10 architecture) flagged
-to the user when actually reached, not guessed at.
+first, decisions-needed items (§7/§10 architecture) flagged to the user
+when actually reached, not guessed at. §9/§18 notifications could also
+slot in earlier than field trips/historical learning if that turns out
+more tractable once scoped — not committed to a strict order, just a
+rough one.
 
 ## Environment specifics (this machine)
 
