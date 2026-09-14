@@ -395,6 +395,13 @@ class Run(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     service_date: Mapped[date] = mapped_column(Date, nullable=False)
     school_id: Mapped[int] = mapped_column(ForeignKey("schools.id"), nullable=False)
+    # spec section 4.2: which leg this run serves — needed to join
+    # against RidershipOverride (keyed by student/date/direction) for
+    # the expected-riders decision support (routers/runs.py). Does not
+    # affect solver scheduling at all; SolverJob has no direction.
+    direction: Mapped[RideDirection] = mapped_column(
+        SAEnum(RideDirection, native_enum=False, length=8), nullable=False
+    )
     window_earliest: Mapped[int] = mapped_column(Integer, nullable=False)
     window_latest: Mapped[int] = mapped_column(Integer, nullable=False)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)

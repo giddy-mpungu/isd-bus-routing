@@ -41,6 +41,8 @@ vi.mock('../api/client', async (importOriginal) => {
     createCrew: vi.fn(),
     updateCrewDriver: vi.fn(),
     createRun: vi.fn(),
+    updateRun: vi.fn(),
+    getExpectedRiders: vi.fn(),
     getAbsencesForDate: vi.fn(),
     createAbsence: vi.fn(),
     getSubstituteCandidates: vi.fn(),
@@ -69,6 +71,7 @@ const run: Run = {
   id: 10,
   service_date: '2026-09-01',
   school_id: 1,
+  direction: 'am',
   window_earliest: 360,
   window_latest: 410,
   duration_minutes: 40,
@@ -257,6 +260,7 @@ describe('SchedulePage', () => {
 
     const user = userEvent.setup()
     await user.selectOptions(screen.getByLabelText('School'), String(school.id))
+    await user.selectOptions(screen.getByLabelText('Direction'), 'pm')
     await user.type(screen.getByLabelText('Window start (minute of day)'), '480')
     await user.type(screen.getByLabelText('Window end (minute of day)'), '540')
     await user.type(screen.getByLabelText('Duration (minutes)'), '45')
@@ -267,6 +271,7 @@ describe('SchedulePage', () => {
       expect(api.createRun).toHaveBeenCalledWith(
         expect.objectContaining({
           school_id: school.id,
+          direction: 'pm',
           window_earliest: 480,
           window_latest: 540,
           duration_minutes: 45,
@@ -275,6 +280,43 @@ describe('SchedulePage', () => {
       ),
     )
     expect(api.getRuns).toHaveBeenCalledTimes(2) // initial load + reload after create
+  })
+
+  it('checking expected riders shows the computed count and lets the dispatcher apply it', async () => {
+    vi.mocked(api.getExpectedRiders).mockResolvedValue({
+      expected_passenger_count: 5,
+      ambiguous: false,
+      riding_student_names: ['Alex Rider', 'Sam Rider'],
+    })
+    vi.mocked(api.updateRun).mockResolvedValue({ ...run, passenger_count: 5 })
+    render(<SchedulePage />)
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Check expected riders' }))
+
+    await waitFor(() => expect(screen.getByText(/Expected riders: 5/)).toBeInTheDocument())
+    expect(screen.getByText(/Alex Rider, Sam Rider/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Apply to passenger_count' }))
+
+    await waitFor(() => expect(api.updateRun).toHaveBeenCalledWith(run.id, { passenger_count: 5 }))
+  })
+
+  it('disables Apply and shows a warning when expected riders is ambiguous', async () => {
+    vi.mocked(api.getExpectedRiders).mockResolvedValue({
+      expected_passenger_count: 5,
+      ambiguous: true,
+      riding_student_names: [],
+    })
+    render(<SchedulePage />)
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Check expected riders' }))
+
+    await waitFor(() => expect(screen.getByText(/Ambiguous/)).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Apply to passenger_count' })).toBeDisabled()
   })
 
   it('shows the server error message when creating a run fails validation', async () => {

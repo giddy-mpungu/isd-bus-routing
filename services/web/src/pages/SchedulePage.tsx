@@ -8,7 +8,9 @@ import type {
   Assignment,
   Crew,
   Driver,
+  ExpectedRiders,
   Qualification,
+  RideDirection,
   Run,
   School,
   SubstituteCandidate,
@@ -195,6 +197,7 @@ export function SchedulePage() {
 
   // --- Add run (for the selected serviceDate) ---
   const [runSchoolId, setRunSchoolId] = useState('')
+  const [runDirection, setRunDirection] = useState<RideDirection>('am')
   const [runWindowEarliest, setRunWindowEarliest] = useState('')
   const [runWindowLatest, setRunWindowLatest] = useState('')
   const [runDuration, setRunDuration] = useState('')
@@ -224,6 +227,7 @@ export function SchedulePage() {
       await api.createRun({
         service_date: serviceDate,
         school_id: Number(runSchoolId),
+        direction: runDirection,
         window_earliest: Number(runWindowEarliest),
         window_latest: Number(runWindowLatest),
         duration_minutes: Number(runDuration),
@@ -232,6 +236,7 @@ export function SchedulePage() {
         required_qualification_codes: Array.from(runQualCodes),
       })
       setRunSchoolId('')
+      setRunDirection('am')
       setRunWindowEarliest('')
       setRunWindowLatest('')
       setRunDuration('')
@@ -243,6 +248,51 @@ export function SchedulePage() {
       setRunError(err instanceof ApiError ? err.message : 'Failed to create run.')
     } finally {
       setIsSavingRun(false)
+    }
+  }
+
+  // --- Expected riders (decision support for passenger_count, spec
+  // section 4.3 -- deliberately NOT that section's stop-sequence
+  // route shortening, which needs a Route model this system doesn't
+  // have; see docs/domain-model.md). Never auto-applied -- the
+  // dispatcher reviews the computed count and applies it manually. ---
+  const [expectedRidersRunId, setExpectedRidersRunId] = useState<number | null>(null)
+  const [expectedRiders, setExpectedRiders] = useState<ExpectedRiders | null>(null)
+  const [expectedRidersError, setExpectedRidersError] = useState<string | null>(null)
+  const [isApplyingExpectedRiders, setIsApplyingExpectedRiders] = useState(false)
+
+  async function handleCheckExpectedRiders(runId: number) {
+    setExpectedRidersError(null)
+    setExpectedRiders(null)
+    setExpectedRidersRunId(runId)
+    try {
+      setExpectedRiders(await api.getExpectedRiders(runId))
+    } catch (err) {
+      setExpectedRidersError(
+        err instanceof ApiError ? err.message : 'Failed to load expected riders.',
+      )
+    }
+  }
+
+  async function handleApplyExpectedRiders() {
+    if (expectedRidersRunId == null || expectedRiders == null) {
+      return
+    }
+    setIsApplyingExpectedRiders(true)
+    setExpectedRidersError(null)
+    try {
+      await api.updateRun(expectedRidersRunId, {
+        passenger_count: expectedRiders.expected_passenger_count,
+      })
+      setExpectedRidersRunId(null)
+      setExpectedRiders(null)
+      await loadAll(serviceDate)
+    } catch (err) {
+      setExpectedRidersError(
+        err instanceof ApiError ? err.message : 'Failed to apply expected riders.',
+      )
+    } finally {
+      setIsApplyingExpectedRiders(false)
     }
   }
 
@@ -519,6 +569,64 @@ export function SchedulePage() {
         </div>
 
         <div>
+          <h2>Runs for {serviceDate}</h2>
+          {runs.length === 0 ? (
+            <p className="status">No runs created for this date yet.</p>
+          ) : (
+            <ul>
+              {runs.map((run) => {
+                const school = schoolsById.get(run.school_id)
+                return (
+                  <li key={run.id}>
+                    {school?.name ?? `School #${run.school_id}`}
+                    {' — '}
+                    {run.direction.toUpperCase()}
+                    {', '}
+                    {formatMinuteOfDay(run.window_earliest)}–{formatMinuteOfDay(run.window_latest)}
+                    {' — passenger_count: '}
+                    {run.passenger_count}
+                    <button type="button" onClick={() => void handleCheckExpectedRiders(run.id)}>
+                      Check expected riders
+                    </button>
+                    {expectedRidersRunId === run.id && (
+                      <div className="expected-riders-panel">
+                        {expectedRidersError && (
+                          <p role="alert" className="error">
+                            {expectedRidersError}
+                          </p>
+                        )}
+                        {expectedRiders && (
+                          <>
+                            <p>
+                              Expected riders: {expectedRiders.expected_passenger_count}
+                              {expectedRiders.riding_student_names.length > 0 &&
+                                ` (${expectedRiders.riding_student_names.join(', ')})`}
+                            </p>
+                            {expectedRiders.ambiguous && (
+                              <p role="alert" className="error">
+                                Ambiguous — more than one run serves this school/date/direction, so
+                                this count can&apos;t be attributed to just this run.
+                              </p>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => void handleApplyExpectedRiders()}
+                              disabled={expectedRiders.ambiguous || isApplyingExpectedRiders}
+                            >
+                              {isApplyingExpectedRiders ? 'Applying…' : 'Apply to passenger_count'}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+
+        <div>
           <h2>Add run for {serviceDate}</h2>
           <form onSubmit={(event) => void handleCreateRun(event)}>
             <label htmlFor="run-school">School</label>
@@ -536,6 +644,15 @@ export function SchedulePage() {
                   {s.name}
                 </option>
               ))}
+            </select>
+            <label htmlFor="run-direction">Direction</label>
+            <select
+              id="run-direction"
+              value={runDirection}
+              onChange={(event) => setRunDirection(event.target.value as RideDirection)}
+            >
+              <option value="am">AM</option>
+              <option value="pm">PM</option>
             </select>
             <label htmlFor="run-window-earliest">Window start (minute of day)</label>
             <input
