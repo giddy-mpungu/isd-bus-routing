@@ -12,6 +12,7 @@ from isd_api.models import (
     RideDirection,
     RidershipDefault,
     Role,
+    TripStatus,
 )
 
 
@@ -390,6 +391,60 @@ class BusPositionRead(BaseModel):
     recorded_at: datetime | None = None
     driver_full_name: str | None = None
     vehicle_label: str | None = None
+
+
+class FieldTripCreate(BaseModel):
+    """spec section 12. Deliberately same-day only for this first slice
+    (see routers/field_trips.py) -- validated server-side, not just
+    documented here."""
+
+    requesting_party: str = Field(min_length=1, max_length=255)
+    origin: str = Field(min_length=1, max_length=255)
+    destination: str = Field(min_length=1, max_length=255)
+    departure_at: datetime
+    expected_return_at: datetime
+    passenger_count: int = Field(ge=0, default=0)
+    trip_contact: str = Field(min_length=1, max_length=255)
+    bus_assistant_name: str | None = None
+    special_instructions: str | None = Field(default=None, max_length=1000)
+    required_qualification_codes: list[str] = Field(default_factory=list)
+
+
+class FieldTripRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    requesting_party: str
+    origin: str
+    destination: str
+    departure_at: datetime
+    expected_return_at: datetime
+    actual_return_at: datetime | None
+    passenger_count: int
+    assigned_driver_id: int | None
+    assigned_vehicle_id: int | None
+    bus_assistant_name: str | None
+    trip_contact: str
+    special_instructions: str | None
+    status: TripStatus
+    required_qualifications: list[QualificationRead]
+
+
+class FieldTripUpdate(BaseModel):
+    """Partial update -- only fields provided are changed. Assigning a
+    driver/vehicle here does NOT re-check conflicts automatically;
+    call GET .../conflicts first (spec section 12.1/12.2 -- see
+    routers/field_trips.py for why this is one read endpoint, not a
+    separate "delay management" mechanism)."""
+
+    status: TripStatus | None = None
+    assigned_driver_id: int | None = None
+    assigned_vehicle_id: int | None = None
+    expected_return_at: datetime | None = None
+    actual_return_at: datetime | None = None
+
+
+class FieldTripConflictCheck(BaseModel):
+    conflicts: list[str]
 
 
 class AffectedAssignmentSubstitutes(BaseModel):
