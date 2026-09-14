@@ -25,6 +25,10 @@ import type {
   DriverCreate,
   ExpectedRiders,
   FamilyMember,
+  FieldTrip,
+  FieldTripConflictCheck,
+  FieldTripCreate,
+  FieldTripUpdate,
   GeographicKnowledgeOverride,
   GeographicKnowledgeOverrideCreate,
   PositionUpdate,
@@ -263,6 +267,39 @@ export async function reportPosition(driverId: number, payload: PositionUpdate):
 
 export async function getFleetPositions(serviceDate: string): Promise<VehiclePosition[]> {
   return request<VehiclePosition[]>(`/schedule/${serviceDate}/fleet-positions`)
+}
+
+export async function getFieldTrips(departureDate: string): Promise<FieldTrip[]> {
+  return request<FieldTrip[]>(`/field-trips?departure_date=${departureDate}`)
+}
+
+export async function createFieldTrip(payload: FieldTripCreate): Promise<FieldTrip> {
+  return request<FieldTrip>('/field-trips', jsonInit('POST', payload))
+}
+
+export async function updateFieldTrip(
+  tripId: number,
+  payload: FieldTripUpdate,
+): Promise<FieldTrip> {
+  return request<FieldTrip>(`/field-trips/${tripId}`, jsonInit('PATCH', payload))
+}
+
+export async function getFieldTripConflicts(
+  tripId: number,
+  driverId?: number,
+  vehicleId?: number,
+): Promise<FieldTripConflictCheck> {
+  const params = new URLSearchParams()
+  if (driverId != null) {
+    params.set('driver_id', String(driverId))
+  }
+  if (vehicleId != null) {
+    params.set('vehicle_id', String(vehicleId))
+  }
+  const query = params.toString()
+  return request<FieldTripConflictCheck>(
+    `/field-trips/${tripId}/conflicts${query ? `?${query}` : ''}`,
+  )
 }
 
 export async function getBusPosition(

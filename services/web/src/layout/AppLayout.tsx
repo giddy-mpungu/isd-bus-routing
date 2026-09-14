@@ -12,6 +12,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         {user && (user.role === 'dispatcher' || user.role === 'transportation_admin') && (
           <nav className="app-nav">
             <NavLink to="/schedule">Schedule</NavLink>
+            <NavLink to="/field-trips">Field Trips</NavLink>
             <NavLink to="/setup">Setup</NavLink>
           </nav>
         )}

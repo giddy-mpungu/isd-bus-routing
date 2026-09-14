@@ -316,3 +316,50 @@ export interface BusPosition {
   driver_full_name: string | null
   vehicle_label: string | null
 }
+
+// spec §12: field trips (backend-only precursor was PR #25).
+export type TripStatus =
+  'requested' | 'approved' | 'assigned' | 'dispatched' | 'in_progress' | 'returning' | 'completed'
+
+export interface FieldTrip {
+  id: number
+  requesting_party: string
+  origin: string
+  destination: string
+  departure_at: string
+  expected_return_at: string
+  actual_return_at: string | null
+  passenger_count: number
+  assigned_driver_id: number | null
+  assigned_vehicle_id: number | null
+  bus_assistant_name: string | null
+  trip_contact: string
+  special_instructions: string | null
+  status: TripStatus
+  required_qualifications: Qualification[]
+}
+
+export interface FieldTripCreate {
+  requesting_party: string
+  origin: string
+  destination: string
+  departure_at: string
+  expected_return_at: string
+  passenger_count: number
+  trip_contact: string
+  bus_assistant_name?: string
+  special_instructions?: string
+  required_qualification_codes: string[]
+}
+
+export interface FieldTripUpdate {
+  status?: TripStatus
+  assigned_driver_id?: number
+  assigned_vehicle_id?: number
+  expected_return_at?: string
+  actual_return_at?: string
+}
+
+export interface FieldTripConflictCheck {
+  conflicts: string[]
+}
