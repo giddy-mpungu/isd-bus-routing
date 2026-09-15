@@ -17,6 +17,9 @@ vi.mock('../api/client', async (importOriginal) => {
     createFieldTrip: vi.fn(),
     updateFieldTrip: vi.fn(),
     getFieldTripConflicts: vi.fn(),
+    getFieldTripObservedDuration: vi.fn(),
+    getDestinationProfiles: vi.fn(),
+    createDestinationProfile: vi.fn(),
   }
 })
 
@@ -46,6 +49,8 @@ const trip: FieldTrip = {
   requesting_party: 'Science Department',
   origin: 'Riverside Elementary',
   destination: 'State Science Museum',
+  destination_profile_id: null,
+  destination_profile: null,
   departure_at: `${today()}T13:00:00Z`,
   expected_return_at: `${today()}T16:00:00Z`,
   actual_return_at: null,
@@ -64,6 +69,7 @@ function mockLoad() {
   vi.mocked(api.getDrivers).mockResolvedValue([driverRecord])
   vi.mocked(api.getVehicles).mockResolvedValue([vehicle])
   vi.mocked(api.getQualifications).mockResolvedValue([] as Qualification[])
+  vi.mocked(api.getDestinationProfiles).mockResolvedValue([])
 }
 
 describe('FieldTripsPage', () => {
@@ -114,6 +120,58 @@ describe('FieldTripsPage', () => {
         }),
       ),
     )
+  })
+
+  it('checking observed duration shows the average and fills in a suggested return time', async () => {
+    vi.mocked(api.getFieldTripObservedDuration).mockResolvedValue({
+      sample_count: 2,
+      average_actual_minutes: 180,
+      most_recent_actual_minutes: 210,
+      most_recent_departure_date: '2026-09-08',
+    })
+    render(<FieldTripsPage />)
+    await waitFor(() => expect(screen.getByText(/Science Department/)).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Destination'), 'Away Game')
+    await user.type(screen.getByLabelText('Departure'), '2026-09-01T13:00')
+    await user.click(screen.getByRole('button', { name: 'Check observed duration' }))
+
+    await waitFor(() =>
+      expect(api.getFieldTripObservedDuration).toHaveBeenCalledWith({ destination: 'Away Game' }),
+    )
+    expect(screen.getByText(/2 completed trip\(s\) — average 180 min/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Use average to suggest return time' }))
+    expect(screen.getByLabelText('Expected return')).toHaveValue('2026-09-01T16:00')
+  })
+
+  it('creating a destination profile calls the API with the entered fields and reloads', async () => {
+    vi.mocked(api.createDestinationProfile).mockResolvedValue({
+      id: 1,
+      name: 'State Science Museum',
+      location_lat: null,
+      location_lon: null,
+      approved_entrance: 'North doors',
+      parking_notes: null,
+      turn_restrictions: null,
+      driver_notes: null,
+      created_at: '2026-09-01T12:00:00Z',
+    })
+    render(<FieldTripsPage />)
+    await waitFor(() => expect(screen.getByText(/Science Department/)).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Name'), 'State Science Museum')
+    await user.type(screen.getByLabelText('Approved entrance'), 'North doors')
+    await user.click(screen.getByRole('button', { name: 'Add destination profile' }))
+
+    await waitFor(() =>
+      expect(api.createDestinationProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'State Science Museum', approved_entrance: 'North doors' }),
+      ),
+    )
+    expect(api.getDestinationProfiles).toHaveBeenCalledTimes(2) // initial load + reload after create
   })
 
   it('checking conflicts shows the returned list and disables Assign', async () => {

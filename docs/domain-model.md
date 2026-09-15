@@ -258,12 +258,13 @@ produces them rather than duplicated here.
   one run serves the same school/date/direction). MVP scope
   deliberately stores only the latest position, not a breadcrumb
   trail — see ADR 0009 for why.
-- **FieldTrip** (spec §12, backend-only first slice): a trip record —
-  `requesting_party`/`origin`/`destination` (free text, no geocoding
-  or reusable "Destination Profile" entity yet — §12.3's own
-  deferral), `departure_at`/`expected_return_at` (same calendar date
-  only in this slice — overnight trips are a named follow-up, not
-  silently mishandled), `actual_return_at`, `passenger_count`,
+- **FieldTrip** (spec §12): a trip record — `requesting_party`/
+  `origin`/`destination` (free text), an optional `destination_profile_id`
+  linking to a reusable `DestinationProfile` (spec §12.3, below),
+  `departure_at`/`expected_return_at` (multi-day/overnight trips are
+  supported — conflict-checking splits a trip's span into one
+  per-calendar-day window, see `routers/field_trips.py`'s
+  `_daily_windows`), `actual_return_at`, `passenger_count`,
   `assigned_driver_id`/`assigned_vehicle_id` (direct FKs, not a `Crew`
   pairing — spec §11's "Daily Operational Assignment" isn't built as
   its own abstraction, and a trip doesn't need a day-long crew row),
@@ -284,6 +285,25 @@ produces them rather than duplicated here.
   endpoint after a `PATCH` to `expected_return_at` *is* the
   reevaluation. `services/web`'s `/field-trips` page (PR #26) closed
   out the UI half of this slice.
+- **DestinationProfile** (spec §12.3): reusable transportation-specific
+  information for a frequently used field-trip destination — name,
+  optional lat/lon, approved entrance, parking notes, turn
+  restrictions, driver notes. Its own entity a `FieldTrip` optionally
+  links to (`destination_profile_id`), not fields bolted onto
+  `FieldTrip` itself — the whole point is reuse across many trips to
+  the same place. Nothing auto-matches a trip's free-text `destination`
+  to a profile; the dispatcher picks one explicitly when creating or
+  editing a trip.
+- **Field-trip observed duration** (spec §20, `GET /field-trips/observed-duration?destination=`
+  or `?destination_profile_id=`): the same historical-learning idea as
+  `GET /runs/observed-duration`, but a completed `FieldTrip` already
+  stores its own actual start/end directly (`departure_at`,
+  `actual_return_at`) — no audit-log lookup needed, since that data was
+  never split across separate status-change events the way a regular
+  `Assignment`'s was. Decision support only: `FieldTripsPage`'s "Add
+  field trip" form shows the computed average/most-recent for a
+  dispatcher to read and use to suggest `expected_return_at`; nothing
+  writes to a trip automatically.
 - **Observed run duration** (spec §20, `GET /runs/observed-duration`):
   historical learning applied to `Run.duration_minutes` — spec §20's
   own worked example ("a route consistently requires 48 minutes
@@ -328,7 +348,7 @@ produces them rather than duplicated here.
 - Spec §4.3's actual behavior — stop-sequence route shortening ("if all riders at a stop don't ride, remove that stop, recalculate sequence/ETAs") — needs a `Route`/stop-sequence model this system has never built (ADR 0001 named the intent, never built). What *is* done: `GET /runs/{id}/expected-riders` computes a real rider count from `Student`/`RidershipOverride` as decision support for `Run.passenger_count` (see "Phase 6 entities" above) — closer to reality than the fully-manual guess it replaced, but not the stop-shortening optimization spec §4.3 describes
 - Ridership reporting cutoff / route-lock configuration (spec §4.4)
 - A recurring `route` (template) table distinct from dated `run` instances — ADR 0001 named this intention for Phase 2+, never built; Phase 5 worked around its absence rather than building it (see RidershipOverride above). Observed-run-duration (§20, above) approximates route identity via (school_id, direction) instead of a real template — good enough for learning, not a substitute for the real table
-- Field trips (spec §12) is done end-to-end (`FieldTrip` + `/field-trips` UI, above) — not yet: overnight trips, destination profiles (§12.3), and conflict-checking against training/maintenance (no such entity exists)
+- Field trips (spec §12) is done end-to-end (`FieldTrip` + `/field-trips` UI, overnight trips, `DestinationProfile` §12.3, and observed-duration §20, above) — not yet: conflict-checking against training/maintenance (no such entity exists — a genuine gap, not an oversight)
 - Spec §6 is now done to the extent an external point-to-point routing API can express it: real road-network travel time, per-vehicle length/width/height/weight restrictions, and district-specific avoid-zones (§8) are all applied via `ors_deadhead_estimator`. Turn/dead-end safety costs (§7) and dynamic rerouting (§10) remain genuinely out of scope — both need a routing *graph* this system doesn't own, not just a point-to-point directions call, a different technical approach than anything built so far.
 - District-specific geographic knowledge / local roadway overrides (spec §8) — persistence done, and 3 of 8 categories now applied to routing via ORS `avoid_polygons` (`GeographicKnowledgeOverride`, above); the other 5 categories (caution/time-dependent/vehicle-dependent/preference/ambiguous) each need a different mechanism than a hard avoid-zone, not just more plumbing
 - Dynamic rerouting around road closures/incidents (spec §10) — Phase 6, same GIS dependency

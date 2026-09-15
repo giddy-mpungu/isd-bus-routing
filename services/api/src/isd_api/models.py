@@ -557,6 +557,29 @@ class VehiclePosition(Base):
     crew: Mapped[Crew] = relationship()
 
 
+class DestinationProfile(Base):
+    """spec section 12.3: reusable transportation-specific information
+    for a frequently used field-trip destination -- approved entrance,
+    parking, turn restrictions, driver notes. Deliberately its own
+    entity a `FieldTrip` optionally links to (`destination_profile_id`)
+    rather than fields bolted onto `FieldTrip` itself: the whole point
+    is reuse across many trips to the same place, and `FieldTrip.destination`
+    stays free text so a one-off destination never requires creating a
+    profile first."""
+
+    __tablename__ = "destination_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    location_lat: Mapped[float | None] = mapped_column(nullable=True)
+    location_lon: Mapped[float | None] = mapped_column(nullable=True)
+    approved_entrance: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    parking_notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    turn_restrictions: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    driver_notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class FieldTrip(Base):
     """spec section 12: a field trip / special assignment, scheduled
     through the same engine as regular routes but NOT run through the
@@ -571,15 +594,12 @@ class FieldTrip(Base):
     Crew row, just a driver+vehicle for this one trip.
 
     Deliberately minimal versus the full spec section 12 field list:
-    `origin`/`destination` are free text (no geocoding/lat-lon, no
-    reusable "Destination Profile" entity -- section 12.3's own
-    deferral, named as a follow-up, same shape as section 8's
-    persist-then-wire split); "Vehicle requirements" and "Accessibility
-    requirements" share one `required_qualifications` (this system
-    already models both through `Qualification`, e.g. a wheelchair-lift
-    tag covers both without inventing a second namespace);
-    `bus_assistant_name` is free text, not a second staff entity (no
-    other staff type exists in this schema to justify one)."""
+    "Vehicle requirements" and "Accessibility requirements" share one
+    `required_qualifications` (this system already models both through
+    `Qualification`, e.g. a wheelchair-lift tag covers both without
+    inventing a second namespace); `bus_assistant_name` is free text,
+    not a second staff entity (no other staff type exists in this
+    schema to justify one)."""
 
     __tablename__ = "field_trips"
 
@@ -587,6 +607,9 @@ class FieldTrip(Base):
     requesting_party: Mapped[str] = mapped_column(String(255), nullable=False)
     origin: Mapped[str] = mapped_column(String(255), nullable=False)
     destination: Mapped[str] = mapped_column(String(255), nullable=False)
+    destination_profile_id: Mapped[int | None] = mapped_column(
+        ForeignKey("destination_profiles.id"), nullable=True
+    )
     departure_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expected_return_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     actual_return_at: Mapped[datetime | None] = mapped_column(
@@ -606,6 +629,8 @@ class FieldTrip(Base):
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    destination_profile: Mapped[DestinationProfile | None] = relationship()
 
     required_qualifications: Mapped[list[Qualification]] = relationship(
         secondary=field_trip_required_qualifications
