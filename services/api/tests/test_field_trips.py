@@ -78,14 +78,18 @@ def test_create_field_trip_round_trips_and_defaults_to_requested(client, admin_h
     assert created["destination"] == "State Science Museum"
 
 
-def test_create_field_trip_rejects_overnight_trip(client, admin_headers):
+def test_create_field_trip_accepts_an_overnight_trip(client, admin_headers):
     response = client.post(
         "/field-trips",
         headers=admin_headers,
-        json=_trip_payload(expected_return_at="2026-09-02T08:00:00Z"),
+        json=_trip_payload(
+            departure_at="2026-09-01T13:00:00Z", expected_return_at="2026-09-02T08:00:00Z"
+        ),
     )
-    assert response.status_code == 400
-    assert "same calendar date" in response.json()["detail"]
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["departure_at"].startswith("2026-09-01")
+    assert body["expected_return_at"].startswith("2026-09-02")
 
 
 def test_create_field_trip_rejects_departure_after_return(client, admin_headers):
@@ -169,6 +173,62 @@ def test_update_field_trip_rejects_unknown_driver(client, admin_headers):
 def test_update_field_trip_rejects_unknown_trip(client, admin_headers):
     response = client.patch("/field-trips/999", headers=admin_headers, json={"status": "approved"})
     assert response.status_code == 404
+
+
+def test_update_field_trip_allows_extending_expected_return_to_a_later_date(client, admin_headers):
+    trip = client.post("/field-trips", headers=admin_headers, json=_trip_payload()).json()
+    response = client.patch(
+        f"/field-trips/{trip['id']}",
+        headers=admin_headers,
+        json={"expected_return_at": "2026-09-02T08:00:00Z"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["expected_return_at"].startswith("2026-09-02")
+
+
+def test_update_field_trip_rejects_expected_return_before_departure(client, admin_headers):
+    trip = client.post("/field-trips", headers=admin_headers, json=_trip_payload()).json()
+    response = client.patch(
+        f"/field-trips/{trip['id']}",
+        headers=admin_headers,
+        json={"expected_return_at": "2026-09-01T12:00:00Z"},
+    )
+    assert response.status_code == 400
+    assert "after departure_at" in response.json()["detail"]
+
+
+def test_create_field_trip_with_a_destination_profile(client, admin_headers):
+    profile = client.post(
+        "/destination-profiles",
+        headers=admin_headers,
+        json={"name": "State Science Museum", "approved_entrance": "North doors, Bus Lane 3"},
+    ).json()
+    response = client.post(
+        "/field-trips",
+        headers=admin_headers,
+        json=_trip_payload(destination_profile_id=profile["id"]),
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["destination_profile_id"] == profile["id"]
+    assert body["destination_profile"]["approved_entrance"] == "North doors, Bus Lane 3"
+
+
+def test_create_field_trip_rejects_unknown_destination_profile(client, admin_headers):
+    response = client.post(
+        "/field-trips",
+        headers=admin_headers,
+        json=_trip_payload(destination_profile_id=999),
+    )
+    assert response.status_code == 400
+
+
+def test_update_field_trip_rejects_unknown_destination_profile(client, admin_headers):
+    trip = client.post("/field-trips", headers=admin_headers, json=_trip_payload()).json()
+    response = client.patch(
+        f"/field-trips/{trip['id']}", headers=admin_headers, json={"destination_profile_id": 999}
+    )
+    assert response.status_code == 400
 
 
 def test_conflicts_empty_when_no_overlap(client, admin_headers):
@@ -283,9 +343,148 @@ def test_conflicts_defaults_to_the_trips_own_assigned_driver_and_vehicle(client,
     assert len(response.json()["conflicts"]) == 1
 
 
+def test_conflicts_detects_overlap_on_the_return_day_of_an_overnight_trip(client, admin_headers):
+    # Regular route on 2026-09-02 runs 06:00-06:50 (window_earliest=360).
+    # An overnight trip departing 2026-09-01 and returning 2026-09-02 at
+    # 08:00 covers all of 2026-09-02 from midnight to 08:00, so it must
+    # conflict even though its *departure* day is a day earlier.
+    driver, vehicle, _crew = _seed_regular_route(client, admin_headers, service_date="2026-09-02")
+    trip = client.post(
+        "/field-trips",
+        headers=admin_headers,
+        json=_trip_payload(
+            departure_at="2026-09-01T13:00:00Z", expected_return_at="2026-09-02T08:00:00Z"
+        ),
+    ).json()
+
+    response = client.get(
+        f"/field-trips/{trip['id']}/conflicts",
+        headers=admin_headers,
+        params={"driver_id": driver["id"], "vehicle_id": vehicle["id"]},
+    )
+    assert response.status_code == 200, response.text
+    conflicts = response.json()["conflicts"]
+    assert len(conflicts) == 1
+    assert "Regular route" in conflicts[0]
+
+
+def test_conflicts_detects_overlap_between_two_overnight_field_trips(client, admin_headers):
+    driver = client.post(
+        "/drivers", headers=admin_headers, json={"full_name": "Jordan Driver"}
+    ).json()
+    first = client.post(
+        "/field-trips",
+        headers=admin_headers,
+        json=_trip_payload(
+            departure_at="2026-09-01T20:00:00Z", expected_return_at="2026-09-02T06:00:00Z"
+        ),
+    ).json()
+    client.patch(
+        f"/field-trips/{first['id']}",
+        headers=admin_headers,
+        json={"assigned_driver_id": driver["id"]},
+    )
+    # Departs the morning of 2026-09-02, before the first trip's 06:00
+    # return -- the two trips' second-day windows overlap.
+    second = client.post(
+        "/field-trips",
+        headers=admin_headers,
+        json=_trip_payload(
+            requesting_party="Athletics",
+            destination="Away Game",
+            departure_at="2026-09-02T05:00:00Z",
+            expected_return_at="2026-09-02T09:00:00Z",
+        ),
+    ).json()
+
+    response = client.get(
+        f"/field-trips/{second['id']}/conflicts",
+        headers=admin_headers,
+        params={"driver_id": driver["id"]},
+    )
+    assert response.status_code == 200, response.text
+    conflicts = response.json()["conflicts"]
+    assert len(conflicts) == 1
+    assert f"Field trip #{first['id']}" in conflicts[0]
+
+
 def test_conflicts_requires_admin_or_dispatcher_role(client, admin_headers, db_session):
     trip = client.post("/field-trips", headers=admin_headers, json=_trip_payload()).json()
     make_user(db_session, email="schooladmin@example.org", role=Role.SCHOOL_ADMIN)
     token = login(client, email="schooladmin@example.org")
     response = client.get(f"/field-trips/{trip['id']}/conflicts", headers=auth_headers(token))
+    assert response.status_code == 403
+
+
+def test_observed_duration_requires_destination_or_profile_id(client, admin_headers):
+    response = client.get("/field-trips/observed-duration", headers=admin_headers)
+    assert response.status_code == 400
+
+
+def test_observed_duration_is_empty_with_no_completed_trips(client, admin_headers):
+    response = client.get(
+        "/field-trips/observed-duration",
+        headers=admin_headers,
+        params={"destination": "State Science Museum"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body == {
+        "sample_count": 0,
+        "average_actual_minutes": None,
+        "most_recent_actual_minutes": None,
+        "most_recent_departure_date": None,
+    }
+
+
+def test_observed_duration_computes_from_completed_trips_by_destination(client, admin_headers):
+    first = client.post("/field-trips", headers=admin_headers, json=_trip_payload()).json()
+    client.patch(
+        f"/field-trips/{first['id']}",
+        headers=admin_headers,
+        json={"status": "completed", "actual_return_at": "2026-09-01T15:30:00Z"},
+    )
+    second = client.post(
+        "/field-trips",
+        headers=admin_headers,
+        json=_trip_payload(
+            departure_at="2026-09-08T13:00:00Z", expected_return_at="2026-09-08T16:00:00Z"
+        ),
+    ).json()
+    client.patch(
+        f"/field-trips/{second['id']}",
+        headers=admin_headers,
+        json={"status": "completed", "actual_return_at": "2026-09-08T16:30:00Z"},
+    )
+    # A trip to a different destination must not be included.
+    other = client.post(
+        "/field-trips", headers=admin_headers, json=_trip_payload(destination="Away Game")
+    ).json()
+    client.patch(
+        f"/field-trips/{other['id']}",
+        headers=admin_headers,
+        json={"status": "completed", "actual_return_at": "2026-09-01T14:00:00Z"},
+    )
+
+    response = client.get(
+        "/field-trips/observed-duration",
+        headers=admin_headers,
+        params={"destination": "State Science Museum"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["sample_count"] == 2
+    assert body["average_actual_minutes"] == 180.0  # (150 + 210) / 2
+    assert body["most_recent_actual_minutes"] == 210
+    assert body["most_recent_departure_date"] == "2026-09-08"
+
+
+def test_observed_duration_requires_admin_or_dispatcher_role(client, admin_headers, db_session):
+    make_user(db_session, email="schooladmin@example.org", role=Role.SCHOOL_ADMIN)
+    token = login(client, email="schooladmin@example.org")
+    response = client.get(
+        "/field-trips/observed-duration",
+        headers=auth_headers(token),
+        params={"destination": "State Science Museum"},
+    )
     assert response.status_code == 403

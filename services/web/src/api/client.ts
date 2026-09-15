@@ -22,6 +22,8 @@ import type {
   Crew,
   CrewCreate,
   CurrentUser,
+  DestinationProfile,
+  DestinationProfileCreate,
   Driver,
   DriverAssignment,
   DriverCreate,
@@ -32,6 +34,7 @@ import type {
   FieldTrip,
   FieldTripConflictCheck,
   FieldTripCreate,
+  FieldTripObservedDuration,
   FieldTripUpdate,
   GeographicKnowledgeOverride,
   GeographicKnowledgeOverrideCreate,
@@ -319,6 +322,29 @@ export async function updateFieldTrip(
   payload: FieldTripUpdate,
 ): Promise<FieldTrip> {
   return request<FieldTrip>(`/field-trips/${tripId}`, jsonInit('PATCH', payload))
+}
+
+export async function getFieldTripObservedDuration(params: {
+  destination?: string
+  destinationProfileId?: number
+}): Promise<FieldTripObservedDuration> {
+  const query = new URLSearchParams()
+  if (params.destinationProfileId != null) {
+    query.set('destination_profile_id', String(params.destinationProfileId))
+  } else if (params.destination) {
+    query.set('destination', params.destination)
+  }
+  return request<FieldTripObservedDuration>(`/field-trips/observed-duration?${query.toString()}`)
+}
+
+export async function getDestinationProfiles(): Promise<DestinationProfile[]> {
+  return request<DestinationProfile[]>('/destination-profiles')
+}
+
+export async function createDestinationProfile(
+  payload: DestinationProfileCreate,
+): Promise<DestinationProfile> {
+  return request<DestinationProfile>('/destination-profiles', jsonInit('POST', payload))
 }
 
 export async function getFieldTripConflicts(

@@ -4,12 +4,15 @@ CP-SAT solver -- assigning a driver/vehicle here is a manual
 dispatcher decision (spec section 21), the same shape as Phase 6's
 substitute-coverage ranking.
 
-Deliberately first-slice scoped:
-- **Same-day trips only** (`departure_at`/`expected_return_at` must
-  share a calendar date) -- keeps conflict-checking a single-day
-  minute-of-day comparison, matching how `Run`/`Assignment`/`Crew`
-  already work everywhere else in this codebase. Overnight trips are a
-  real but rarer case, named as a follow-up, not silently mishandled.
+Deliberately scoped:
+- **Overnight (multi-day) trips are supported** by splitting a trip's
+  `[departure_at, expected_return_at)` span into one (date,
+  start_minute, end_minute) window per calendar day it touches (see
+  `_daily_windows`) -- a middle day spans the whole day (0-1439), the
+  first/last days start/end at the actual departure/return
+  minute-of-day. Conflict-checking (below) compares these window lists
+  directly, rather than requiring same-day trips as the very first
+  slice did.
 - **Conflict detection (spec section 12.1) only checks what this
   system actually models**: overlapping regular-route `Assignment`s
   and overlapping other `FieldTrip`s, for the proposed driver and/or
@@ -29,7 +32,7 @@ Deliberately first-slice scoped:
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_
@@ -40,6 +43,7 @@ from isd_api.db import get_db
 from isd_api.models import (
     Assignment,
     Crew,
+    DestinationProfile,
     Driver,
     FieldTrip,
     Role,
@@ -52,6 +56,7 @@ from isd_api.routers.vehicles import _resolve_qualifications
 from isd_api.schemas import (
     FieldTripConflictCheck,
     FieldTripCreate,
+    FieldTripObservedDurationRead,
     FieldTripRead,
     FieldTripUpdate,
 )
@@ -62,8 +67,43 @@ router = APIRouter(prefix="/field-trips", tags=["field-trips"])
 _WRITE_ROLES = (Role.TRANSPORTATION_ADMIN, Role.DISPATCHER)
 
 
+def _naive(dt: datetime) -> datetime:
+    """Strips tzinfo before comparing two datetimes -- this router
+    treats timestamps as wall-clock only (see module docstring's
+    minute-of-day design), and a value fresh off a request payload
+    (which Pydantic parses as timezone-aware when the client sends an
+    offset) is otherwise not directly comparable to the same value
+    read back from SQLite, which round-trips as naive regardless of
+    what was stored."""
+    return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
+
+
 def _minute_of_day(dt: datetime) -> int:
     return dt.hour * 60 + dt.minute
+
+
+def _daily_windows(start: datetime, end: datetime) -> list[tuple[date, int, int]]:
+    """Splits `[start, end)` into one (date, start_minute, end_minute)
+    window per calendar day it touches -- a same-day trip produces
+    exactly one window (identical to the pre-overnight-support
+    behavior); a multi-day trip produces one window per day, with any
+    day strictly between the first and last spanning the whole day."""
+    windows: list[tuple[date, int, int]] = []
+    current_date = start.date()
+    while current_date <= end.date():
+        day_start = _minute_of_day(start) if current_date == start.date() else 0
+        day_end = _minute_of_day(end) if current_date == end.date() else 1439
+        windows.append((current_date, day_start, day_end))
+        current_date += timedelta(days=1)
+    return windows
+
+
+def _windows_overlap(a: list[tuple[date, int, int]], b: list[tuple[date, int, int]]) -> bool:
+    return any(
+        a_date == b_date and a_start < b_end and b_start < a_end
+        for a_date, a_start, a_end in a
+        for b_date, b_start, b_end in b
+    )
 
 
 @router.post("", response_model=FieldTripRead, status_code=status.HTTP_201_CREATED)
@@ -72,22 +112,24 @@ def create_field_trip(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(*_WRITE_ROLES)),
 ) -> FieldTrip:
-    if payload.departure_at.date() != payload.expected_return_at.date():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="departure_at and expected_return_at must be on the same calendar date "
-            "(overnight field trips are not supported in this slice)",
-        )
-    if payload.departure_at >= payload.expected_return_at:
+    if _naive(payload.departure_at) >= _naive(payload.expected_return_at):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="departure_at must be before expected_return_at",
+        )
+    if (
+        payload.destination_profile_id is not None
+        and db.get(DestinationProfile, payload.destination_profile_id) is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown destination_profile_id"
         )
 
     trip = FieldTrip(
         requesting_party=payload.requesting_party,
         origin=payload.origin,
         destination=payload.destination,
+        destination_profile_id=payload.destination_profile_id,
         departure_at=payload.departure_at,
         expected_return_at=payload.expected_return_at,
         passenger_count=payload.passenger_count,
@@ -132,6 +174,60 @@ def list_field_trips(
     return trips
 
 
+@router.get("/observed-duration", response_model=FieldTripObservedDurationRead)
+def get_field_trip_observed_duration(
+    destination: str | None = None,
+    destination_profile_id: int | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role(*_WRITE_ROLES)),
+) -> FieldTripObservedDurationRead:
+    """spec section 20 applied to field trips -- see
+    FieldTripObservedDurationRead's docstring for why this needs no
+    audit-log lookup, unlike GET /runs/observed-duration. Decision
+    support only (spec section 21): a dispatcher reads this and
+    manually sets expected_return_at on a new trip; nothing here
+    writes to a field trip automatically."""
+    if destination is None and destination_profile_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide destination or destination_profile_id",
+        )
+    query = db.query(FieldTrip).filter(
+        FieldTrip.status == TripStatus.COMPLETED, FieldTrip.actual_return_at.isnot(None)
+    )
+    query = (
+        query.filter(FieldTrip.destination_profile_id == destination_profile_id)
+        if destination_profile_id is not None
+        else query.filter(FieldTrip.destination == destination)
+    )
+
+    samples: list[tuple[date, float]] = []
+    for trip in query.all():
+        if trip.actual_return_at is None:
+            continue
+        minutes = (trip.actual_return_at - trip.departure_at).total_seconds() / 60
+        if minutes > 0:
+            samples.append((trip.departure_at.date(), minutes))
+
+    if not samples:
+        return FieldTripObservedDurationRead(
+            sample_count=0,
+            average_actual_minutes=None,
+            most_recent_actual_minutes=None,
+            most_recent_departure_date=None,
+        )
+
+    samples.sort(key=lambda s: s[0])
+    average = sum(minutes for _, minutes in samples) / len(samples)
+    most_recent_date, most_recent_minutes = samples[-1]
+    return FieldTripObservedDurationRead(
+        sample_count=len(samples),
+        average_actual_minutes=round(average, 1),
+        most_recent_actual_minutes=round(most_recent_minutes),
+        most_recent_departure_date=most_recent_date,
+    )
+
+
 @router.get("/{trip_id}", response_model=FieldTripRead)
 def get_field_trip(
     trip_id: int,
@@ -164,6 +260,13 @@ def update_field_trip(
         and db.get(Vehicle, payload.assigned_vehicle_id) is None
     ):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown vehicle_id")
+    if (
+        payload.destination_profile_id is not None
+        and db.get(DestinationProfile, payload.destination_profile_id) is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown destination_profile_id"
+        )
 
     before_state = {
         "status": trip.status.value,
@@ -178,11 +281,13 @@ def update_field_trip(
         trip.assigned_driver_id = payload.assigned_driver_id
     if payload.assigned_vehicle_id is not None:
         trip.assigned_vehicle_id = payload.assigned_vehicle_id
+    if payload.destination_profile_id is not None:
+        trip.destination_profile_id = payload.destination_profile_id
     if payload.expected_return_at is not None:
-        if payload.expected_return_at.date() != trip.departure_at.date():
+        if _naive(payload.expected_return_at) <= _naive(trip.departure_at):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="expected_return_at must stay on the same calendar date as departure_at",
+                detail="expected_return_at must be after departure_at",
             )
         trip.expected_return_at = payload.expected_return_at
     if payload.actual_return_at is not None:
@@ -231,12 +336,11 @@ def check_field_trip_conflicts(
     if driver_id is None and vehicle_id is None:
         return FieldTripConflictCheck(conflicts=[])
 
-    trip_date = trip.departure_at.date()
-    trip_start = _minute_of_day(trip.departure_at)
-    trip_end = _minute_of_day(trip.expected_return_at)
+    trip_windows = _daily_windows(trip.departure_at, trip.expected_return_at)
+    trip_dates = {d for d, _, _ in trip_windows}
     conflicts: list[str] = []
 
-    crew_query = db.query(Crew).filter(Crew.service_date == trip_date)
+    crew_query = db.query(Crew).filter(Crew.service_date.in_(trip_dates))
     if driver_id is not None and vehicle_id is not None:
         crew_query = crew_query.filter(
             or_(Crew.driver_id == driver_id, Crew.vehicle_id == vehicle_id)
@@ -250,18 +354,19 @@ def check_field_trip_conflicts(
         overlapping = (
             db.query(Assignment)
             .join(Run, Assignment.run_id == Run.id)
-            .filter(
-                Assignment.crew_id.in_(crew_ids),
-                Assignment.start_minute < trip_end,
-                Assignment.end_minute > trip_start,
-            )
+            .filter(Assignment.crew_id.in_(crew_ids))
             .all()
         )
         for assignment in overlapping:
-            conflicts.append(
-                f"Regular route at {assignment.run.school.name} "
-                f"({assignment.start_minute}-{assignment.end_minute}) overlaps this trip"
-            )
+            assignment_window = [
+                (assignment.crew.service_date, assignment.start_minute, assignment.end_minute)
+            ]
+            if _windows_overlap(trip_windows, assignment_window):
+                conflicts.append(
+                    f"Regular route at {assignment.run.school.name} on "
+                    f"{assignment.crew.service_date} ({assignment.start_minute}-"
+                    f"{assignment.end_minute}) overlaps this trip"
+                )
 
     other_trips_query = db.query(FieldTrip).filter(
         FieldTrip.id != trip_id,
@@ -279,15 +384,12 @@ def check_field_trip_conflicts(
     else:
         other_trips_query = other_trips_query.filter(FieldTrip.assigned_vehicle_id == vehicle_id)
     for other in other_trips_query.all():
-        if other.departure_at.date() != trip_date:
-            continue
-        other_start = _minute_of_day(other.departure_at)
-        other_end = _minute_of_day(other.expected_return_at)
-        if other_start < trip_end and other_end > trip_start:
+        other_windows = _daily_windows(other.departure_at, other.expected_return_at)
+        if _windows_overlap(trip_windows, other_windows):
             conflicts.append(
                 f"Field trip #{other.id} to {other.destination} "
-                f"({other.departure_at.strftime('%H:%M')}-"
-                f"{other.expected_return_at.strftime('%H:%M')}) overlaps this trip"
+                f"({other.departure_at.strftime('%Y-%m-%d %H:%M')}-"
+                f"{other.expected_return_at.strftime('%Y-%m-%d %H:%M')}) overlaps this trip"
             )
 
     return FieldTripConflictCheck(conflicts=conflicts)
