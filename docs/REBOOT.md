@@ -492,13 +492,14 @@ PATCH edits that bypass the solver.
 
 ## Exact next step (as of this checkpoint)
 
-PR #31 (`feat/phase6-announcement-scoping-and-substitution-notices`) is
-open, backend + frontend both green locally (166+8 backend tests,
-71 frontend tests, ruff/format/mypy-modulo-the-numpy-issue below,
-`npm run build`/`lint`/`format:check`/`test` all clean), and manually
-verified live end-to-end (see PR #31's entry above). Watch its CI,
-merge once green, then bump this file's "Key files" header and PR list
-one more time — that's the only thing left mechanical about this PR.
+Every PR through #31 is **merged**, CI green, local `main` synced
+(commit `c5b1e5b`). PR #31's first CI run caught a real mypy bug —
+`crew` was typed `Crew | None` at the substitution-notice call site in
+`schedule.py`'s `update_assignment` (assigned only inside an earlier
+conditional block mypy couldn't correlate with `crew_changed`, even
+though `crew_changed` being true implies that block ran) — fixed by
+declaring `crew: DBCrew | None = None` up front and asserting non-None
+at the point of use, pushed, CI re-ran green, merged.
 
 **Both items from the prior "smaller/optional follow-ups" list are now
 done**: PR #30 shipped field-trip overnight support / destination
