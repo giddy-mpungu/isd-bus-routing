@@ -366,6 +366,7 @@ def update_assignment(
     )
     new_end = payload.end_minute if payload.end_minute is not None else assignment.end_minute
     crew_changed = new_crew_id != assignment.crew_id
+    crew: DBCrew | None = None
 
     if (
         new_crew_id != assignment.crew_id
@@ -433,6 +434,7 @@ def update_assignment(
         },
     )
     if crew_changed:
+        assert crew is not None  # crew_changed implies the block above set it
         _maybe_create_substitution_announcement(db, crew, current_user)
     db.commit()
     db.refresh(assignment)
