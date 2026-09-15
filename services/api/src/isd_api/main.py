@@ -13,6 +13,7 @@ from isd_api.routers import (
     announcements,
     auth,
     crews,
+    destination_profiles,
     driver_reports,
     drivers,
     field_trips,
@@ -73,6 +74,7 @@ app.include_router(geographic_knowledge.router)
 app.include_router(positions.driver_router)
 app.include_router(positions.fleet_router)
 app.include_router(field_trips.router)
+app.include_router(destination_profiles.router)
 app.include_router(announcements.router)
 app.include_router(driver_reports.router)
 app.include_router(driver_reports.all_reports_router)
