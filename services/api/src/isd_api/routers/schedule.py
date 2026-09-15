@@ -53,6 +53,7 @@ from isd_api.models import (
 )
 from isd_api.models import Crew as DBCrew
 from isd_api.models import Run as DBRun
+from isd_api.routers.announcements import _maybe_create_substitution_announcement
 from isd_api.schemas import (
     AssignmentRead,
     AssignmentStatusUpdate,
@@ -364,6 +365,7 @@ def update_assignment(
         payload.start_minute if payload.start_minute is not None else assignment.start_minute
     )
     new_end = payload.end_minute if payload.end_minute is not None else assignment.end_minute
+    crew_changed = new_crew_id != assignment.crew_id
 
     if (
         new_crew_id != assignment.crew_id
@@ -430,6 +432,8 @@ def update_assignment(
             "locked": assignment.locked,
         },
     )
+    if crew_changed:
+        _maybe_create_substitution_announcement(db, crew, current_user)
     db.commit()
     db.refresh(assignment)
     return assignment

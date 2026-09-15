@@ -165,6 +165,7 @@ describe('SetupPage', () => {
       message: 'Buses running 15 minutes late today.',
       category: 'delay',
       audience: 'family',
+      school_id: null,
       created_at: '2026-09-14T12:00:00Z',
     })
     renderAsRole(dispatcherUser)
@@ -183,9 +184,37 @@ describe('SetupPage', () => {
         message: 'Buses running 15 minutes late today.',
         category: 'delay',
         audience: 'family',
+        school_id: null,
       }),
     )
     expect(api.getAnnouncements).toHaveBeenCalledTimes(2) // initial load + reload after create
+  })
+
+  it('creating a school-scoped announcement sends the selected school_id', async () => {
+    vi.mocked(api.createAnnouncement).mockResolvedValue({
+      id: 2,
+      message: 'Riverside dismissal moved up 15 minutes.',
+      category: 'general',
+      audience: 'family',
+      school_id: 1,
+      created_at: '2026-09-14T12:00:00Z',
+    })
+    renderAsRole(dispatcherUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Message'), 'Riverside dismissal moved up 15 minutes.')
+    await user.selectOptions(screen.getByLabelText('Audience'), 'family')
+    await user.selectOptions(screen.getByLabelText(/School/), 'Riverside Elementary')
+    await user.click(screen.getByRole('button', { name: 'Post announcement' }))
+
+    await waitFor(() =>
+      expect(api.createAnnouncement).toHaveBeenCalledWith(
+        expect.objectContaining({ school_id: 1 }),
+      ),
+    )
   })
 
   it('only offers license qualifications on the driver form and vehicle_capability ones on the vehicle form', async () => {

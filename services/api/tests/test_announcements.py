@@ -1,9 +1,115 @@
 """spec sections 9/18: dispatcher-authored notices for drivers and/or
-families. Always human-authored in this system -- see
+families. Almost always human-authored in this system -- the one
+exception is an auto-generated substitution notice, see
 routers/announcements.py's module docstring for why."""
 
-from isd_api.models import AuditLogEntry, Role
+from isd_api.models import Announcement, AuditLogEntry, Role
 from tests.conftest import auth_headers, login, make_user
+
+SERVICE_DATE = "2026-09-01"
+
+
+def _seed_family(client, admin_headers, *, school_name="Riverside Elementary"):
+    school = client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": school_name, "location_lat": 29.7, "location_lon": -95.4},
+    ).json()
+    stop = client.post(
+        "/stops",
+        headers=admin_headers,
+        json={"label": "Oak & 5th", "location_lat": 29.71, "location_lon": -95.41},
+    ).json()
+    student = client.post(
+        "/students",
+        headers=admin_headers,
+        json={
+            "full_name": "Jamie Student",
+            "school_id": school["id"],
+            "stop_id": stop["id"],
+            "default_ridership": "rides",
+        },
+    ).json()
+    return school, student
+
+
+def _link_parent(client, admin_headers, db_session, *, student_id, email):
+    make_user(db_session, email=email, role=Role.PARENT)
+    from isd_api.models import User
+
+    parent = db_session.query(User).filter(User.email == email).one()
+    client.post(
+        f"/students/{student_id}/guardians",
+        headers=admin_headers,
+        json={"user_id": parent.id},
+    )
+    token = login(client, email=email)
+    return auth_headers(token)
+
+
+def _seed_driver_crew_and_run(
+    client,
+    admin_headers,
+    *,
+    label,
+    school_id,
+    service_date=SERVICE_DATE,
+    direction="am",
+    window_earliest=360,
+    window_latest=410,
+    extra_vehicle_qualification_codes=(),
+):
+    """Deliberately forces eligibility (a unique qualification code) so
+    the solver can't merge this run onto some other crew -- same
+    precedent as tests/test_absences.py's helper of the same name, and
+    for the same reason (avoid a solver tie-break making the crew
+    assignment non-deterministic). extra_vehicle_qualification_codes
+    lets a test give one crew's vehicle a second run's qualification
+    too, so a manual PATCH reassignment between the two runs is
+    actually eligible rather than tripping the hard-constraint check."""
+    driver = client.post(
+        "/drivers", headers=admin_headers, json={"full_name": f"Driver {label}"}
+    ).json()
+    qualification_code = f"QUAL_{label}"
+    client.post(
+        "/qualifications",
+        headers=admin_headers,
+        json={"code": qualification_code, "kind": "vehicle_capability"},
+    )
+    vehicle = client.post(
+        "/vehicles",
+        headers=admin_headers,
+        json={
+            "label": f"Bus {label}",
+            "qualification_codes": [qualification_code, *extra_vehicle_qualification_codes],
+        },
+    ).json()
+    crew = client.post(
+        "/crews",
+        headers=admin_headers,
+        json={
+            "service_date": service_date,
+            "driver_id": driver["id"],
+            "vehicle_id": vehicle["id"],
+            "available_window_earliest": 0,
+            "available_window_latest": 1439,
+        },
+    ).json()
+    run = client.post(
+        "/runs",
+        headers=admin_headers,
+        json={
+            "service_date": service_date,
+            "school_id": school_id,
+            "direction": direction,
+            "window_earliest": window_earliest,
+            "window_latest": window_latest,
+            "duration_minutes": 40,
+            "buffer_minutes": 10,
+            "required_qualification_codes": [qualification_code],
+        },
+    ).json()
+    return driver, vehicle, crew, run
 
 
 def test_create_announcement_round_trips_and_defaults_to_general(client, admin_headers):
@@ -137,3 +243,260 @@ def test_dispatcher_cannot_call_mine_endpoint(client, admin_headers, db_session)
     token = login(client, email="dispatcher1@example.org")
     response = client.get("/announcements/mine", headers=auth_headers(token))
     assert response.status_code == 403
+
+
+def test_family_sees_school_scoped_announcement_for_their_own_school(
+    client, admin_headers, db_session
+):
+    school, student = _seed_family(client, admin_headers)
+    parent_headers = _link_parent(
+        client, admin_headers, db_session, student_id=student["id"], email="parent_a@example.org"
+    )
+    client.post(
+        "/announcements",
+        headers=admin_headers,
+        json={"message": "Riverside only", "audience": "family", "school_id": school["id"]},
+    )
+    response = client.get("/announcements/mine", headers=parent_headers)
+    assert response.status_code == 200, response.text
+    assert [a["message"] for a in response.json()] == ["Riverside only"]
+
+
+def test_family_does_not_see_a_different_schools_scoped_announcement(
+    client, admin_headers, db_session
+):
+    _school_a, student_a = _seed_family(client, admin_headers, school_name="School A")
+    school_b, _student_b = _seed_family(client, admin_headers, school_name="School B")
+    parent_headers = _link_parent(
+        client, admin_headers, db_session, student_id=student_a["id"], email="parent_b@example.org"
+    )
+    client.post(
+        "/announcements",
+        headers=admin_headers,
+        json={"message": "School B only", "audience": "family", "school_id": school_b["id"]},
+    )
+    response = client.get("/announcements/mine", headers=parent_headers)
+    assert response.status_code == 200, response.text
+    assert response.json() == []
+
+
+def test_family_sees_district_wide_announcement_regardless_of_school(
+    client, admin_headers, db_session
+):
+    _school, student = _seed_family(client, admin_headers)
+    parent_headers = _link_parent(
+        client, admin_headers, db_session, student_id=student["id"], email="parent_c@example.org"
+    )
+    client.post(
+        "/announcements",
+        headers=admin_headers,
+        json={"message": "District-wide", "audience": "family"},
+    )
+    response = client.get("/announcements/mine", headers=parent_headers)
+    assert response.status_code == 200, response.text
+    assert [a["message"] for a in response.json()] == ["District-wide"]
+
+
+def test_crew_driver_change_with_no_assignments_yet_creates_no_announcement(client, admin_headers):
+    school = client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": "Empty Crew School", "location_lat": 29.7, "location_lon": -95.4},
+    ).json()
+    _driver, _vehicle, crew, _run = _seed_driver_crew_and_run(
+        client, admin_headers, label="A", school_id=school["id"]
+    )
+    substitute = client.post(
+        "/drivers", headers=admin_headers, json={"full_name": "Substitute Driver"}
+    ).json()
+    response = client.patch(
+        f"/crews/{crew['id']}", headers=admin_headers, json={"driver_id": substitute["id"]}
+    )
+    assert response.status_code == 200, response.text
+    assert client.get("/announcements", headers=admin_headers).json() == []
+
+
+def test_crew_driver_change_on_solved_unambiguous_run_creates_family_substitution_announcement(
+    client, admin_headers, db_session
+):
+    school, student = _seed_family(client, admin_headers)
+    parent_headers = _link_parent(
+        client, admin_headers, db_session, student_id=student["id"], email="parent_d@example.org"
+    )
+    _driver, _vehicle, crew, _run = _seed_driver_crew_and_run(
+        client, admin_headers, label="A", school_id=school["id"]
+    )
+    schedule = client.post("/schedule", headers=admin_headers, json={"service_date": SERVICE_DATE})
+    assert schedule.status_code == 200, schedule.text
+
+    substitute = client.post(
+        "/drivers", headers=admin_headers, json={"full_name": "Substitute Driver"}
+    ).json()
+    response = client.patch(
+        f"/crews/{crew['id']}", headers=admin_headers, json={"driver_id": substitute["id"]}
+    )
+    assert response.status_code == 200, response.text
+
+    announcements = client.get("/announcements", headers=admin_headers).json()
+    assert len(announcements) == 1
+    assert announcements[0]["category"] == "substitution"
+    assert announcements[0]["audience"] == "family"
+    assert announcements[0]["school_id"] == school["id"]
+    assert "Substitute Driver" in announcements[0]["message"]
+
+    entries = (
+        db_session.query(AuditLogEntry).filter(AuditLogEntry.entity_type == "announcement").all()
+    )
+    assert len(entries) == 1
+    assert entries[0].after_state["auto_generated_from_run_id"] is not None
+
+    family_view = client.get("/announcements/mine", headers=parent_headers).json()
+    assert len(family_view) == 1
+    assert family_view[0]["category"] == "substitution"
+
+
+def test_crew_driver_change_is_skipped_when_school_date_direction_is_ambiguous(
+    client, admin_headers, db_session
+):
+    school = client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": "Ambiguous School", "location_lat": 29.7, "location_lon": -95.4},
+    ).json()
+    _driver_a, _vehicle_a, crew_a, _run_a = _seed_driver_crew_and_run(
+        client,
+        admin_headers,
+        label="A",
+        school_id=school["id"],
+        window_earliest=360,
+        window_latest=410,
+    )
+    _seed_driver_crew_and_run(
+        client,
+        admin_headers,
+        label="B",
+        school_id=school["id"],
+        window_earliest=420,
+        window_latest=470,
+    )
+    schedule = client.post("/schedule", headers=admin_headers, json={"service_date": SERVICE_DATE})
+    assert schedule.status_code == 200, schedule.text
+
+    substitute = client.post(
+        "/drivers", headers=admin_headers, json={"full_name": "Substitute Driver"}
+    ).json()
+    response = client.patch(
+        f"/crews/{crew_a['id']}", headers=admin_headers, json={"driver_id": substitute["id"]}
+    )
+    assert response.status_code == 200, response.text
+    assert client.get("/announcements", headers=admin_headers).json() == []
+    assert db_session.query(Announcement).count() == 0
+
+
+def test_schedule_reassigning_a_crew_to_a_different_assignment_creates_substitution_announcement(
+    client, admin_headers
+):
+    """Two crews, both equally qualified/available for the one run --
+    which crew the solver initially picks is a tie-break we don't care
+    about here, only that manually PATCHing the resulting assignment
+    to the *other* crew is a genuine, hard-constraint-satisfying crew
+    change that should fire the substitution notice."""
+    school = client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": "Reassign School", "location_lat": 29.7, "location_lon": -95.4},
+    ).json()
+    client.post(
+        "/qualifications",
+        headers=admin_headers,
+        json={"code": "QUAL_SHARED", "kind": "vehicle_capability"},
+    )
+    driver_a = client.post("/drivers", headers=admin_headers, json={"full_name": "Driver A"}).json()
+    driver_b = client.post("/drivers", headers=admin_headers, json={"full_name": "Driver B"}).json()
+    vehicle_a = client.post(
+        "/vehicles",
+        headers=admin_headers,
+        json={"label": "Bus A", "qualification_codes": ["QUAL_SHARED"]},
+    ).json()
+    vehicle_b = client.post(
+        "/vehicles",
+        headers=admin_headers,
+        json={"label": "Bus B", "qualification_codes": ["QUAL_SHARED"]},
+    ).json()
+    crew_a = client.post(
+        "/crews",
+        headers=admin_headers,
+        json={
+            "service_date": SERVICE_DATE,
+            "driver_id": driver_a["id"],
+            "vehicle_id": vehicle_a["id"],
+            "available_window_earliest": 0,
+            "available_window_latest": 1439,
+        },
+    ).json()
+    crew_b = client.post(
+        "/crews",
+        headers=admin_headers,
+        json={
+            "service_date": SERVICE_DATE,
+            "driver_id": driver_b["id"],
+            "vehicle_id": vehicle_b["id"],
+            "available_window_earliest": 0,
+            "available_window_latest": 1439,
+        },
+    ).json()
+    client.post(
+        "/runs",
+        headers=admin_headers,
+        json={
+            "service_date": SERVICE_DATE,
+            "school_id": school["id"],
+            "direction": "am",
+            "window_earliest": 360,
+            "window_latest": 410,
+            "duration_minutes": 40,
+            "buffer_minutes": 10,
+            "required_qualification_codes": ["QUAL_SHARED"],
+        },
+    )
+
+    schedule = client.post("/schedule", headers=admin_headers, json={"service_date": SERVICE_DATE})
+    assert schedule.status_code == 200, schedule.text
+    assignment = schedule.json()["assignments"][0]
+    other_crew_id = crew_b["id"] if assignment["crew_id"] == crew_a["id"] else crew_a["id"]
+
+    response = client.patch(
+        f"/schedule/assignments/{assignment['id']}",
+        headers=admin_headers,
+        json={"crew_id": other_crew_id},
+    )
+    assert response.status_code == 200, response.text
+
+    announcements = client.get("/announcements", headers=admin_headers).json()
+    assert len(announcements) == 1
+    assert announcements[0]["category"] == "substitution"
+    assert announcements[0]["school_id"] == school["id"]
+
+
+def test_schedule_locking_an_assignment_without_a_crew_change_creates_no_announcement(
+    client, admin_headers
+):
+    school = client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": "Lock-Only School", "location_lat": 29.7, "location_lon": -95.4},
+    ).json()
+    _driver, _vehicle, _crew, _run = _seed_driver_crew_and_run(
+        client, admin_headers, label="A", school_id=school["id"]
+    )
+    schedule = client.post("/schedule", headers=admin_headers, json={"service_date": SERVICE_DATE})
+    assert schedule.status_code == 200, schedule.text
+    assignment_id = schedule.json()["assignments"][0]["id"]
+
+    response = client.patch(
+        f"/schedule/assignments/{assignment_id}",
+        headers=admin_headers,
+        json={"locked": True},
+    )
+    assert response.status_code == 200, response.text
+    assert client.get("/announcements", headers=admin_headers).json() == []

@@ -326,6 +326,7 @@ export function SetupPage() {
   const [announcementMessage, setAnnouncementMessage] = useState('')
   const [announcementCategory, setAnnouncementCategory] = useState<AnnouncementCategory>('general')
   const [announcementAudience, setAnnouncementAudience] = useState<AnnouncementAudience>('all')
+  const [announcementSchoolId, setAnnouncementSchoolId] = useState('')
   const [announcementError, setAnnouncementError] = useState<string | null>(null)
   const [isSavingAnnouncement, setIsSavingAnnouncement] = useState(false)
 
@@ -338,10 +339,12 @@ export function SetupPage() {
         message: announcementMessage,
         category: announcementCategory,
         audience: announcementAudience,
+        school_id: announcementSchoolId ? Number(announcementSchoolId) : null,
       })
       setAnnouncementMessage('')
       setAnnouncementCategory('general')
       setAnnouncementAudience('all')
+      setAnnouncementSchoolId('')
       await loadAll()
     } catch (err) {
       setAnnouncementError(err instanceof ApiError ? err.message : 'Failed to post announcement.')
@@ -758,7 +761,10 @@ export function SetupPage() {
         <ul>
           {announcements.map((a) => (
             <li key={a.id}>
-              [{a.category.replace(/_/g, ' ')} — {a.audience}] {a.message}
+              [{a.category.replace(/_/g, ' ')} — {a.audience}
+              {a.school_id != null &&
+                ` — ${schoolsById.get(a.school_id)?.name ?? `School ${a.school_id}`}`}
+              ] {a.message}
             </li>
           ))}
         </ul>
@@ -796,6 +802,21 @@ export function SetupPage() {
               {ANNOUNCEMENT_AUDIENCES.map((audience) => (
                 <option key={audience} value={audience}>
                   {audience}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="announcement-school">
+              School (optional — leave blank for district-wide)
+            </label>
+            <select
+              id="announcement-school"
+              value={announcementSchoolId}
+              onChange={(event) => setAnnouncementSchoolId(event.target.value)}
+            >
+              <option value="">District-wide</option>
+              {schools.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
                 </option>
               ))}
             </select>

@@ -321,17 +321,26 @@ produces them rather than duplicated here.
 - **Announcement** (spec §9/§18): a dispatcher-authored notice for
   drivers and/or families — `message` (free text), `category`
   (general/delay/substitution/route_change — informational label
-  only), `audience` (all/family/driver). Covers spec §9's "Messages
+  only), `audience` (all/family/driver), `school_id` (nullable FK to
+  `School` — null means district-wide; meaningless for
+  `audience=driver`, which ignores it). Covers spec §9's "Messages
   from dispatch" and §18's "Transportation announcements"/"Delay
   notifications"/"Bus substitution notices"/"Route-change notices" —
-  deliberately **always human-authored, never auto-generated**: this
-  system has no ETA-calculation engine to detect a real delay against,
-  and no automatic event-to-notification pipeline to turn a real
-  driver-swap (spec §13) into a targeted notice for the affected
-  families. That targeting problem — resolving which families are
-  actually affected by one specific run's crew change — is a named,
-  plausible follow-up, not attempted here. District-wide only in this
-  first slice, no per-school scoping (no `school_id` on the row).
+  **almost always human-authored, with one narrow, principled
+  exception**: when a crew's driver/vehicle genuinely changes on an
+  already-solved day (spec §13) and the affected school+date+direction
+  is unambiguous (exactly one `Run` matches — spec §21's "never guess"
+  decision-support rule, same precedent as expected-riders and
+  `GET /students/{id}/bus-position`), the system auto-generates a
+  school-scoped family notice — see
+  `routers/announcements._maybe_create_substitution_announcement`,
+  wired from both `PATCH /crews/{id}` and
+  `PATCH /schedule/assignments/{id}`. When more than one run shares
+  that school/date/direction, no notice is generated rather than
+  guessing which families are actually affected. Every other
+  category/audience combination is still exclusively dispatcher-
+  authored via `POST /announcements` — this system has no
+  ETA-calculation engine to auto-detect a delay, for example.
 - **DriverReport** (spec §9): the driver app's "Incident reporting" and
   "Vehicle defect reporting" — one entity with a `report_type`
   discriminator (`incident`/`vehicle_defect`) rather than two nearly
@@ -352,5 +361,5 @@ produces them rather than duplicated here.
 - Spec §6 is now done to the extent an external point-to-point routing API can express it: real road-network travel time, per-vehicle length/width/height/weight restrictions, and district-specific avoid-zones (§8) are all applied via `ors_deadhead_estimator`. Turn/dead-end safety costs (§7) and dynamic rerouting (§10) remain genuinely out of scope — both need a routing *graph* this system doesn't own, not just a point-to-point directions call, a different technical approach than anything built so far.
 - District-specific geographic knowledge / local roadway overrides (spec §8) — persistence done, and 3 of 8 categories now applied to routing via ORS `avoid_polygons` (`GeographicKnowledgeOverride`, above); the other 5 categories (caution/time-dependent/vehicle-dependent/preference/ambiguous) each need a different mechanism than a hard avoid-zone, not just more plumbing
 - Dynamic rerouting around road closures/incidents (spec §10) — Phase 6, same GIS dependency
-- Live GPS bus location (spec §9/§18) is done for position itself (`VehiclePosition`, ADR 0009, above) — dispatcher fleet view and per-child "locate bus." Delay/substitution/route-change/general notifications (spec §18) and "messages from dispatch" (spec §9) are now done too (`Announcement`, above), always dispatcher-authored, never auto-detected — this system has no ETA engine or automatic event-to-notification pipeline. Incident reporting / vehicle defect reporting (spec §9) is now done too (`DriverReport`, above). Still unbuilt: turn-by-turn navigation (spec §9 — deliberately deferred alongside §7/§10, since it needs the same routing graph this system doesn't own) and per-school announcement scoping
+- Live GPS bus location (spec §9/§18) is done for position itself (`VehiclePosition`, ADR 0009, above) — dispatcher fleet view and per-child "locate bus." Delay/substitution/route-change/general notifications (spec §18) and "messages from dispatch" (spec §9) are now done too (`Announcement`, above), with per-school scoping and one narrow auto-generated exception (a genuine, unambiguous driver/vehicle substitution) — every other notification is still exclusively dispatcher-authored, since this system has no ETA engine or general event-to-notification pipeline. Incident reporting / vehicle defect reporting (spec §9) is now done too (`DriverReport`, above). Still unbuilt: turn-by-turn navigation (spec §9 — deliberately deferred alongside §7/§10, since it needs the same routing graph this system doesn't own)
 - Historical operational data / learning-adjusted estimates (spec §20) — duration learning for `Run.duration_minutes` is done (`GET /runs/observed-duration`, above). Not yet: traffic-delay and route-deviation tracking (both need a planned route geometry and live position history this system doesn't have — ADR 0009 deliberately keeps only the latest GPS position, no breadcrumb trail) and field-trip duration learning (though `FieldTrip.actual_return_at` already captures the raw data needed, no aggregation endpoint exists for it yet, unlike regular runs)
