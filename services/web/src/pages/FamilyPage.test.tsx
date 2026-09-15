@@ -56,6 +56,7 @@ describe('FamilyPage', () => {
         message: 'Route 12 substitute driver today.',
         category: 'substitution',
         audience: 'family',
+        school_id: null,
         created_at: '2026-09-14T12:00:00Z',
       },
     ])

@@ -447,8 +447,10 @@ PATCH edits that bypass the solver.
 27. #27 `feat/phase6-historical-duration-learning` — spec §20: `GET /runs/observed-duration?school_id=&direction=`, computed entirely from data already persisted — a completed `Assignment`'s actual start/end are read off its own `status_changed` audit entries (spec §14), no new breadcrumb/history table. Runs have no recurring-route identity, so "this route" is approximated as completed runs sharing a `(school_id, direction)` pair across any `service_date`. Decision support only (spec §21): `SchedulePage`'s "Add run" form gets a "Check observed duration" / "Use average" flow, never auto-applied. Manually verified live: adjusted real audit timestamps to simulate a 48-minute actual duration, confirmed the UI showed it and "Use average" correctly filled the duration field
 28. #28 `feat/phase6-transportation-announcements` — spec §9/§18: `Announcement` (`message`, `category` — general/delay/substitution/route_change, informational label only — `audience` — all/family/driver), `POST`/`GET /announcements` (management) + `GET /announcements/mine` (audience-filtered). Deliberately always human-authored, never auto-detected — no ETA engine, no automatic event-to-notification pipeline exists to turn a real driver-swap (§13) into a targeted family notice, so that targeting problem is named as a follow-up, not attempted. District-wide only, no per-school scoping. `/setup` gained an "Announcements" section; `DriverPage` shows "Messages from dispatch," `FamilyPage` shows "Transportation announcements." Manually verified live: posted a family-audience notice and a driver-audience notice, confirmed each surfaced only to its intended audience through the actual browser
 29. #29 `feat/phase6-driver-incident-defect-reports` — spec §9: `DriverReport` (`report_type` discriminator: incident/vehicle_defect, one entity not two). `vehicle_id` resolved server-side from the driver's own `Crew` for `service_date` rather than driver-supplied — the form only needs a type and a description. `POST /drivers/{id}/reports` (self or staff-on-behalf, audited) + `GET /reports?service_date=` (dispatcher overview). New form on `DriverPage`, new "Driver reports" section on `SchedulePage`. This closes out spec §9's driver-app list except turn-by-turn navigation, deferred with §7/§10. Manually verified live: submitted a vehicle defect report as a driver, confirmed it appeared on the dispatcher's `SchedulePage` with the vehicle correctly auto-resolved from that driver's actual crew
+30. #30 `feat/phase6-field-trip-followups` — spec §12.3/§20 follow-ups named but not attempted in #25/#26: **overnight (multi-day) field trips** — `create_field_trip`'s same-day-only validation removed; `_daily_windows`/`_windows_overlap` split a multi-day span into per-calendar-day `(date, start_minute, end_minute)` windows so `GET /field-trips/{id}/conflicts` still catches overlaps correctly across day boundaries. **`DestinationProfile`** (spec §12.3): a separate reusable entity (`POST`/`GET /destination-profiles`) for a frequently-used destination's entrance/parking/turn-restriction/driver-note info, optionally linked from a `FieldTrip` via `destination_profile_id` — nothing auto-matches free-text `destination` to a profile. **`GET /field-trips/observed-duration`** (spec §20): actual-vs-estimated duration computed directly from a completed trip's own `actual_return_at`/`departure_at` (no audit-log lookup needed, unlike regular runs — a `FieldTrip` already stores its own actual timestamps), surfaced as a "Check observed duration"/"Use average" flow on `FieldTripsPage`, same decision-support pattern as PR #27, never auto-applied. Fixed a real naive-vs-aware `datetime` comparison bug along the way (`_naive()` helper — Pydantic parses a "Z"-suffixed request timestamp as aware, SQLite round-trips a `DateTime(timezone=True)` column as naive). Manually verified live: created an overnight trip spanning two calendar days and confirmed its conflict check still worked, linked a destination profile and confirmed it displayed, completed a trip and confirmed the observed-duration average computed and applied correctly
+31. #31 `feat/phase6-announcement-scoping-and-substitution-notices` — the two Announcement follow-ups named in PR #28 but not attempted there: **per-school scoping** — `Announcement.school_id` (nullable FK to `School`; null = district-wide), set via an optional School `<select>` on `/setup`'s Announcements form; `GET /announcements/mine` filters family recipients to `school_id is None or school_id in {schools of the user's own linked student(s)}` (`_family_school_ids` helper) — meaningless for `audience=driver`, which ignores it entirely. **One narrow, principled exception to "always human-authored"**: `_maybe_create_substitution_announcement` auto-generates a school-scoped family notice when a crew's driver/vehicle genuinely changes on an already-solved day (spec §13) — wired from both `PATCH /crews/{id}` (`update_crew_driver`, only when `driver_id` actually changed) and `PATCH /schedule/assignments/{id}` (`update_assignment`, only when `crew_id` actually changed, not a pure time/lock-only edit) — and skips silently (no guessing) when more than one `Run` shares that crew's school+date+direction, the same "never guess" decision-support precedent as PR #23's expected-riders and `GET /students/{id}/bus-position`. Manually verified live end-to-end: posted a Riverside-scoped and an Oakwood-scoped family announcement, confirmed a parent linked only to a Riverside student saw the Riverside one and not the Oakwood one; reported a driver absence and assigned a substitute through the real `SchedulePage` UI, confirmed the auto-generated substitution notice appeared with the correct school/message and that the same parent saw it too
 
-## Key files (current state, post-PR #29)
+## Key files (current state, post-PR #31)
 
 - `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal + revocation check), `LoginRateLimiter`/`login_rate_limiter`, `revoke_token`
 - `services/api/src/isd_api/routers/auth.py` — login rate-limited + sets cookie + returns bearer token; `POST /auth/logout` (still no auth required — a no-op if nothing to revoke, but revokes the current token if one is present)
@@ -459,16 +461,17 @@ PATCH edits that bypass the solver.
 - `services/api/src/isd_api/routers/students.py` — `POST`/`GET`/`PATCH /students`, `POST /students/{id}/guardians`, `GET /students/my-family`, `PATCH /students/{id}/ridership` — all the Phase 5 RBAC ownership-check logic lives here
 - `services/api/src/isd_api/routers/stops.py` — `POST`/`GET /stops`, admin/dispatcher only
 - `services/api/src/isd_api/routers/absences.py` — `POST`/`GET /drivers/{id}/absences`, `GET /absences?service_date=` (all-drivers overview, `all_absences_router`, second router in this file), `GET /drivers/{id}/substitute-candidates` + `_rank_substitute_candidates` (Phase 6 ranking heuristic, private helper)
-- `services/api/src/isd_api/routers/crews.py` — `POST`/`GET /crews`, `PATCH /crews/{id}` (driver-only repoint — see Gotchas #9 for why this exists instead of a second `POST /crews`)
+- `services/api/src/isd_api/routers/crews.py` — `POST`/`GET /crews`, `PATCH /crews/{id}` (driver-only repoint — see Gotchas #9 for why this exists instead of a second `POST /crews`; calls `_maybe_create_substitution_announcement` when the driver actually changed, PR #31)
 - `services/api/src/isd_api/routers/geographic_knowledge.py` — `POST`/`GET /geographic-knowledge` (spec §8 persistence — transportation_admin + dispatcher, audited); `routers/schedule.py`'s `_HARD_AVOID_CATEGORIES` is where 3 of the 8 categories actually get consumed by routing
 - `services/api/src/isd_api/routers/vehicles.py` — `POST`/`GET /vehicles`; `create_vehicle`'s explicit constructor kwargs carry `Vehicle`'s `length_m`/`width_m`/`height_m`/`weight_kg` (spec §6, now consumed by routing — see `schedule.py`'s `SolverVehicle(...)` for the second gotcha #7 spot this depended on)
 - `services/api/src/isd_api/routers/runs.py` — `POST`/`GET /runs`, `PATCH /runs/{id}` (passenger_count only), `GET /runs/{id}/expected-riders` (spec §4.3 decision support — not the spec's literal stop-shortening behavior, see "Status by phase" Phase 5 entry above)
 - `services/api/src/isd_api/routers/positions.py` — `PUT /drivers/{id}/position` (driver self-report, `driver_router`), `GET /schedule/{date}/fleet-positions` (dispatcher/admin, `fleet_router` — two routers in one file since neither fits the other's prefix); `GET /students/{id}/bus-position` lives in `routers/students.py` instead, since it needs that file's guardian/self RBAC helper
 - `services/api/src/isd_api/models.py` — `VehiclePosition` (ADR 0009: `crew_id` unique, one row per crew, overwritten in place — no breadcrumb trail); `FieldTrip`/`TripStatus` (spec §12: direct `assigned_driver_id`/`assigned_vehicle_id` FKs, not a `Crew` pairing — not run through the solver)
-- `services/api/src/isd_api/routers/field_trips.py` — `POST`/`GET`/`GET {id}`/`PATCH /field-trips`, `GET /field-trips/{id}/conflicts` (same-day-only minute-of-day overlap check against regular `Assignment`s and other `FieldTrip`s — module docstring explains what it deliberately doesn't check and why)
+- `services/api/src/isd_api/routers/field_trips.py` — `POST`/`GET`/`GET {id}`/`PATCH /field-trips`, `GET /field-trips/{id}/conflicts` (`_daily_windows`/`_windows_overlap`, PR #30 — overnight-safe minute-of-day overlap check against regular `Assignment`s and other `FieldTrip`s, split per calendar day the trip spans), `GET /field-trips/observed-duration` (PR #30, spec §20)
+- `services/api/src/isd_api/routers/destination_profiles.py` — `POST`/`GET /destination-profiles` (spec §12.3, PR #30), optionally linked from a `FieldTrip` via `destination_profile_id`
 - `services/web/src/pages/FieldTripsPage.tsx` — `/field-trips`: add/list trips, candidate driver/vehicle + conflict check + assign, status lifecycle `<select>`. `formatDateTime` extracts `HH:MM` via regex, deliberately NOT `new Date(...).getUTCHours()` — see PR #26's real bug fix if tempted to "simplify" this back
 - `services/api/src/isd_api/routers/runs.py` — `GET /runs/observed-duration` (spec §20): reads a completed `Assignment`'s actual start/end off its own `status_changed` `AuditLogEntry` rows rather than any new column — if extending this, resist adding an `actual_start_at`/`actual_end_at` column before checking whether the audit log already has what's needed
-- `services/api/src/isd_api/routers/announcements.py` — `POST`/`GET /announcements` (management, transportation_admin/dispatcher), `GET /announcements/mine` (audience-filtered: driver role → all+driver, student/parent → all+family). Always human-authored (spec §9/§18) — no auto-generation from real events (driver-swaps, delays) exists; that targeting problem is a named follow-up, not built
+- `services/api/src/isd_api/routers/announcements.py` — `POST`/`GET /announcements` (management, transportation_admin/dispatcher), `GET /announcements/mine` (audience-filtered: driver role → all+driver ignoring `school_id`; student/parent → all+family further filtered to their own linked student(s)' school(s) via `_family_school_ids`, `school_id=None` always passes through). `_maybe_create_substitution_announcement` (private helper, called from `crews.py`/`schedule.py`, not its own endpoint) is the one narrow auto-generation exception — see PR #31
 - `services/api/src/isd_api/routers/driver_reports.py` — `POST /drivers/{id}/reports` (spec §9 incident/vehicle-defect reporting, one `DriverReport` entity with a `report_type` discriminator), `GET /reports?service_date=`. `vehicle_id` is resolved from the driver's own `Crew` for that date server-side, never driver-supplied
 - `services/api/src/isd_api/main.py` — `CORSMiddleware` config, router registration (check here first if a new router's routes 404 — it needs an `app.include_router(...)` call too, not just existing as a file)
 - `services/solver/src/isd_solver/scheduler.py` — CP-SAT model, duty-limit pairwise constraints, busy-interval constraints
@@ -489,18 +492,22 @@ PATCH edits that bypass the solver.
 
 ## Exact next step (as of this checkpoint)
 
-Every PR through #29 is **merged**, CI green, local `main` synced
-(commit `c25e9cf`). The user's standing instruction this session was:
-**tackle the entire remaining candidate list, continuing until it's
-done or something new needs deciding.**
+PR #31 (`feat/phase6-announcement-scoping-and-substitution-notices`) is
+open, backend + frontend both green locally (166+8 backend tests,
+71 frontend tests, ruff/format/mypy-modulo-the-numpy-issue below,
+`npm run build`/`lint`/`format:check`/`test` all clean), and manually
+verified live end-to-end (see PR #31's entry above). Watch its CI,
+merge once green, then bump this file's "Key files" header and PR list
+one more time — that's the only thing left mechanical about this PR.
 
-**The entire original candidate list is now done.** Every spec section
-that was ever named as a target this session (§4.3 scoped, §6, §8, §9,
-§12, §13, §18, §20) has real, tested, manually-verified functionality
-behind it. The one genuine decision point the list produced — §7/§10's
-routing-graph work — was asked directly rather than guessed at; the
-user chose to **defer** it (see below), which is itself the resolution,
-not an open question waiting on the next session.
+**Both items from the prior "smaller/optional follow-ups" list are now
+done**: PR #30 shipped field-trip overnight support / destination
+profiles / observed-duration; PR #31 (this one) shipped per-school
+announcement scoping and the one auto-generated substitution-notice
+exception. The user's standing instruction this session was: **tackle
+the entire remaining candidate list, then the smaller follow-ups too,
+finishing them rather than just listing them** — both halves are now
+complete.
 
 **§7 (turn/dead-end safety costs) and §10 (dynamic rerouting) — deferred
 by explicit user choice (2026-09-14), not forgotten.** Both need a
@@ -515,24 +522,25 @@ it up, or if it becomes a real, felt operational pain point they
 mention. Turn-by-turn navigation (the last piece of spec §9) is
 deferred along with it for the same reason.
 
-**What's left is small, optional, non-urgent follow-ups only** — pick
-any one if continuing, or treat the project as caught up:
+**What's left now genuinely needs either a real architecture decision
+or a real external system — nothing "smaller" remains**:
 - The 5 excluded §8 categories (difficult intersection, congestion
   window, vehicle-size restriction, preferred entrance, other) — each
   excluded for a specific principled reason already documented
-  (`docs/domain-model.md`'s "Phase 6 entities").
-- Field trips: overnight trips, destination profiles (§12.3), a
-  duration-learning rollup for `FieldTrip.actual_return_at` (§20).
-- Announcements: per-school scoping, auto-generated substitution
-  notices from real driver-swap events (needs family-targeting logic).
+  (`docs/domain-model.md`'s "Phase 6 entities"); each would need its
+  own new mechanism (soft cost, time-of-day awareness, etc.), not more
+  plumbing on the existing avoid-zone approach.
 - Phase 6 §19 integrations (SIS/HR/SSO/fleet-maintenance) — ADR 0007
-  wrote the shape, nothing actually integrated yet; no phase has
-  needed one badly enough to force the question.
+  wrote the shape, nothing actually integrated yet; needs a real
+  external system (an actual SIS/HR/SSO vendor) to integrate against,
+  not something buildable speculatively.
+- §7/§10 (routing graph) — already decided above, not re-litigated.
 
 If the user gives another open-ended "keep going" instruction with no
-specific target, these are the candidates — otherwise wait for
-explicit direction, since the driving instruction that shaped this
-whole session has now been fully satisfied.
+specific target, say so plainly: the candidate list and its follow-ups
+are exhausted, and anything further is either a deferred decision
+already made, or needs a real external system/vendor this session
+can't stand up on its own — don't invent new scope to keep moving.
 
 ## Environment specifics (this machine)
 
