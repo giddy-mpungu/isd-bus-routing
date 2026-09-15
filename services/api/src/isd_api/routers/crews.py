@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from isd_api.db import get_db
 from isd_api.models import Crew, Driver, Role, User, Vehicle
+from isd_api.routers.announcements import _maybe_create_substitution_announcement
 from isd_api.schemas import CrewCreate, CrewDriverUpdate, CrewRead
 from isd_api.security import require_role
 
@@ -67,7 +68,7 @@ def update_crew_driver(
     crew_id: int,
     payload: CrewDriverUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(*_WRITE_ROLES)),
+    current_user: User = Depends(require_role(*_WRITE_ROLES)),
 ) -> Crew:
     """Repoints an existing crew's driver, keeping its vehicle/date/
     assignments unchanged — spec section 13.2: "Bus 724 should remain
@@ -79,21 +80,29 @@ def update_crew_driver(
     absent driver's day needs splitting across multiple substitutes
     (spec section 13.1 explicitly allows this), that's not what a
     single PATCH here does; each assignment would need its own crew,
-    which needs a free vehicle to pair with."""
+    which needs a free vehicle to pair with.
+
+    A genuine driver change on a crew with existing assignments may
+    fire an auto-generated family-facing substitution notice -- see
+    routers/announcements._maybe_create_substitution_announcement."""
     crew = db.get(Crew, crew_id)
     if crew is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Crew not found")
     if db.get(Driver, payload.driver_id) is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown driver_id")
 
+    driver_changed = payload.driver_id != crew.driver_id
     crew.driver_id = payload.driver_id
     try:
-        db.commit()
+        db.flush()
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This driver already has a crew for that service_date",
         ) from exc
+    if driver_changed:
+        _maybe_create_substitution_announcement(db, crew, current_user)
+    db.commit()
     db.refresh(crew)
     return crew

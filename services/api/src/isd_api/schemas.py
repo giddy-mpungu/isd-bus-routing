@@ -523,6 +523,7 @@ class AnnouncementCreate(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     category: AnnouncementCategory = AnnouncementCategory.GENERAL
     audience: AnnouncementAudience
+    school_id: int | None = None
 
 
 class AnnouncementRead(BaseModel):
@@ -531,6 +532,7 @@ class AnnouncementRead(BaseModel):
     message: str
     category: AnnouncementCategory
     audience: AnnouncementAudience
+    school_id: int | None
     created_at: datetime
 
 

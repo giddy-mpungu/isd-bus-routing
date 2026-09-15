@@ -640,25 +640,30 @@ class FieldTrip(Base):
 
 
 class Announcement(Base):
-    """spec sections 9/18: a dispatcher-authored notice for drivers
-    and/or families -- covers "Messages from dispatch" (section 9),
-    and "Transportation announcements" / "Delay notifications" / "Bus
-    substitution notices" / "Route-change notices" (section 18).
+    """spec sections 9/18: a notice for drivers and/or families --
+    covers "Messages from dispatch" (section 9), and "Transportation
+    announcements" / "Delay notifications" / "Bus substitution
+    notices" / "Route-change notices" (section 18).
 
-    Deliberately always human-authored, never auto-generated: this
-    system has no ETA-calculation engine (no route geometry exists to
-    compute one against, ADR 0001) and no automatic event-to-
-    notification pipeline, so a "delay" or "substitution" category
-    doesn't mean this system detected one -- it means a dispatcher
-    chose to tag a message that way. Auto-generating a substitution
-    notice from a real driver-swap event (spec section 13) is a named,
-    plausible follow-up, not built here: it would need to resolve
-    which families are actually affected by one specific run's crew
-    change, a bigger targeting problem than this first slice takes on.
+    **Almost always human-authored, with one narrow, principled
+    exception**: this system has no ETA-calculation engine (no route
+    geometry exists to compute one against, ADR 0001), so a "delay"
+    category notice always means a dispatcher chose to tag a message
+    that way, never an automatic detection. The one exception is
+    "substitution": when a genuine driver/vehicle swap happens on a
+    crew with an already-solved assignment (spec section 13), and the
+    affected school+date+direction is unambiguous (exactly one Run,
+    the same "don't guess" rule PR #23's expected-riders and
+    `GET /students/{id}/bus-position` already established), this system
+    auto-generates a family-facing substitution notice -- see
+    `routers/announcements._maybe_create_substitution_announcement`.
+    When that affected leg is ambiguous, nothing is auto-generated; a
+    dispatcher can still post one manually.
 
-    District-wide only in this first slice -- no per-school scoping
-    (no `school_id`), named as a deferred, small follow-up rather than
-    built speculatively before any UI actually needs it."""
+    `school_id` scopes an announcement to one school's families (null
+    means district-wide) -- meaningless for `audience=driver`, since a
+    driver isn't tied to one school, so it's ignored for that
+    audience."""
 
     __tablename__ = "announcements"
 
@@ -672,7 +677,10 @@ class Announcement(Base):
     audience: Mapped[AnnouncementAudience] = mapped_column(
         SAEnum(AnnouncementAudience, native_enum=False, length=10), nullable=False
     )
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    school: Mapped[School | None] = relationship()
 
 
 class AuditLogEntry(Base):

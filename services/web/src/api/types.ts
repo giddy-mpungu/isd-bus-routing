@@ -305,6 +305,7 @@ export interface Announcement {
   message: string
   category: AnnouncementCategory
   audience: AnnouncementAudience
+  school_id: number | null
   created_at: string
 }
 
@@ -312,6 +313,7 @@ export interface AnnouncementCreate {
   message: string
   category?: AnnouncementCategory
   audience: AnnouncementAudience
+  school_id?: number | null
 }
 
 // spec §9: driver-app incident reporting / vehicle defect reporting.
