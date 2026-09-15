@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { Driver, FieldTrip, Qualification, TripStatus, Vehicle } from '../api/types'
+import type {
+  DestinationProfile,
+  Driver,
+  FieldTrip,
+  FieldTripObservedDuration,
+  Qualification,
+  TripStatus,
+  Vehicle,
+} from '../api/types'
 
 const TRIP_STATUSES: TripStatus[] = [
   'requested',
@@ -17,15 +25,26 @@ function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-function formatDateTime(isoLike: string): string {
+function formatDateTimeParts(isoLike: string): { date: string; time: string } {
   // departure_at/expected_return_at are naive wall-clock timestamps
   // (no timezone offset, matching the backend's minute-of-day
   // conflict-detection design) -- extracting the digits directly
   // avoids `Date` parsing them as browser-local and then re-reading
   // them back out as UTC, which would silently apply a spurious
   // timezone shift.
-  const match = /T(\d{2}):(\d{2})/.exec(isoLike)
-  return match ? `${match[1]}:${match[2]}` : isoLike
+  const match = /(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})/.exec(isoLike)
+  return match ? { date: match[1], time: `${match[2]}:${match[3]}` } : { date: '', time: isoLike }
+}
+
+function formatTripWindow(departureAt: string, expectedReturnAt: string): string {
+  const dep = formatDateTimeParts(departureAt)
+  const ret = formatDateTimeParts(expectedReturnAt)
+  if (dep.date === ret.date) {
+    return `${dep.time}–${ret.time}`
+  }
+  // Overnight (multi-day) trip -- show the date on both ends so it's
+  // clear this isn't a same-day window.
+  return `${dep.date} ${dep.time} – ${ret.date} ${ret.time}`
 }
 
 export function FieldTripsPage() {
@@ -34,21 +53,25 @@ export function FieldTripsPage() {
   const [drivers, setDrivers] = useState<Driver[]>([])
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [qualifications, setQualifications] = useState<Qualification[]>([])
+  const [destinationProfiles, setDestinationProfiles] = useState<DestinationProfile[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const loadAll = useCallback(async (date: string) => {
     setErrorMessage(null)
     try {
-      const [tripsData, driversData, vehiclesData, qualificationsData] = await Promise.all([
-        api.getFieldTrips(date),
-        api.getDrivers(),
-        api.getVehicles(),
-        api.getQualifications(),
-      ])
+      const [tripsData, driversData, vehiclesData, qualificationsData, destinationProfilesData] =
+        await Promise.all([
+          api.getFieldTrips(date),
+          api.getDrivers(),
+          api.getVehicles(),
+          api.getQualifications(),
+          api.getDestinationProfiles(),
+        ])
       setTrips(tripsData)
       setDrivers(driversData)
       setVehicles(vehiclesData)
       setQualifications(qualificationsData)
+      setDestinationProfiles(destinationProfilesData)
     } catch (err) {
       setErrorMessage(err instanceof ApiError ? err.message : 'Failed to load field trips.')
     }
@@ -65,6 +88,7 @@ export function FieldTripsPage() {
   const [requestingParty, setRequestingParty] = useState('')
   const [origin, setOrigin] = useState('')
   const [destination, setDestination] = useState('')
+  const [destinationProfileId, setDestinationProfileId] = useState('')
   const [departureAt, setDepartureAt] = useState('')
   const [expectedReturnAt, setExpectedReturnAt] = useState('')
   const [passengerCount, setPassengerCount] = useState('0')
@@ -96,6 +120,7 @@ export function FieldTripsPage() {
         requesting_party: requestingParty,
         origin,
         destination,
+        destination_profile_id: destinationProfileId ? Number(destinationProfileId) : undefined,
         departure_at: departureAt,
         expected_return_at: expectedReturnAt,
         passenger_count: Number(passengerCount),
@@ -107,6 +132,7 @@ export function FieldTripsPage() {
       setRequestingParty('')
       setOrigin('')
       setDestination('')
+      setDestinationProfileId('')
       setDepartureAt('')
       setExpectedReturnAt('')
       setPassengerCount('0')
@@ -114,11 +140,91 @@ export function FieldTripsPage() {
       setBusAssistantName('')
       setSpecialInstructions('')
       setQualCodes(new Set())
+      setObservedDuration(null)
       await loadAll(departureDate)
     } catch (err) {
       setCreateError(err instanceof ApiError ? err.message : 'Failed to create field trip.')
     } finally {
       setIsSavingTrip(false)
+    }
+  }
+
+  // --- Observed duration (spec section 20, applied to field trips) ---
+  const [observedDuration, setObservedDuration] = useState<FieldTripObservedDuration | null>(null)
+  const [observedDurationError, setObservedDurationError] = useState<string | null>(null)
+  const [isCheckingObservedDuration, setIsCheckingObservedDuration] = useState(false)
+
+  async function handleCheckObservedDuration() {
+    setObservedDurationError(null)
+    setObservedDuration(null)
+    if (!destination) {
+      setObservedDurationError('Enter a destination first.')
+      return
+    }
+    setIsCheckingObservedDuration(true)
+    try {
+      setObservedDuration(
+        await api.getFieldTripObservedDuration(
+          destinationProfileId
+            ? { destinationProfileId: Number(destinationProfileId) }
+            : { destination },
+        ),
+      )
+    } catch (err) {
+      setObservedDurationError(
+        err instanceof ApiError ? err.message : 'Failed to load observed duration.',
+      )
+    } finally {
+      setIsCheckingObservedDuration(false)
+    }
+  }
+
+  function handleUseAverageForReturn() {
+    if (!departureAt || observedDuration?.average_actual_minutes == null) {
+      return
+    }
+    const departure = new Date(departureAt)
+    departure.setMinutes(
+      departure.getMinutes() + Math.round(observedDuration.average_actual_minutes),
+    )
+    const pad = (n: number) => String(n).padStart(2, '0')
+    setExpectedReturnAt(
+      `${departure.getFullYear()}-${pad(departure.getMonth() + 1)}-${pad(departure.getDate())}` +
+        `T${pad(departure.getHours())}:${pad(departure.getMinutes())}`,
+    )
+  }
+
+  // --- Add destination profile (spec section 12.3) ---
+  const [profileName, setProfileName] = useState('')
+  const [profileEntrance, setProfileEntrance] = useState('')
+  const [profileParking, setProfileParking] = useState('')
+  const [profileTurnRestrictions, setProfileTurnRestrictions] = useState('')
+  const [profileDriverNotes, setProfileDriverNotes] = useState('')
+  const [profileError, setProfileError] = useState<string | null>(null)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+
+  async function handleCreateProfile(event: FormEvent) {
+    event.preventDefault()
+    setProfileError(null)
+    setIsSavingProfile(true)
+    try {
+      await api.createDestinationProfile({
+        name: profileName,
+        approved_entrance: profileEntrance || undefined,
+        parking_notes: profileParking || undefined,
+        turn_restrictions: profileTurnRestrictions || undefined,
+        driver_notes: profileDriverNotes || undefined,
+      })
+      setProfileName('')
+      setProfileEntrance('')
+      setProfileParking('')
+      setProfileTurnRestrictions('')
+      setProfileDriverNotes('')
+      await loadAll(departureDate)
+    } catch (err) {
+      setProfileError(err instanceof ApiError ? err.message : 'Failed to create profile.')
+    } finally {
+      setIsSavingProfile(false)
     }
   }
 
@@ -220,9 +326,7 @@ export function FieldTripsPage() {
               <div className="field-trip-summary">
                 {trip.requesting_party} — {trip.origin} → {trip.destination}
                 {' ('}
-                {formatDateTime(trip.departure_at)}
-                {'–'}
-                {formatDateTime(trip.expected_return_at)}
+                {formatTripWindow(trip.departure_at, trip.expected_return_at)}
                 {') — '}
                 {trip.passenger_count} passengers — status:
                 <select
@@ -347,6 +451,23 @@ export function FieldTripsPage() {
               onChange={(event) => setDestination(event.target.value)}
               required
             />
+            {destinationProfiles.length > 0 && (
+              <>
+                <label htmlFor="trip-destination-profile">Destination profile (optional)</label>
+                <select
+                  id="trip-destination-profile"
+                  value={destinationProfileId}
+                  onChange={(event) => setDestinationProfileId(event.target.value)}
+                >
+                  <option value="">None</option>
+                  {destinationProfiles.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
             <label htmlFor="trip-departure">Departure</label>
             <input
               id="trip-departure"
@@ -355,6 +476,43 @@ export function FieldTripsPage() {
               onChange={(event) => setDepartureAt(event.target.value)}
               required
             />
+            <button
+              type="button"
+              onClick={() => void handleCheckObservedDuration()}
+              disabled={isCheckingObservedDuration}
+            >
+              {isCheckingObservedDuration ? 'Checking…' : 'Check observed duration'}
+            </button>
+            {observedDurationError && (
+              <p role="alert" className="error">
+                {observedDurationError}
+              </p>
+            )}
+            {observedDuration && (
+              <div className="observed-duration-panel">
+                {observedDuration.sample_count === 0 ? (
+                  <p className="status">No completed trips yet for this destination.</p>
+                ) : (
+                  <>
+                    <p>
+                      {observedDuration.sample_count} completed trip(s) — average{' '}
+                      {observedDuration.average_actual_minutes} min, most recent{' '}
+                      {observedDuration.most_recent_actual_minutes} min (
+                      {observedDuration.most_recent_departure_date})
+                    </p>
+                    {observedDuration.average_actual_minutes != null && (
+                      <button
+                        type="button"
+                        onClick={handleUseAverageForReturn}
+                        disabled={!departureAt}
+                      >
+                        Use average to suggest return time
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
             <label htmlFor="trip-expected-return">Expected return</label>
             <input
               id="trip-expected-return"
@@ -418,6 +576,69 @@ export function FieldTripsPage() {
             </button>
           </form>
         </div>
+      </section>
+
+      <section className="destination-profiles-section">
+        <h2>Destination profiles</h2>
+        {destinationProfiles.length === 0 ? (
+          <p className="status">No destination profiles yet.</p>
+        ) : (
+          <ul>
+            {destinationProfiles.map((p) => (
+              <li key={p.id}>
+                {p.name}
+                {p.approved_entrance && ` — entrance: ${p.approved_entrance}`}
+                {p.parking_notes && ` — parking: ${p.parking_notes}`}
+              </li>
+            ))}
+          </ul>
+        )}
+        <form onSubmit={(event) => void handleCreateProfile(event)}>
+          <label htmlFor="profile-name">Name</label>
+          <input
+            id="profile-name"
+            type="text"
+            value={profileName}
+            onChange={(event) => setProfileName(event.target.value)}
+            required
+          />
+          <label htmlFor="profile-entrance">Approved entrance</label>
+          <input
+            id="profile-entrance"
+            type="text"
+            value={profileEntrance}
+            onChange={(event) => setProfileEntrance(event.target.value)}
+          />
+          <label htmlFor="profile-parking">Parking notes</label>
+          <input
+            id="profile-parking"
+            type="text"
+            value={profileParking}
+            onChange={(event) => setProfileParking(event.target.value)}
+          />
+          <label htmlFor="profile-turn-restrictions">Turn restrictions</label>
+          <input
+            id="profile-turn-restrictions"
+            type="text"
+            value={profileTurnRestrictions}
+            onChange={(event) => setProfileTurnRestrictions(event.target.value)}
+          />
+          <label htmlFor="profile-driver-notes">Driver notes</label>
+          <input
+            id="profile-driver-notes"
+            type="text"
+            value={profileDriverNotes}
+            onChange={(event) => setProfileDriverNotes(event.target.value)}
+          />
+          {profileError && (
+            <p role="alert" className="error">
+              {profileError}
+            </p>
+          )}
+          <button type="submit" disabled={isSavingProfile}>
+            {isSavingProfile ? 'Saving…' : 'Add destination profile'}
+          </button>
+        </form>
       </section>
     </main>
   )

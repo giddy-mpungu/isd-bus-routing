@@ -366,11 +366,35 @@ export interface BusPosition {
 export type TripStatus =
   'requested' | 'approved' | 'assigned' | 'dispatched' | 'in_progress' | 'returning' | 'completed'
 
+export interface DestinationProfile {
+  id: number
+  name: string
+  location_lat: number | null
+  location_lon: number | null
+  approved_entrance: string | null
+  parking_notes: string | null
+  turn_restrictions: string | null
+  driver_notes: string | null
+  created_at: string
+}
+
+export interface DestinationProfileCreate {
+  name: string
+  location_lat?: number
+  location_lon?: number
+  approved_entrance?: string
+  parking_notes?: string
+  turn_restrictions?: string
+  driver_notes?: string
+}
+
 export interface FieldTrip {
   id: number
   requesting_party: string
   origin: string
   destination: string
+  destination_profile_id: number | null
+  destination_profile: DestinationProfile | null
   departure_at: string
   expected_return_at: string
   actual_return_at: string | null
@@ -388,6 +412,7 @@ export interface FieldTripCreate {
   requesting_party: string
   origin: string
   destination: string
+  destination_profile_id?: number
   departure_at: string
   expected_return_at: string
   passenger_count: number
@@ -401,10 +426,18 @@ export interface FieldTripUpdate {
   status?: TripStatus
   assigned_driver_id?: number
   assigned_vehicle_id?: number
+  destination_profile_id?: number
   expected_return_at?: string
   actual_return_at?: string
 }
 
 export interface FieldTripConflictCheck {
   conflicts: string[]
+}
+
+export interface FieldTripObservedDuration {
+  sample_count: number
+  average_actual_minutes: number | null
+  most_recent_actual_minutes: number | null
+  most_recent_departure_date: string | null
 }

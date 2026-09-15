@@ -425,14 +425,38 @@ class BusPositionRead(BaseModel):
     vehicle_label: str | None = None
 
 
+class DestinationProfileCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    location_lat: float | None = Field(default=None, ge=-90, le=90)
+    location_lon: float | None = Field(default=None, ge=-180, le=180)
+    approved_entrance: str | None = Field(default=None, max_length=500)
+    parking_notes: str | None = Field(default=None, max_length=500)
+    turn_restrictions: str | None = Field(default=None, max_length=500)
+    driver_notes: str | None = Field(default=None, max_length=1000)
+
+
+class DestinationProfileRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    location_lat: float | None
+    location_lon: float | None
+    approved_entrance: str | None
+    parking_notes: str | None
+    turn_restrictions: str | None
+    driver_notes: str | None
+    created_at: datetime
+
+
 class FieldTripCreate(BaseModel):
-    """spec section 12. Deliberately same-day only for this first slice
-    (see routers/field_trips.py) -- validated server-side, not just
-    documented here."""
+    """spec section 12. Supports multi-day (overnight) trips -- see
+    routers/field_trips.py's `_daily_windows` for how conflict
+    detection handles a trip spanning more than one calendar date."""
 
     requesting_party: str = Field(min_length=1, max_length=255)
     origin: str = Field(min_length=1, max_length=255)
     destination: str = Field(min_length=1, max_length=255)
+    destination_profile_id: int | None = None
     departure_at: datetime
     expected_return_at: datetime
     passenger_count: int = Field(ge=0, default=0)
@@ -448,6 +472,8 @@ class FieldTripRead(BaseModel):
     requesting_party: str
     origin: str
     destination: str
+    destination_profile_id: int | None
+    destination_profile: DestinationProfileRead | None
     departure_at: datetime
     expected_return_at: datetime
     actual_return_at: datetime | None
@@ -471,12 +497,26 @@ class FieldTripUpdate(BaseModel):
     status: TripStatus | None = None
     assigned_driver_id: int | None = None
     assigned_vehicle_id: int | None = None
+    destination_profile_id: int | None = None
     expected_return_at: datetime | None = None
     actual_return_at: datetime | None = None
 
 
 class FieldTripConflictCheck(BaseModel):
     conflicts: list[str]
+
+
+class FieldTripObservedDurationRead(BaseModel):
+    """spec section 20 applied to field trips: like
+    ObservedRunDurationRead, but a completed FieldTrip already stores
+    its own actual start/end (departure_at, actual_return_at) directly
+    -- no audit-log lookup needed, since (unlike a regular Assignment)
+    that data was never split across separate status-change events."""
+
+    sample_count: int
+    average_actual_minutes: float | None
+    most_recent_actual_minutes: int | None
+    most_recent_departure_date: date | None
 
 
 class AnnouncementCreate(BaseModel):
