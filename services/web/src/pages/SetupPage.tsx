@@ -305,6 +305,8 @@ export function SetupPage() {
   const [geoRestrictedDimension, setGeoRestrictedDimension] =
     useState<RestrictedVehicleDimension>('height_m')
   const [geoMaxAllowedValue, setGeoMaxAllowedValue] = useState('')
+  // Only meaningful for category=preferred_entrance.
+  const [geoSchoolId, setGeoSchoolId] = useState('')
   const [geoError, setGeoError] = useState<string | null>(null)
   const [isSavingGeo, setIsSavingGeo] = useState(false)
 
@@ -324,6 +326,7 @@ export function SetupPage() {
           geoCategory === 'vehicle_size_restricted' ? geoRestrictedDimension : null,
         max_allowed_value:
           geoCategory === 'vehicle_size_restricted' ? Number(geoMaxAllowedValue) : null,
+        school_id: geoCategory === 'preferred_entrance' ? Number(geoSchoolId) : null,
       })
       setGeoLat('')
       setGeoLon('')
@@ -333,6 +336,7 @@ export function SetupPage() {
       setGeoWindowEnd('')
       setGeoRestrictedDimension('height_m')
       setGeoMaxAllowedValue('')
+      setGeoSchoolId('')
       await loadAll()
     } catch (err) {
       setGeoError(err instanceof ApiError ? err.message : 'Failed to create override.')
@@ -723,6 +727,8 @@ export function SetupPage() {
                 ` — ${o.window_start_minute}-${o.window_end_minute} min`}
               {o.restricted_dimension != null &&
                 ` — max ${o.restricted_dimension.replace(/_/g, ' ')} ${o.max_allowed_value}`}
+              {o.school_id != null &&
+                ` — ${schoolsById.get(o.school_id)?.name ?? `School ${o.school_id}`}`}
             </li>
           ))}
         </ul>
@@ -804,6 +810,24 @@ export function SetupPage() {
                   onChange={(event) => setGeoMaxAllowedValue(event.target.value)}
                   required
                 />
+              </>
+            )}
+            {geoCategory === 'preferred_entrance' && (
+              <>
+                <label htmlFor="geo-school">School</label>
+                <select
+                  id="geo-school"
+                  value={geoSchoolId}
+                  onChange={(event) => setGeoSchoolId(event.target.value)}
+                  required
+                >
+                  <option value="">Select a school</option>
+                  {schools.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
               </>
             )}
             <label htmlFor="geo-note">Note</label>

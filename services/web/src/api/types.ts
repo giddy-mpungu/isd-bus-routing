@@ -297,6 +297,10 @@ export interface GeographicKnowledgeOverride {
   // Required together, and only meaningful, for category=vehicle_size_restricted.
   restricted_dimension: RestrictedVehicleDimension | null
   max_allowed_value: number | null
+  // Required, and only meaningful, for category=preferred_entrance --
+  // this override's own location_lat/location_lon becomes that
+  // school's regular runs' job location, instead of the school's own.
+  school_id: number | null
   created_at: string
 }
 
@@ -309,6 +313,7 @@ export interface GeographicKnowledgeOverrideCreate {
   window_end_minute?: number | null
   restricted_dimension?: RestrictedVehicleDimension | null
   max_allowed_value?: number | null
+  school_id?: number | null
 }
 
 // spec §9/§18: dispatcher-authored notices for drivers and/or families.

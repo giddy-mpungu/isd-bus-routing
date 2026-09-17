@@ -441,12 +441,23 @@ class GeographicKnowledgeOverride(Base):
     DriverAbsence.
 
     `window_start_minute`/`window_end_minute` (required together, and
-    only meaningful, for CONGESTION_WINDOW) and `restricted_dimension`/
+    only meaningful, for CONGESTION_WINDOW), `restricted_dimension`/
     `max_allowed_value` (required together, and only meaningful, for
-    VEHICLE_SIZE_RESTRICTED) are the routing-wiring fields for those
-    two categories -- see routers/schedule.py for how they're actually
-    applied to a solve. Every other category leaves all four null;
-    schemas.GeographicKnowledgeOverrideCreate enforces this pairing."""
+    VEHICLE_SIZE_RESTRICTED), and `school_id` (required, and only
+    meaningful, for PREFERRED_ENTRANCE) are the routing-wiring fields
+    for those three categories -- see routers/schedule.py for how
+    they're actually applied to a solve. Every other category leaves
+    all five null; schemas.GeographicKnowledgeOverrideCreate enforces
+    this pairing.
+
+    PREFERRED_ENTRANCE's own `location_lat`/`location_lon` ARE the
+    entrance's coordinates -- linking it to a `school_id` says which
+    school's regular runs should route to that point instead of the
+    school's own centroid (spec section 8's own example, "use the
+    north gate for field trips," reinterpreted for the runs this
+    system's solver actually schedules; field trips use
+    `DestinationProfile.approved_entrance` instead, a separate
+    free-text field, since field trips are never solved by CP-SAT)."""
 
     __tablename__ = "geographic_knowledge_overrides"
 
@@ -463,7 +474,10 @@ class GeographicKnowledgeOverride(Base):
         SAEnum(RestrictedVehicleDimension, native_enum=False, length=16), nullable=True
     )
     max_allowed_value: Mapped[float | None] = mapped_column(nullable=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    school: Mapped[School | None] = relationship()
 
 
 class Crew(Base):
