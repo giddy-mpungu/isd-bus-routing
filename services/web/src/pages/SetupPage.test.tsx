@@ -135,6 +135,10 @@ describe('SetupPage', () => {
       location_lon: -95.4,
       category: 'frequent_flooding',
       note: 'Elm St floods after heavy rain.',
+      window_start_minute: null,
+      window_end_minute: null,
+      restricted_dimension: null,
+      max_allowed_value: null,
       created_at: '2026-09-08T12:00:00Z',
     })
     renderAsRole(dispatcherUser)
@@ -154,9 +158,95 @@ describe('SetupPage', () => {
         location_lon: -95.4,
         category: 'frequent_flooding',
         note: 'Elm St floods after heavy rain.',
+        window_start_minute: null,
+        window_end_minute: null,
+        restricted_dimension: null,
+        max_allowed_value: null,
       }),
     )
     expect(api.getGeographicKnowledgeOverrides).toHaveBeenCalledTimes(2) // initial load + reload after create
+  })
+
+  it('creating a congestion_window override sends its time range and no size-restriction fields', async () => {
+    vi.mocked(api.createGeographicKnowledgeOverride).mockResolvedValue({
+      id: 2,
+      location_lat: 29.7,
+      location_lon: -95.4,
+      category: 'congestion_window',
+      note: 'Backs up during morning drop-off.',
+      window_start_minute: 420,
+      window_end_minute: 480,
+      restricted_dimension: null,
+      max_allowed_value: null,
+      created_at: '2026-09-17T12:00:00Z',
+    })
+    renderAsRole(dispatcherUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Override latitude'), '29.7')
+    await user.type(screen.getByLabelText('Override longitude'), '-95.4')
+    await user.selectOptions(screen.getByLabelText('Category'), 'congestion_window')
+    await user.type(screen.getByLabelText('Congestion window start (minute of day)'), '420')
+    await user.type(screen.getByLabelText('Congestion window end (minute of day)'), '480')
+    await user.type(screen.getByLabelText('Note'), 'Backs up during morning drop-off.')
+    await user.click(screen.getByRole('button', { name: 'Add override' }))
+
+    await waitFor(() =>
+      expect(api.createGeographicKnowledgeOverride).toHaveBeenCalledWith({
+        location_lat: 29.7,
+        location_lon: -95.4,
+        category: 'congestion_window',
+        note: 'Backs up during morning drop-off.',
+        window_start_minute: 420,
+        window_end_minute: 480,
+        restricted_dimension: null,
+        max_allowed_value: null,
+      }),
+    )
+  })
+
+  it('creating a vehicle_size_restricted override sends its dimension/threshold and no window fields', async () => {
+    vi.mocked(api.createGeographicKnowledgeOverride).mockResolvedValue({
+      id: 3,
+      location_lat: 29.7,
+      location_lon: -95.4,
+      category: 'vehicle_size_restricted',
+      note: 'Covered bridge has a 3.0m height limit.',
+      window_start_minute: null,
+      window_end_minute: null,
+      restricted_dimension: 'height_m',
+      max_allowed_value: 3.0,
+      created_at: '2026-09-17T12:00:00Z',
+    })
+    renderAsRole(dispatcherUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Override latitude'), '29.7')
+    await user.type(screen.getByLabelText('Override longitude'), '-95.4')
+    await user.selectOptions(screen.getByLabelText('Category'), 'vehicle_size_restricted')
+    await user.selectOptions(screen.getByLabelText('Restricted dimension'), 'height_m')
+    await user.type(screen.getByLabelText('Max allowed value'), '3')
+    await user.type(screen.getByLabelText('Note'), 'Covered bridge has a 3.0m height limit.')
+    await user.click(screen.getByRole('button', { name: 'Add override' }))
+
+    await waitFor(() =>
+      expect(api.createGeographicKnowledgeOverride).toHaveBeenCalledWith({
+        location_lat: 29.7,
+        location_lon: -95.4,
+        category: 'vehicle_size_restricted',
+        note: 'Covered bridge has a 3.0m height limit.',
+        window_start_minute: null,
+        window_end_minute: null,
+        restricted_dimension: 'height_m',
+        max_allowed_value: 3,
+      }),
+    )
   })
 
   it('creating an announcement calls the API with message/category/audience and reloads', async () => {

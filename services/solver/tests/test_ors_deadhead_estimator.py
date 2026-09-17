@@ -13,6 +13,7 @@ import pytest
 from isd_solver.domain import (
     DeadheadEstimationError,
     Location,
+    SizeRestriction,
     Vehicle,
     ors_deadhead_estimator,
 )
@@ -233,3 +234,89 @@ def test_rejects_empty_api_key():
 def test_rejects_empty_base_url():
     with pytest.raises(ValueError):
         ors_deadhead_estimator(api_key="test-key", base_url="")
+
+
+def test_size_restriction_avoid_zone_applies_only_to_a_vehicle_that_violates_it():
+    seen = []
+
+    def fake_http_post(url: str, json_body: dict, headers: dict, timeout_seconds: float) -> dict:
+        seen.append(json_body)
+        return {"routes": [{"summary": {"duration": 60}}]}
+
+    restriction = SizeRestriction(
+        location=Location(lat=29.75, lon=-95.45), dimension="height_m", max_allowed=3.0
+    )
+    estimate = ors_deadhead_estimator(
+        api_key="test-key", http_post=fake_http_post, size_restrictions=(restriction,)
+    )
+    a = Location(lat=29.70, lon=-95.40)
+    b = Location(lat=29.72, lon=-95.42)
+
+    tall_bus = Vehicle(id="tall", height_m=3.5)
+    estimate(a, b, tall_bus)
+    assert seen[-1]["options"]["avoid_polygons"]["type"] == "MultiPolygon"
+    assert len(seen[-1]["options"]["avoid_polygons"]["coordinates"]) == 1
+
+    # short_bus's own height_m is still known and < the 3.0m threshold, so
+    # it does NOT violate the restriction and gets no avoid_polygons --
+    # it still sends its own height as a spec section 6 profile_params
+    # restriction (a separate, unrelated feature), just no avoid-zone.
+    short_bus = Vehicle(id="short", height_m=2.8)
+    estimate(a, b, short_bus)
+    assert "avoid_polygons" not in seen[-1]["options"]
+    assert seen[-1]["options"]["profile_params"]["restrictions"]["height"] == 2.8
+
+
+def test_size_restriction_avoid_zone_merges_with_the_always_on_avoid_polygons():
+    seen = {}
+
+    def fake_http_post(url: str, json_body: dict, headers: dict, timeout_seconds: float) -> dict:
+        seen["json_body"] = json_body
+        return {"routes": [{"summary": {"duration": 60}}]}
+
+    always_on = {
+        "type": "MultiPolygon",
+        "coordinates": [[[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]]],
+    }
+    restriction = SizeRestriction(
+        location=Location(lat=29.75, lon=-95.45), dimension="height_m", max_allowed=3.0
+    )
+    estimate = ors_deadhead_estimator(
+        api_key="test-key",
+        http_post=fake_http_post,
+        avoid_polygons=always_on,
+        size_restrictions=(restriction,),
+    )
+    estimate(
+        Location(lat=29.70, lon=-95.40),
+        Location(lat=29.72, lon=-95.42),
+        Vehicle(id="tall", height_m=3.5),
+    )
+
+    merged = seen["json_body"]["options"]["avoid_polygons"]
+    assert merged["type"] == "MultiPolygon"
+    assert len(merged["coordinates"]) == 2  # the always-on ring plus the size-restricted one
+
+
+def test_size_restriction_cache_does_not_confuse_a_violating_and_non_violating_vehicle():
+    """Same guard as the vehicle-restriction-signature cache test above,
+    but for the newer per-call size-restriction dimension: two vehicles
+    at the same two points, one triggering the avoid-zone and one not,
+    must not share a cache entry."""
+    durations = iter([120, 180])
+
+    def fake_http_post(url: str, json_body: dict, headers: dict, timeout_seconds: float) -> dict:
+        return {"routes": [{"summary": {"duration": next(durations)}}]}
+
+    restriction = SizeRestriction(
+        location=Location(lat=29.75, lon=-95.45), dimension="height_m", max_allowed=3.0
+    )
+    estimate = ors_deadhead_estimator(
+        api_key="test-key", http_post=fake_http_post, size_restrictions=(restriction,)
+    )
+    a = Location(lat=29.70, lon=-95.40)
+    b = Location(lat=29.72, lon=-95.42)
+
+    assert estimate(a, b, Vehicle(id="short", height_m=2.8)) == 2
+    assert estimate(a, b, Vehicle(id="tall", height_m=3.5)) == 3
+    assert estimate(a, b, Vehicle(id="short2", height_m=2.8)) == 2  # same signature -> cache hit

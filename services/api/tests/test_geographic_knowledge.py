@@ -101,3 +101,117 @@ def test_rejects_invalid_category(client, admin_headers):
         json={**_PAYLOAD, "category": "not_a_real_category"},
     )
     assert response.status_code == 422
+
+
+def test_congestion_window_round_trips_with_its_time_range(client, admin_headers):
+    response = client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={
+            "location_lat": 29.70,
+            "location_lon": -95.40,
+            "category": "congestion_window",
+            "note": "Main St backs up during morning drop-off.",
+            "window_start_minute": 420,
+            "window_end_minute": 480,
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["window_start_minute"] == 420
+    assert body["window_end_minute"] == 480
+    assert body["restricted_dimension"] is None
+    assert body["max_allowed_value"] is None
+
+
+def test_congestion_window_requires_both_window_fields(client, admin_headers):
+    response = client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={
+            **_PAYLOAD,
+            "category": "congestion_window",
+            "window_start_minute": 420,
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_congestion_window_rejects_start_after_end(client, admin_headers):
+    response = client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={
+            **_PAYLOAD,
+            "category": "congestion_window",
+            "window_start_minute": 480,
+            "window_end_minute": 420,
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_window_fields_are_rejected_for_a_non_congestion_category(client, admin_headers):
+    response = client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={**_PAYLOAD, "window_start_minute": 420, "window_end_minute": 480},
+    )
+    assert response.status_code == 400
+
+
+def test_vehicle_size_restricted_round_trips_with_its_threshold(client, admin_headers):
+    response = client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={
+            "location_lat": 29.70,
+            "location_lon": -95.40,
+            "category": "vehicle_size_restricted",
+            "note": "Covered bridge on Elm St has a 3.0m height limit.",
+            "restricted_dimension": "height_m",
+            "max_allowed_value": 3.0,
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["restricted_dimension"] == "height_m"
+    assert body["max_allowed_value"] == 3.0
+    assert body["window_start_minute"] is None
+    assert body["window_end_minute"] is None
+
+
+def test_vehicle_size_restricted_requires_both_threshold_fields(client, admin_headers):
+    response = client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={
+            **_PAYLOAD,
+            "category": "vehicle_size_restricted",
+            "restricted_dimension": "height_m",
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_threshold_fields_are_rejected_for_a_non_size_restricted_category(client, admin_headers):
+    response = client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={**_PAYLOAD, "restricted_dimension": "height_m", "max_allowed_value": 3.0},
+    )
+    assert response.status_code == 400
+
+
+def test_rejects_non_positive_max_allowed_value(client, admin_headers):
+    response = client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={
+            **_PAYLOAD,
+            "category": "vehicle_size_restricted",
+            "restricted_dimension": "height_m",
+            "max_allowed_value": 0,
+        },
+    )
+    assert response.status_code == 422

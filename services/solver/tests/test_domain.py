@@ -5,6 +5,7 @@ from isd_solver.domain import (
     Driver,
     Job,
     Location,
+    SizeRestriction,
     TimeWindow,
     Vehicle,
     straight_line_deadhead_estimator,
@@ -132,3 +133,36 @@ def test_deadhead_estimator_zero_for_same_location():
 def test_deadhead_estimator_rejects_non_positive_speed():
     with pytest.raises(ValueError):
         straight_line_deadhead_estimator(average_speed_kmh=0)
+
+
+def test_size_restriction_rejects_unknown_dimension():
+    with pytest.raises(ValueError):
+        SizeRestriction(
+            location=Location(lat=29.7, lon=-95.4), dimension="turning_radius_m", max_allowed=5.0
+        )
+
+
+def test_size_restriction_rejects_non_positive_max_allowed():
+    with pytest.raises(ValueError):
+        SizeRestriction(location=Location(lat=29.7, lon=-95.4), dimension="height_m", max_allowed=0)
+
+
+def test_size_restriction_violated_by_a_vehicle_exceeding_the_threshold():
+    restriction = SizeRestriction(
+        location=Location(lat=29.7, lon=-95.4), dimension="height_m", max_allowed=3.0
+    )
+    tall_bus = Vehicle(id="V1", height_m=3.5)
+    short_bus = Vehicle(id="V2", height_m=2.8)
+    assert restriction.violated_by(tall_bus) is True
+    assert restriction.violated_by(short_bus) is False
+
+
+def test_size_restriction_not_violated_when_vehicle_dimension_is_unknown():
+    """Spec section 21: don't guess. A vehicle with no persisted
+    height_m can't be proven to violate a height restriction, so it
+    isn't treated as restricted just because the data is missing."""
+    restriction = SizeRestriction(
+        location=Location(lat=29.7, lon=-95.4), dimension="height_m", max_allowed=3.0
+    )
+    unknown_height_bus = Vehicle(id="V1")
+    assert restriction.violated_by(unknown_height_bus) is False

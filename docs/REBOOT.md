@@ -450,7 +450,9 @@ PATCH edits that bypass the solver.
 30. #30 `feat/phase6-field-trip-followups` — spec §12.3/§20 follow-ups named but not attempted in #25/#26: **overnight (multi-day) field trips** — `create_field_trip`'s same-day-only validation removed; `_daily_windows`/`_windows_overlap` split a multi-day span into per-calendar-day `(date, start_minute, end_minute)` windows so `GET /field-trips/{id}/conflicts` still catches overlaps correctly across day boundaries. **`DestinationProfile`** (spec §12.3): a separate reusable entity (`POST`/`GET /destination-profiles`) for a frequently-used destination's entrance/parking/turn-restriction/driver-note info, optionally linked from a `FieldTrip` via `destination_profile_id` — nothing auto-matches free-text `destination` to a profile. **`GET /field-trips/observed-duration`** (spec §20): actual-vs-estimated duration computed directly from a completed trip's own `actual_return_at`/`departure_at` (no audit-log lookup needed, unlike regular runs — a `FieldTrip` already stores its own actual timestamps), surfaced as a "Check observed duration"/"Use average" flow on `FieldTripsPage`, same decision-support pattern as PR #27, never auto-applied. Fixed a real naive-vs-aware `datetime` comparison bug along the way (`_naive()` helper — Pydantic parses a "Z"-suffixed request timestamp as aware, SQLite round-trips a `DateTime(timezone=True)` column as naive). Manually verified live: created an overnight trip spanning two calendar days and confirmed its conflict check still worked, linked a destination profile and confirmed it displayed, completed a trip and confirmed the observed-duration average computed and applied correctly
 31. #31 `feat/phase6-announcement-scoping-and-substitution-notices` — the two Announcement follow-ups named in PR #28 but not attempted there: **per-school scoping** — `Announcement.school_id` (nullable FK to `School`; null = district-wide), set via an optional School `<select>` on `/setup`'s Announcements form; `GET /announcements/mine` filters family recipients to `school_id is None or school_id in {schools of the user's own linked student(s)}` (`_family_school_ids` helper) — meaningless for `audience=driver`, which ignores it entirely. **One narrow, principled exception to "always human-authored"**: `_maybe_create_substitution_announcement` auto-generates a school-scoped family notice when a crew's driver/vehicle genuinely changes on an already-solved day (spec §13) — wired from both `PATCH /crews/{id}` (`update_crew_driver`, only when `driver_id` actually changed) and `PATCH /schedule/assignments/{id}` (`update_assignment`, only when `crew_id` actually changed, not a pure time/lock-only edit) — and skips silently (no guessing) when more than one `Run` shares that crew's school+date+direction, the same "never guess" decision-support precedent as PR #23's expected-riders and `GET /students/{id}/bus-position`. Manually verified live end-to-end: posted a Riverside-scoped and an Oakwood-scoped family announcement, confirmed a parent linked only to a Riverside student saw the Riverside one and not the Oakwood one; reported a driver absence and assigned a substitute through the real `SchedulePage` UI, confirmed the auto-generated substitution notice appeared with the correct school/message and that the same parent saw it too
 
-## Key files (current state, post-PR #31)
+32. #32 `feat/phase6-geo-knowledge-congestion-and-size-restrictions` — spec §8, 2 of the 5 categories the prior slice deliberately left excluded: **CONGESTION_WINDOW** and **VEHICLE_SIZE_RESTRICTED**, each wired via a genuinely different mechanism than the existing always-on avoid-zones, not forced into that same shape. `GeographicKnowledgeOverride` gained `window_start_minute`/`window_end_minute` (required together, congestion_window only) and `restricted_dimension`/`max_allowed_value` (required together, vehicle_size_restricted only), validated in `routers/geographic_knowledge.py` (router-level, matching FieldTrip's precedent, not a schema `model_validator`). **Congestion window** is applied per-solve, not per-leg (`routers/schedule.py`'s `_congestion_avoid_points`): a zone is included only when at least one run actually being scheduled that day has a required window overlapping it — deliberately not threading a time parameter through `DeadheadEstimator`/`scheduler.py`'s call sites, since the exact deadhead-leg travel time is a CP-SAT decision variable, not known until after solving, while a run's own required window already is. **Vehicle-size restriction** is applied per-vehicle, per-call instead — no `DeadheadEstimator` signature widening needed, since the estimator already receives the specific `Vehicle` on every call (from PR #22's §6 slice): new `isd_solver.domain.SizeRestriction` dataclass (`location`, `dimension` — matching `Vehicle`'s own field names, `max_allowed`, `violated_by(vehicle)`), a new `size_restrictions` param on `ors_deadhead_estimator` re-evaluated on every `estimate()` call and merged with the always-on avoid geometry (`_merge_avoid_polygons`), cache key extended to include which zones a given vehicle actually violated. Frontend: `/setup`'s geographic-knowledge form conditionally shows the relevant field pair based on selected category. Manually verified live end-to-end (not just unit tests): created a congestion-window override and a vehicle-size-restricted override through the actual browser form, confirmed both round-trip and display correctly; then directly exercised `_congestion_avoid_points`/`_size_restrictions_for_schedule` against the real seeded data (a run overlapping the congestion window, a second non-overlapping one correctly excluded, a 3.5m-tall bus correctly flagged as violating a 3.0m restriction and a 2.8m bus correctly not). A live ORS network call to observe the actual routing detour was not possible (same sandbox network restriction as every prior ORS slice) — the wiring itself, not ORS's own behavior, is what's new here anyway. **DIFFICULT_INTERSECTION and PREFERRED_ENTRANCE remain excluded** — the former still has no soft-cost lever in ORS's API, the latter still needs waypoint-based routing tied to a School/DestinationProfile rather than an avoid-zone; both named as the next step if picked up, not silently dropped
+
+## Key files (current state, post-PR #32)
 
 - `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal + revocation check), `LoginRateLimiter`/`login_rate_limiter`, `revoke_token`
 - `services/api/src/isd_api/routers/auth.py` — login rate-limited + sets cookie + returns bearer token; `POST /auth/logout` (still no auth required — a no-op if nothing to revoke, but revokes the current token if one is present)
@@ -462,7 +464,7 @@ PATCH edits that bypass the solver.
 - `services/api/src/isd_api/routers/stops.py` — `POST`/`GET /stops`, admin/dispatcher only
 - `services/api/src/isd_api/routers/absences.py` — `POST`/`GET /drivers/{id}/absences`, `GET /absences?service_date=` (all-drivers overview, `all_absences_router`, second router in this file), `GET /drivers/{id}/substitute-candidates` + `_rank_substitute_candidates` (Phase 6 ranking heuristic, private helper)
 - `services/api/src/isd_api/routers/crews.py` — `POST`/`GET /crews`, `PATCH /crews/{id}` (driver-only repoint — see Gotchas #9 for why this exists instead of a second `POST /crews`; calls `_maybe_create_substitution_announcement` when the driver actually changed, PR #31)
-- `services/api/src/isd_api/routers/geographic_knowledge.py` — `POST`/`GET /geographic-knowledge` (spec §8 persistence — transportation_admin + dispatcher, audited); `routers/schedule.py`'s `_HARD_AVOID_CATEGORIES` is where 3 of the 8 categories actually get consumed by routing
+- `services/api/src/isd_api/routers/geographic_knowledge.py` — `POST`/`GET /geographic-knowledge` (spec §8 persistence — transportation_admin + dispatcher, audited); `_validate_category_specific_fields` enforces the window/threshold field pairs. `routers/schedule.py`'s `_HARD_AVOID_CATEGORIES`, `_congestion_avoid_points`, and `_size_restrictions_for_schedule` are where 5 of the 8 categories actually get consumed by routing (PR #32)
 - `services/api/src/isd_api/routers/vehicles.py` — `POST`/`GET /vehicles`; `create_vehicle`'s explicit constructor kwargs carry `Vehicle`'s `length_m`/`width_m`/`height_m`/`weight_kg` (spec §6, now consumed by routing — see `schedule.py`'s `SolverVehicle(...)` for the second gotcha #7 spot this depended on)
 - `services/api/src/isd_api/routers/runs.py` — `POST`/`GET /runs`, `PATCH /runs/{id}` (passenger_count only), `GET /runs/{id}/expected-riders` (spec §4.3 decision support — not the spec's literal stop-shortening behavior, see "Status by phase" Phase 5 entry above)
 - `services/api/src/isd_api/routers/positions.py` — `PUT /drivers/{id}/position` (driver self-report, `driver_router`), `GET /schedule/{date}/fleet-positions` (dispatcher/admin, `fleet_router` — two routers in one file since neither fits the other's prefix); `GET /students/{id}/bus-position` lives in `routers/students.py` instead, since it needs that file's guardian/self RBAC helper
@@ -492,23 +494,35 @@ PATCH edits that bypass the solver.
 
 ## Exact next step (as of this checkpoint)
 
-Every PR through #31 is **merged**, CI green, local `main` synced
-(commit `c5b1e5b`). PR #31's first CI run caught a real mypy bug —
-`crew` was typed `Crew | None` at the substitution-notice call site in
-`schedule.py`'s `update_assignment` (assigned only inside an earlier
-conditional block mypy couldn't correlate with `crew_changed`, even
-though `crew_changed` being true implies that block ran) — fixed by
-declaring `crew: DBCrew | None = None` up front and asserting non-None
-at the point of use, pushed, CI re-ran green, merged.
+Every PR through #31 is **merged**, CI green, local `main` synced. PR
+#32 (`feat/phase6-geo-knowledge-congestion-and-size-restrictions`) —
+spec §8's `CONGESTION_WINDOW` and `VEHICLE_SIZE_RESTRICTED` categories,
+picked up after the user explicitly asked to continue with §8 — is
+backend + frontend green locally (67 solver + 185 api + 73 web tests,
+ruff/format/mypy clean, `npm run build`/`lint`/`format:check`/`test`
+all clean) and manually verified live end-to-end (see PR #32's entry
+above). Commit, push, open the PR, watch CI, merge once green, then
+bump this file's "Key files" header and PR list one more time.
 
-**Both items from the prior "smaller/optional follow-ups" list are now
-done**: PR #30 shipped field-trip overnight support / destination
-profiles / observed-duration; PR #31 (this one) shipped per-school
-announcement scoping and the one auto-generated substitution-notice
-exception. The user's standing instruction this session was: **tackle
-the entire remaining candidate list, then the smaller follow-ups too,
-finishing them rather than just listing them** — both halves are now
-complete.
+**The user's explicit instruction for this item was "start with
+congestion_window and vehicle_size_restricted, then progress to
+difficult_intersection and preferred_entrance as needed" — the first
+half is done; the second half is the natural next step, not a new
+ask.** If continuing on §8 specifically:
+- **`DIFFICULT_INTERSECTION`** — apply it as a hard avoid too, same
+  mechanism as `_HARD_AVOID_CATEGORIES`'s existing three, with the
+  tradeoff named plainly in the same commit: ORS's directions API has
+  no soft-cost lever, so this becomes "avoid this intersection
+  entirely" rather than "drive carefully here" — a real behavior
+  change from what the category name implies, not a free win.
+- **`PREFERRED_ENTRANCE`** — a bigger redesign, not a routing tweak:
+  doesn't fit as a freestanding `GeographicKnowledgeOverride` at all,
+  since it's a positive waypoint preference tied to a specific
+  destination — needs to attach to `School`/`DestinationProfile`
+  instead and use ORS's waypoint routing, a genuinely different
+  mechanism than every avoid-zone-shaped category built so far. Scope
+  this properly (likely its own plan) before implementing, don't bolt
+  it onto `_HARD_AVOID_CATEGORIES`'s shape.
 
 **§7 (turn/dead-end safety costs) and §10 (dynamic rerouting) — deferred
 by explicit user choice (2026-09-14), not forgotten.** Both need a
@@ -523,25 +537,12 @@ it up, or if it becomes a real, felt operational pain point they
 mention. Turn-by-turn navigation (the last piece of spec §9) is
 deferred along with it for the same reason.
 
-**What's left now genuinely needs either a real architecture decision
-or a real external system — nothing "smaller" remains**:
-- The 5 excluded §8 categories (difficult intersection, congestion
-  window, vehicle-size restriction, preferred entrance, other) — each
-  excluded for a specific principled reason already documented
-  (`docs/domain-model.md`'s "Phase 6 entities"); each would need its
-  own new mechanism (soft cost, time-of-day awareness, etc.), not more
-  plumbing on the existing avoid-zone approach.
-- Phase 6 §19 integrations (SIS/HR/SSO/fleet-maintenance) — ADR 0007
-  wrote the shape, nothing actually integrated yet; needs a real
-  external system (an actual SIS/HR/SSO vendor) to integrate against,
-  not something buildable speculatively.
-- §7/§10 (routing graph) — already decided above, not re-litigated.
-
-If the user gives another open-ended "keep going" instruction with no
-specific target, say so plainly: the candidate list and its follow-ups
-are exhausted, and anything further is either a deferred decision
-already made, or needs a real external system/vendor this session
-can't stand up on its own — don't invent new scope to keep moving.
+**Everything else this session's original candidate list named is
+still fully done** (§4.3 scoped, §6, §9, §12, §13, §18, §20) — §8 is
+the only item with active follow-on work, tracked above. Phase 6 §19
+integrations (SIS/HR/SSO/fleet-maintenance) remain out of reach until
+a real external vendor exists to integrate against — ADR 0007 wrote
+the shape, nothing to build speculatively.
 
 ## Environment specifics (this machine)
 

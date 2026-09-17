@@ -280,12 +280,23 @@ export type GeographicKnowledgeCategory =
   | 'preferred_entrance'
   | 'other'
 
+// Matches Vehicle's own length_m/width_m/height_m/weight_kg field
+// names exactly (services/api's RestrictedVehicleDimension does a
+// plain getattr against them).
+export type RestrictedVehicleDimension = 'length_m' | 'width_m' | 'height_m' | 'weight_kg'
+
 export interface GeographicKnowledgeOverride {
   id: number
   location_lat: number
   location_lon: number
   category: GeographicKnowledgeCategory
   note: string
+  // Required together, and only meaningful, for category=congestion_window.
+  window_start_minute: number | null
+  window_end_minute: number | null
+  // Required together, and only meaningful, for category=vehicle_size_restricted.
+  restricted_dimension: RestrictedVehicleDimension | null
+  max_allowed_value: number | null
   created_at: string
 }
 
@@ -294,6 +305,10 @@ export interface GeographicKnowledgeOverrideCreate {
   location_lon: number
   category: GeographicKnowledgeCategory
   note: string
+  window_start_minute?: number | null
+  window_end_minute?: number | null
+  restricted_dimension?: RestrictedVehicleDimension | null
+  max_allowed_value?: number | null
 }
 
 // spec §9/§18: dispatcher-authored notices for drivers and/or families.

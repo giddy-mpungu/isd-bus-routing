@@ -10,6 +10,7 @@ import type {
   GeographicKnowledgeOverride,
   Qualification,
   QualificationKind,
+  RestrictedVehicleDimension,
   RidershipDefault,
   School,
   Stop,
@@ -296,6 +297,14 @@ export function SetupPage() {
   const [geoLon, setGeoLon] = useState('')
   const [geoCategory, setGeoCategory] = useState<GeographicKnowledgeCategory>('frequent_flooding')
   const [geoNote, setGeoNote] = useState('')
+  // Only meaningful for category=congestion_window (routers/
+  // geographic_knowledge.py rejects them for every other category).
+  const [geoWindowStart, setGeoWindowStart] = useState('')
+  const [geoWindowEnd, setGeoWindowEnd] = useState('')
+  // Only meaningful for category=vehicle_size_restricted.
+  const [geoRestrictedDimension, setGeoRestrictedDimension] =
+    useState<RestrictedVehicleDimension>('height_m')
+  const [geoMaxAllowedValue, setGeoMaxAllowedValue] = useState('')
   const [geoError, setGeoError] = useState<string | null>(null)
   const [isSavingGeo, setIsSavingGeo] = useState(false)
 
@@ -309,11 +318,21 @@ export function SetupPage() {
         location_lon: Number(geoLon),
         category: geoCategory,
         note: geoNote,
+        window_start_minute: geoCategory === 'congestion_window' ? Number(geoWindowStart) : null,
+        window_end_minute: geoCategory === 'congestion_window' ? Number(geoWindowEnd) : null,
+        restricted_dimension:
+          geoCategory === 'vehicle_size_restricted' ? geoRestrictedDimension : null,
+        max_allowed_value:
+          geoCategory === 'vehicle_size_restricted' ? Number(geoMaxAllowedValue) : null,
       })
       setGeoLat('')
       setGeoLon('')
       setGeoCategory('frequent_flooding')
       setGeoNote('')
+      setGeoWindowStart('')
+      setGeoWindowEnd('')
+      setGeoRestrictedDimension('height_m')
+      setGeoMaxAllowedValue('')
       await loadAll()
     } catch (err) {
       setGeoError(err instanceof ApiError ? err.message : 'Failed to create override.')
@@ -700,6 +719,10 @@ export function SetupPage() {
           {geoOverrides.map((o) => (
             <li key={o.id}>
               [{o.category.replace(/_/g, ' ')}] {o.note} ({o.location_lat}, {o.location_lon})
+              {o.window_start_minute != null &&
+                ` — ${o.window_start_minute}-${o.window_end_minute} min`}
+              {o.restricted_dimension != null &&
+                ` — max ${o.restricted_dimension.replace(/_/g, ' ')} ${o.max_allowed_value}`}
             </li>
           ))}
         </ul>
@@ -737,6 +760,52 @@ export function SetupPage() {
                 </option>
               ))}
             </select>
+            {geoCategory === 'congestion_window' && (
+              <>
+                <label htmlFor="geo-window-start">Congestion window start (minute of day)</label>
+                <input
+                  id="geo-window-start"
+                  type="number"
+                  value={geoWindowStart}
+                  onChange={(event) => setGeoWindowStart(event.target.value)}
+                  required
+                />
+                <label htmlFor="geo-window-end">Congestion window end (minute of day)</label>
+                <input
+                  id="geo-window-end"
+                  type="number"
+                  value={geoWindowEnd}
+                  onChange={(event) => setGeoWindowEnd(event.target.value)}
+                  required
+                />
+              </>
+            )}
+            {geoCategory === 'vehicle_size_restricted' && (
+              <>
+                <label htmlFor="geo-restricted-dimension">Restricted dimension</label>
+                <select
+                  id="geo-restricted-dimension"
+                  value={geoRestrictedDimension}
+                  onChange={(event) =>
+                    setGeoRestrictedDimension(event.target.value as RestrictedVehicleDimension)
+                  }
+                >
+                  <option value="length_m">length</option>
+                  <option value="width_m">width</option>
+                  <option value="height_m">height</option>
+                  <option value="weight_kg">weight</option>
+                </select>
+                <label htmlFor="geo-max-allowed">Max allowed value</label>
+                <input
+                  id="geo-max-allowed"
+                  type="number"
+                  step="any"
+                  value={geoMaxAllowedValue}
+                  onChange={(event) => setGeoMaxAllowedValue(event.target.value)}
+                  required
+                />
+              </>
+            )}
             <label htmlFor="geo-note">Note</label>
             <textarea
               id="geo-note"
