@@ -494,15 +494,13 @@ PATCH edits that bypass the solver.
 
 ## Exact next step (as of this checkpoint)
 
-Every PR through #31 is **merged**, CI green, local `main` synced. PR
-#32 (`feat/phase6-geo-knowledge-congestion-and-size-restrictions`) —
-spec §8's `CONGESTION_WINDOW` and `VEHICLE_SIZE_RESTRICTED` categories,
-picked up after the user explicitly asked to continue with §8 — is
-backend + frontend green locally (67 solver + 185 api + 73 web tests,
+Every PR through #32 is **merged**, CI green, local `main` synced. PR
+#32 shipped spec §8's `CONGESTION_WINDOW` and `VEHICLE_SIZE_RESTRICTED`
+categories, picked up after the user explicitly asked to continue with
+§8 — backend + frontend green (67 solver + 185 api + 73 web tests,
 ruff/format/mypy clean, `npm run build`/`lint`/`format:check`/`test`
 all clean) and manually verified live end-to-end (see PR #32's entry
-above). Commit, push, open the PR, watch CI, merge once green, then
-bump this file's "Key files" header and PR list one more time.
+above).
 
 **The user's explicit instruction for this item was "start with
 congestion_window and vehicle_size_restricted, then progress to
