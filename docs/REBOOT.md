@@ -496,16 +496,13 @@ PATCH edits that bypass the solver.
 
 ## Exact next step (as of this checkpoint)
 
-Every PR through #32 is **merged**, CI green, local `main` synced. PR
-#33 (`feat/phase6-geo-knowledge-difficult-intersection-and-preferred-entrance`)
-— spec §8's last two categories, `DIFFICULT_INTERSECTION` and
+Every PR through #33 is **merged**, CI green, local `main` synced. PR
+#33 shipped spec §8's last two categories, `DIFFICULT_INTERSECTION` and
 `PREFERRED_ENTRANCE`, picked up after the user said "continue"
-post-PR-#32 — is backend + frontend green locally (67 solver + 191 api
-+ 74 web tests, ruff/format/mypy clean, `npm run build`/`lint`/
-`format:check`/`test` all clean) and manually verified live end-to-end
-(see PR #33's entry above). Commit, push, open the PR, watch CI, merge
-once green, then bump this file's "Key files" header and PR list one
-more time.
+post-PR-#32 — backend + frontend green (67 solver + 191 api + 74 web
+tests, ruff/format/mypy clean, `npm run build`/`lint`/`format:check`/
+`test` all clean) and manually verified live end-to-end (see PR #33's
+entry above).
 
 **`PREFERRED_ENTRANCE` turned out simpler than this file previously
 assumed** — the prior checkpoint guessed it would need ORS waypoint
