@@ -139,6 +139,7 @@ describe('SetupPage', () => {
       window_end_minute: null,
       restricted_dimension: null,
       max_allowed_value: null,
+      school_id: null,
       created_at: '2026-09-08T12:00:00Z',
     })
     renderAsRole(dispatcherUser)
@@ -162,6 +163,7 @@ describe('SetupPage', () => {
         window_end_minute: null,
         restricted_dimension: null,
         max_allowed_value: null,
+        school_id: null,
       }),
     )
     expect(api.getGeographicKnowledgeOverrides).toHaveBeenCalledTimes(2) // initial load + reload after create
@@ -178,6 +180,7 @@ describe('SetupPage', () => {
       window_end_minute: 480,
       restricted_dimension: null,
       max_allowed_value: null,
+      school_id: null,
       created_at: '2026-09-17T12:00:00Z',
     })
     renderAsRole(dispatcherUser)
@@ -204,6 +207,7 @@ describe('SetupPage', () => {
         window_end_minute: 480,
         restricted_dimension: null,
         max_allowed_value: null,
+        school_id: null,
       }),
     )
   })
@@ -219,6 +223,7 @@ describe('SetupPage', () => {
       window_end_minute: null,
       restricted_dimension: 'height_m',
       max_allowed_value: 3.0,
+      school_id: null,
       created_at: '2026-09-17T12:00:00Z',
     })
     renderAsRole(dispatcherUser)
@@ -245,6 +250,49 @@ describe('SetupPage', () => {
         window_end_minute: null,
         restricted_dimension: 'height_m',
         max_allowed_value: 3,
+        school_id: null,
+      }),
+    )
+  })
+
+  it('creating a preferred_entrance override sends its school_id and no window/threshold fields', async () => {
+    vi.mocked(api.createGeographicKnowledgeOverride).mockResolvedValue({
+      id: 4,
+      location_lat: 29.71,
+      location_lon: -95.41,
+      category: 'preferred_entrance',
+      note: 'Use the north gate, not the main office.',
+      window_start_minute: null,
+      window_end_minute: null,
+      restricted_dimension: null,
+      max_allowed_value: null,
+      school_id: 1,
+      created_at: '2026-09-17T12:00:00Z',
+    })
+    renderAsRole(dispatcherUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Override latitude'), '29.71')
+    await user.type(screen.getByLabelText('Override longitude'), '-95.41')
+    await user.selectOptions(screen.getByLabelText('Category'), 'preferred_entrance')
+    await user.selectOptions(screen.getByLabelText('School'), 'Riverside Elementary')
+    await user.type(screen.getByLabelText('Note'), 'Use the north gate, not the main office.')
+    await user.click(screen.getByRole('button', { name: 'Add override' }))
+
+    await waitFor(() =>
+      expect(api.createGeographicKnowledgeOverride).toHaveBeenCalledWith({
+        location_lat: 29.71,
+        location_lon: -95.41,
+        category: 'preferred_entrance',
+        note: 'Use the north gate, not the main office.',
+        window_start_minute: null,
+        window_end_minute: null,
+        restricted_dimension: null,
+        max_allowed_value: null,
+        school_id: 1,
       }),
     )
   })

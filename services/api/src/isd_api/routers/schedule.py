@@ -70,18 +70,26 @@ router = APIRouter(prefix="/schedule", tags=["schedule"])
 # spec section 8: which GeographicKnowledgeOverride categories become a hard,
 # always-on ORS avoid-zone for the whole solve, regardless of which specific
 # run/vehicle a deadhead leg is between. Deliberately NOT all 8 categories —
-# DIFFICULT_INTERSECTION is a caution/cost rather than a block (blanket-avoiding
-# could make routing infeasible for something only meant as "drive carefully
-# here"); PREFERRED_ENTRANCE is a positive preference, the opposite of an
-# avoidance, needing a different mechanism entirely; OTHER is too ambiguous to
-# apply an unpredictable effect for. CONGESTION_WINDOW and VEHICLE_SIZE_RESTRICTED
-# are NOT unconditional like these three -- they're handled by
-# _congestion_avoid_points and _size_restrictions_for_schedule below, since
-# each needs per-solve (time) or per-vehicle context this fixed tuple can't
-# express. See isd_solver.domain.ors_deadhead_estimator's avoid_polygons/
-# size_restrictions docstrings for the geometry/per-call side of this.
+# OTHER is too ambiguous to apply an unpredictable effect for; PREFERRED_ENTRANCE
+# is a positive preference, the opposite of an avoidance, handled entirely
+# differently (see _preferred_entrance_locations: it substitutes a job's
+# destination point, never touches avoid_polygons at all). CONGESTION_WINDOW
+# and VEHICLE_SIZE_RESTRICTED are NOT unconditional like these four -- they're
+# handled by _congestion_avoid_points and _size_restrictions_for_schedule
+# below, since each needs per-solve (time) or per-vehicle context this fixed
+# tuple can't express. See isd_solver.domain.ors_deadhead_estimator's
+# avoid_polygons/size_restrictions docstrings for the geometry/per-call side.
+#
+# DIFFICULT_INTERSECTION is included here as a hard avoid -- a deliberate,
+# named compromise, not a free win: the category name implies a caution/cost
+# ("drive carefully here"), not a block, but ORS's directions API has no
+# soft-cost lever to express that distinction. Blanket-avoiding it is a real
+# behavior change from what the name implies (a route that would otherwise
+# have safely used that intersection now detours around it entirely), traded
+# for actually applying the knowledge at all rather than leaving it inert.
 _HARD_AVOID_CATEGORIES = (
     GeographicKnowledgeCategory.FREQUENT_FLOODING,
+    GeographicKnowledgeCategory.DIFFICULT_INTERSECTION,
     GeographicKnowledgeCategory.UNSAFE_TURN,
     GeographicKnowledgeCategory.INVALID_TURNAROUND,
 )
@@ -157,11 +165,42 @@ def _size_restrictions_for_schedule(db: Session) -> tuple[SizeRestriction, ...]:
     return tuple(restrictions)
 
 
+def _preferred_entrance_locations(db: Session) -> dict[int, SolverLocation]:
+    """PREFERRED_ENTRANCE overrides, keyed by school_id — a run's job
+    location is this override's own point (the entrance) instead of
+    the school's own centroid, spec section 8's "use the north gate"
+    example applied to the regular runs this system's solver actually
+    schedules (field trips use DestinationProfile.approved_entrance
+    instead, since they're never solved by CP-SAT). If more than one
+    PREFERRED_ENTRANCE override exists for the same school, that
+    school is left out entirely — spec section 21: don't guess which
+    one applies; the run falls back to the school's own centroid."""
+    overrides = (
+        db.query(GeographicKnowledgeOverride)
+        .filter(
+            GeographicKnowledgeOverride.category == GeographicKnowledgeCategory.PREFERRED_ENTRANCE
+        )
+        .all()
+    )
+    by_school: dict[int, list[GeographicKnowledgeOverride]] = {}
+    for override in overrides:
+        # school_id is required at creation for this exact category
+        # (same precedent as the window/threshold fields above).
+        assert override.school_id is not None
+        by_school.setdefault(override.school_id, []).append(override)
+    return {
+        school_id: SolverLocation(lat=matches[0].location_lat, lon=matches[0].location_lon)
+        for school_id, matches in by_school.items()
+        if len(matches) == 1
+    }
+
+
 def _to_solver_inputs(
     db: Session, service_date: date
 ) -> tuple[list[DBRun], list[DBCrew], list[SolverJob], list[SolverCrew]]:
     db_runs = db.query(DBRun).filter(DBRun.service_date == service_date).all()
     db_crews = db.query(DBCrew).filter(DBCrew.service_date == service_date).all()
+    preferred_entrances = _preferred_entrance_locations(db)
 
     jobs = [
         SolverJob(
@@ -170,7 +209,9 @@ def _to_solver_inputs(
             window=SolverTimeWindow(earliest=r.window_earliest, latest=r.window_latest),
             duration_minutes=r.duration_minutes,
             buffer_minutes=r.buffer_minutes,
-            location=SolverLocation(lat=r.school.location_lat, lon=r.school.location_lon),
+            location=preferred_entrances.get(
+                r.school_id, SolverLocation(lat=r.school.location_lat, lon=r.school.location_lon)
+            ),
             required_vehicle_qualifications=frozenset(q.code for q in r.required_qualifications),
             passenger_count=r.passenger_count,
         )

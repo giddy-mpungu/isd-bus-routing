@@ -232,19 +232,27 @@ produces them rather than duplicated here.
   transportation_admin and dispatcher (day-to-day operational
   knowledge, same RBAC shape as `DriverAbsence`, broader than
   `Stop`'s admin-only creation). Who added it is the audit log, same
-  precedent as `DriverAbsence`. Two more nullable field pairs, required
-  together and only meaningful for one specific category each (enforced
-  in `routers/geographic_knowledge.py`, not a schema-level validator):
+  precedent as `DriverAbsence`. Three more nullable field groups, each
+  required together and only meaningful for one specific category
+  (enforced in `routers/geographic_knowledge.py`'s
+  `_validate_category_specific_fields`, not a schema-level validator):
   `window_start_minute`/`window_end_minute` (minute-of-day range, for
-  `CONGESTION_WINDOW`) and `restricted_dimension`/`max_allowed_value`
+  `CONGESTION_WINDOW`), `restricted_dimension`/`max_allowed_value`
   (one of `Vehicle`'s own `length_m`/`width_m`/`height_m`/`weight_kg`
-  field names plus a threshold, for `VEHICLE_SIZE_RESTRICTED`).
+  field names plus a threshold, for `VEHICLE_SIZE_RESTRICTED`), and
+  `school_id` (nullable FK to `School`, for `PREFERRED_ENTRANCE`).
 
-  **5 of the 8 categories are now applied to routing**, each via a
-  different mechanism appropriate to what it actually means:
+  **7 of the 8 categories are now applied to routing**, each via a
+  mechanism appropriate to what it actually means:
   `FREQUENT_FLOODING`/`UNSAFE_TURN`/`INVALID_TURNAROUND` are always-on
   for the whole solve (`routers/schedule.py`'s `_HARD_AVOID_CATEGORIES`
   → ORS `avoid_polygons`, `isd_solver.domain.avoid_polygons_geojson`).
+  `DIFFICULT_INTERSECTION` is included in that same always-on set — a
+  deliberate, named compromise rather than a free win: the category
+  name implies a caution/cost ("drive carefully here"), not a block,
+  but ORS's directions API has no soft-cost lever to express that
+  distinction, so it's applied as a full avoid-zone, a real behavior
+  change from what the name implies.
   `CONGESTION_WINDOW` is applied per-solve, not per-leg
   (`_congestion_avoid_points`): a zone is included only when at least
   one run actually being scheduled that day has a required window
@@ -260,17 +268,22 @@ produces them rather than duplicated here.
   vehicle that fits under a restricted bridge never detours around it,
   only an oversized one does; an unknown vehicle dimension is never
   treated as an assumed violation (spec §21: don't guess).
+  `PREFERRED_ENTRANCE` doesn't touch `avoid_polygons` at all — instead
+  `_preferred_entrance_locations` substitutes this override's own
+  point for that `school_id`'s runs' job location, in place of the
+  school's own `location_lat`/`location_lon`, inside `_to_solver_inputs`
+  (a run's destination becomes the actual gate/entrance, not the
+  school's abstract centroid). If more than one `PREFERRED_ENTRANCE`
+  override exists for the same school, that school is left out
+  entirely (spec §21: don't guess which one applies) and its runs fall
+  back to the school's own centroid. Field trips use
+  `DestinationProfile.approved_entrance` instead (free text, not
+  coordinates) since they're never solved by CP-SAT.
 
-  The other 3 categories remain deliberately excluded, not just
-  not-yet-built: `DIFFICULT_INTERSECTION` is a caution/cost, not a hard
-  block, and ORS's directions API has no soft-cost lever to express
-  that distinction; `PREFERRED_ENTRANCE` is a positive preference, the
-  opposite of an avoidance, needing waypoint-based routing tied to a
-  specific `School`/`DestinationProfile` rather than a freestanding
-  avoid-zone; `OTHER` is structurally, not just currently, unactionable
-  — it exists specifically as the catch-all for knowledge that doesn't
-  fit any of the other 7 categories, so by construction it has no
-  defined behavior a routing engine could apply.
+  Only `OTHER` remains excluded, structurally rather than
+  provisionally: it exists specifically as the catch-all for knowledge
+  that doesn't fit any of the other 7 categories, so by construction
+  it has no defined behavior a routing engine could apply.
 - **VehiclePosition** (spec §9/§18, ADR 0009): the latest known GPS
   position for a crew's vehicle — `crew_id` (unique: one row per crew,
   overwritten in place), lat/lon, `recorded_at`. Reported by the
@@ -385,7 +398,7 @@ produces them rather than duplicated here.
 - A recurring `route` (template) table distinct from dated `run` instances — ADR 0001 named this intention for Phase 2+, never built; Phase 5 worked around its absence rather than building it (see RidershipOverride above). Observed-run-duration (§20, above) approximates route identity via (school_id, direction) instead of a real template — good enough for learning, not a substitute for the real table
 - Field trips (spec §12) is done end-to-end (`FieldTrip` + `/field-trips` UI, overnight trips, `DestinationProfile` §12.3, and observed-duration §20, above) — not yet: conflict-checking against training/maintenance (no such entity exists — a genuine gap, not an oversight)
 - Spec §6 is now done to the extent an external point-to-point routing API can express it: real road-network travel time, per-vehicle length/width/height/weight restrictions, and district-specific avoid-zones (§8) are all applied via `ors_deadhead_estimator`. Turn/dead-end safety costs (§7) and dynamic rerouting (§10) remain genuinely out of scope — both need a routing *graph* this system doesn't own, not just a point-to-point directions call, a different technical approach than anything built so far.
-- District-specific geographic knowledge / local roadway overrides (spec §8) — persistence done, and 5 of 8 categories now applied to routing: flooding/unsafe-turn/invalid-turnaround via always-on ORS `avoid_polygons`, congestion-window per-solve when a run's window overlaps it, vehicle-size-restriction per-vehicle via `isd_solver.SizeRestriction` (`GeographicKnowledgeOverride`, above). The other 3 categories (difficult intersection's caution/cost, preferred entrance's positive-preference waypoint need, and other's structurally-undefined catch-all nature) each need a genuinely different mechanism than an avoid-zone, or aren't automatable at all — not just more plumbing
+- District-specific geographic knowledge / local roadway overrides (spec §8) — persistence done, and 7 of 8 categories now applied to routing: flooding/difficult-intersection/unsafe-turn/invalid-turnaround via always-on ORS `avoid_polygons`, congestion-window per-solve when a run's window overlaps it, vehicle-size-restriction per-vehicle via `isd_solver.SizeRestriction`, preferred-entrance by substituting a run's job location with the override's own point (`GeographicKnowledgeOverride`, above). Only `other` remains excluded, structurally rather than provisionally — it's the catch-all for knowledge that doesn't fit any other category, so by construction it has no defined routing behavior
 - Dynamic rerouting around road closures/incidents (spec §10) — Phase 6, same GIS dependency
 - Live GPS bus location (spec §9/§18) is done for position itself (`VehiclePosition`, ADR 0009, above) — dispatcher fleet view and per-child "locate bus." Delay/substitution/route-change/general notifications (spec §18) and "messages from dispatch" (spec §9) are now done too (`Announcement`, above), with per-school scoping and one narrow auto-generated exception (a genuine, unambiguous driver/vehicle substitution) — every other notification is still exclusively dispatcher-authored, since this system has no ETA engine or general event-to-notification pipeline. Incident reporting / vehicle defect reporting (spec §9) is now done too (`DriverReport`, above). Still unbuilt: turn-by-turn navigation (spec §9 — deliberately deferred alongside §7/§10, since it needs the same routing graph this system doesn't own)
 - Historical operational data / learning-adjusted estimates (spec §20) — duration learning for `Run.duration_minutes` is done (`GET /runs/observed-duration`, above). Not yet: traffic-delay and route-deviation tracking (both need a planned route geometry and live position history this system doesn't have — ADR 0009 deliberately keeps only the latest GPS position, no breadcrumb trail) and field-trip duration learning (though `FieldTrip.actual_return_at` already captures the raw data needed, no aggregation endpoint exists for it yet, unlike regular runs)

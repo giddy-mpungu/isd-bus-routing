@@ -373,6 +373,10 @@ class GeographicKnowledgeOverrideCreate(BaseModel):
     # Required together, and only meaningful, for category=vehicle_size_restricted.
     restricted_dimension: RestrictedVehicleDimension | None = None
     max_allowed_value: float | None = Field(default=None, gt=0)
+    # Required, and only meaningful, for category=preferred_entrance -- says
+    # which school's regular runs should route to this override's own
+    # location_lat/location_lon instead of the school's own centroid.
+    school_id: int | None = None
 
 
 class GeographicKnowledgeOverrideRead(BaseModel):
@@ -386,6 +390,7 @@ class GeographicKnowledgeOverrideRead(BaseModel):
     window_end_minute: int | None
     restricted_dimension: RestrictedVehicleDimension | None
     max_allowed_value: float | None
+    school_id: int | None
     created_at: datetime
 
 

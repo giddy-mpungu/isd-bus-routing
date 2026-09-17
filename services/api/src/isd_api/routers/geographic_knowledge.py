@@ -3,10 +3,12 @@ Authorized transportation personnel record local roadway knowledge
 that commercial mapping data doesn't have. Per ADR 0007, this is the
 one piece of routing-relevant data this system owns itself. This
 router persists and lists it (POST/GET); routers/schedule.py is where
-CONGESTION_WINDOW and VEHICLE_SIZE_RESTRICTED overrides actually get
-applied to a solve (FREQUENT_FLOODING/UNSAFE_TURN/INVALID_TURNAROUND
-already did, from an earlier slice) -- see that module's
-_HARD_AVOID_CATEGORIES and _size_restrictions_for_schedule."""
+CONGESTION_WINDOW, VEHICLE_SIZE_RESTRICTED, and PREFERRED_ENTRANCE
+overrides actually get applied to a solve
+(FREQUENT_FLOODING/DIFFICULT_INTERSECTION/UNSAFE_TURN/INVALID_TURNAROUND
+already did, from earlier slices) -- see that module's
+_HARD_AVOID_CATEGORIES, _size_restrictions_for_schedule, and
+_preferred_entrance_locations."""
 
 from __future__ import annotations
 
@@ -15,7 +17,13 @@ from sqlalchemy.orm import Session
 
 from isd_api.audit import record as record_audit
 from isd_api.db import get_db
-from isd_api.models import GeographicKnowledgeCategory, GeographicKnowledgeOverride, Role, User
+from isd_api.models import (
+    GeographicKnowledgeCategory,
+    GeographicKnowledgeOverride,
+    Role,
+    School,
+    User,
+)
 from isd_api.schemas import GeographicKnowledgeOverrideCreate, GeographicKnowledgeOverrideRead
 from isd_api.security import require_role
 
@@ -24,14 +32,18 @@ router = APIRouter(prefix="/geographic-knowledge", tags=["geographic-knowledge"]
 _WRITE_ROLES = (Role.TRANSPORTATION_ADMIN, Role.DISPATCHER)
 
 
-def _validate_category_specific_fields(payload: GeographicKnowledgeOverrideCreate) -> None:
-    """CONGESTION_WINDOW and VEHICLE_SIZE_RESTRICTED each need their own
-    routing-relevant fields, required together and only meaningful for
-    that one category — every other category must leave all four
-    null, so a stale window/threshold from a since-changed category
-    can never linger and silently get applied to routing."""
+def _validate_category_specific_fields(
+    payload: GeographicKnowledgeOverrideCreate, db: Session
+) -> None:
+    """CONGESTION_WINDOW, VEHICLE_SIZE_RESTRICTED, and PREFERRED_ENTRANCE
+    each need their own routing-relevant field(s), required and only
+    meaningful for that one category — every other category must
+    leave all five null, so a stale window/threshold/school from a
+    since-changed category can never linger and silently get applied
+    to routing."""
     is_congestion = payload.category == GeographicKnowledgeCategory.CONGESTION_WINDOW
     is_size_restricted = payload.category == GeographicKnowledgeCategory.VEHICLE_SIZE_RESTRICTED
+    is_preferred_entrance = payload.category == GeographicKnowledgeCategory.PREFERRED_ENTRANCE
 
     if is_congestion:
         if payload.window_start_minute is None or payload.window_end_minute is None:
@@ -67,6 +79,20 @@ def _validate_category_specific_fields(payload: GeographicKnowledgeOverrideCreat
             ),
         )
 
+    if is_preferred_entrance:
+        if payload.school_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="preferred_entrance requires school_id",
+            )
+        if db.get(School, payload.school_id) is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown school_id")
+    elif payload.school_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="school_id is only valid for preferred_entrance",
+        )
+
 
 @router.post(
     "", response_model=GeographicKnowledgeOverrideRead, status_code=status.HTTP_201_CREATED
@@ -81,7 +107,7 @@ def create_geographic_knowledge_override(
     after a driver's phone call), not structural master data, so this
     follows the broader RBAC precedent set by absences.py rather than
     stops.py's admin-only one."""
-    _validate_category_specific_fields(payload)
+    _validate_category_specific_fields(payload, db)
     override = GeographicKnowledgeOverride(
         location_lat=payload.location_lat,
         location_lon=payload.location_lon,
@@ -91,6 +117,7 @@ def create_geographic_knowledge_override(
         window_end_minute=payload.window_end_minute,
         restricted_dimension=payload.restricted_dimension,
         max_allowed_value=payload.max_allowed_value,
+        school_id=payload.school_id,
     )
     db.add(override)
     db.flush()
@@ -111,6 +138,7 @@ def create_geographic_knowledge_override(
                 payload.restricted_dimension.value if payload.restricted_dimension else None
             ),
             "max_allowed_value": payload.max_allowed_value,
+            "school_id": payload.school_id,
         },
     )
     db.commit()

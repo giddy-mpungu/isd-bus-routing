@@ -240,10 +240,15 @@ def test_schedule_ors_estimator_gets_avoid_polygons_for_hard_avoid_categories_on
     client, admin_headers, monkeypatch
 ):
     """Phase 6 spec section 8 wiring: only GeographicKnowledgeOverride rows
-    whose category is a hard-avoid one (frequent_flooding, unsafe_turn,
-    invalid_turnaround) should end up in the ORS avoid_polygons geometry
-    — a preferred_entrance override (a positive preference, the opposite
-    of an avoidance) must not."""
+    whose category is a hard-avoid one (frequent_flooding,
+    difficult_intersection, unsafe_turn, invalid_turnaround) should end
+    up in the ORS avoid_polygons geometry — a preferred_entrance
+    override (a positive preference, the opposite of an avoidance)
+    must not. difficult_intersection is a deliberate, named compromise
+    (ORS has no soft-cost lever, so it's applied as a hard block, not
+    the "drive carefully" caution its name implies), not the same kind
+    of always-on category as the flooding/turn ones, but it's wired
+    through the exact same _HARD_AVOID_CATEGORIES mechanism."""
     _school, _crew, _run = _seed_single_run_scenario(client, admin_headers)
     client.post(
         "/geographic-knowledge",
@@ -253,6 +258,16 @@ def test_schedule_ors_estimator_gets_avoid_polygons_for_hard_avoid_categories_on
             "location_lon": -95.40,
             "category": "frequent_flooding",
             "note": "Floods after heavy rain.",
+        },
+    )
+    client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={
+            "location_lat": 29.72,
+            "location_lon": -95.42,
+            "category": "difficult_intersection",
+            "note": "Blind left turn, hard for full-size buses.",
         },
     )
     client.post(
@@ -282,7 +297,8 @@ def test_schedule_ors_estimator_gets_avoid_polygons_for_hard_avoid_categories_on
 
     avoid_polygons = calls[0]["avoid_polygons"]
     assert avoid_polygons["type"] == "MultiPolygon"
-    assert len(avoid_polygons["coordinates"]) == 1  # only the flooding override, not the entrance
+    # flooding + difficult_intersection, not the preferred_entrance
+    assert len(avoid_polygons["coordinates"]) == 2
     ring = avoid_polygons["coordinates"][0][0]
     lons = [c[0] for c in ring]
     lats = [c[1] for c in ring]
@@ -411,6 +427,154 @@ def test_schedule_passes_vehicle_size_restrictions_through_to_the_deadhead_estim
     assert size_restrictions[0].max_allowed == 3.0
     assert size_restrictions[0].location.lat == 29.75
     assert size_restrictions[0].location.lon == -95.45
+
+
+def test_schedule_routes_to_a_preferred_entrance_instead_of_the_school_centroid(
+    client, admin_headers, monkeypatch
+):
+    """Spec section 8: a PREFERRED_ENTRANCE override's own location
+    becomes the job's location for deadhead purposes, not the
+    school's own location_lat/location_lon -- two runs sharing one
+    crew are needed so scheduler.py's pairwise-ordering loop actually
+    calls the deadhead estimator (same precedent as the vehicle-
+    dimensions test above)."""
+    school = client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": "S", "location_lat": 29.70, "location_lon": -95.40},
+    ).json()
+    client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={
+            "location_lat": 29.71,
+            "location_lon": -95.41,
+            "category": "preferred_entrance",
+            "note": "Use the north gate, not the school's front office.",
+            "school_id": school["id"],
+        },
+    )
+    driver = client.post("/drivers", headers=admin_headers, json={"full_name": "D"}).json()
+    vehicle = client.post("/vehicles", headers=admin_headers, json={"label": "Bus"}).json()
+    client.post(
+        "/crews",
+        headers=admin_headers,
+        json={
+            "service_date": "2026-09-01",
+            "driver_id": driver["id"],
+            "vehicle_id": vehicle["id"],
+            "available_window_earliest": 0,
+            "available_window_latest": 1439,
+        },
+    )
+    for earliest, latest in [(360, 410), (420, 470)]:
+        client.post(
+            "/runs",
+            headers=admin_headers,
+            json={
+                "service_date": "2026-09-01",
+                "school_id": school["id"],
+                "direction": "am",
+                "window_earliest": earliest,
+                "window_latest": latest,
+                "duration_minutes": 40,
+                "buffer_minutes": 10,
+            },
+        )
+
+    import isd_api.routers.schedule as schedule_module
+
+    monkeypatch.setattr(schedule_module.settings, "ors_api_key", "test-key")
+    seen_locations = []
+
+    def fake_ors_deadhead_estimator(**kwargs):
+        def estimate(a, b, vehicle):
+            seen_locations.extend([a, b])
+            return 5
+
+        return estimate
+
+    monkeypatch.setattr(schedule_module, "ors_deadhead_estimator", fake_ors_deadhead_estimator)
+
+    response = client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
+    assert response.status_code == 200, response.text
+    assert seen_locations  # the pairwise loop actually called the estimator
+    for location in seen_locations:
+        assert (location.lat, location.lon) == (29.71, -95.41)
+        assert (location.lat, location.lon) != (29.70, -95.40)
+
+
+def test_schedule_falls_back_to_school_centroid_when_preferred_entrance_is_ambiguous(
+    client, admin_headers, monkeypatch
+):
+    """Spec section 21: don't guess. Two PREFERRED_ENTRANCE overrides
+    for the same school leave no way to know which one applies, so
+    the run's job location falls back to the school's own centroid
+    rather than picking one arbitrarily."""
+    school = client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": "S", "location_lat": 29.70, "location_lon": -95.40},
+    ).json()
+    for lat, lon in [(29.71, -95.41), (29.72, -95.42)]:
+        client.post(
+            "/geographic-knowledge",
+            headers=admin_headers,
+            json={
+                "location_lat": lat,
+                "location_lon": lon,
+                "category": "preferred_entrance",
+                "note": "A candidate entrance.",
+                "school_id": school["id"],
+            },
+        )
+    driver = client.post("/drivers", headers=admin_headers, json={"full_name": "D"}).json()
+    vehicle = client.post("/vehicles", headers=admin_headers, json={"label": "Bus"}).json()
+    client.post(
+        "/crews",
+        headers=admin_headers,
+        json={
+            "service_date": "2026-09-01",
+            "driver_id": driver["id"],
+            "vehicle_id": vehicle["id"],
+            "available_window_earliest": 0,
+            "available_window_latest": 1439,
+        },
+    )
+    for earliest, latest in [(360, 410), (420, 470)]:
+        client.post(
+            "/runs",
+            headers=admin_headers,
+            json={
+                "service_date": "2026-09-01",
+                "school_id": school["id"],
+                "direction": "am",
+                "window_earliest": earliest,
+                "window_latest": latest,
+                "duration_minutes": 40,
+                "buffer_minutes": 10,
+            },
+        )
+
+    import isd_api.routers.schedule as schedule_module
+
+    monkeypatch.setattr(schedule_module.settings, "ors_api_key", "test-key")
+    seen_locations = []
+
+    def fake_ors_deadhead_estimator(**kwargs):
+        def estimate(a, b, vehicle):
+            seen_locations.extend([a, b])
+            return 5
+
+        return estimate
+
+    monkeypatch.setattr(schedule_module, "ors_deadhead_estimator", fake_ors_deadhead_estimator)
+
+    response = client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
+    assert response.status_code == 200, response.text
+    assert seen_locations
+    for location in seen_locations:
+        assert (location.lat, location.lon) == (29.70, -95.40)
 
 
 def test_schedule_uses_straight_line_estimator_when_no_ors_key_configured(

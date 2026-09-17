@@ -1,8 +1,11 @@
 """Phase 6, spec section 8: district-specific geographic knowledge
 overrides. Transportation personnel record local roadway knowledge
-commercial mapping data doesn't have; this is POST/GET only in this
-slice — wiring it into actual route calculations is deferred, per
-spec section 8's own text ("future route calculations")."""
+commercial mapping data doesn't have. This file covers persistence/
+validation (POST/GET, RBAC, per-category required fields); actual
+routing wiring (routers/schedule.py's _HARD_AVOID_CATEGORIES,
+_congestion_avoid_points, _size_restrictions_for_schedule,
+_preferred_entrance_locations) is covered in test_schedule_end_to_end.py
+instead, since it needs a full schedule scenario, not just an override."""
 
 from isd_api.models import AuditLogEntry, Role
 from tests.conftest import auth_headers, login, make_user
@@ -215,3 +218,59 @@ def test_rejects_non_positive_max_allowed_value(client, admin_headers):
         },
     )
     assert response.status_code == 422
+
+
+def test_preferred_entrance_round_trips_with_its_school(client, admin_headers):
+    school = client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": "Riverside Elementary", "location_lat": 29.7, "location_lon": -95.4},
+    ).json()
+    response = client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={
+            "location_lat": 29.705,
+            "location_lon": -95.405,
+            "category": "preferred_entrance",
+            "note": "Use the north gate, not the main office entrance.",
+            "school_id": school["id"],
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["school_id"] == school["id"]
+    assert body["window_start_minute"] is None
+    assert body["restricted_dimension"] is None
+
+
+def test_preferred_entrance_requires_school_id(client, admin_headers):
+    response = client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={**_PAYLOAD, "category": "preferred_entrance"},
+    )
+    assert response.status_code == 400
+
+
+def test_preferred_entrance_rejects_unknown_school_id(client, admin_headers):
+    response = client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={**_PAYLOAD, "category": "preferred_entrance", "school_id": 999999},
+    )
+    assert response.status_code == 400
+
+
+def test_school_id_is_rejected_for_a_non_preferred_entrance_category(client, admin_headers):
+    school = client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": "S", "location_lat": 29.7, "location_lon": -95.4},
+    ).json()
+    response = client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={**_PAYLOAD, "school_id": school["id"]},
+    )
+    assert response.status_code == 400
