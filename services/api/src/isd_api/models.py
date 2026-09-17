@@ -414,19 +414,39 @@ class GeographicKnowledgeCategory(enum.StrEnum):
     OTHER = "other"
 
 
+class RestrictedVehicleDimension(enum.StrEnum):
+    """Which of Vehicle's own size fields a VEHICLE_SIZE_RESTRICTED
+    override's max_allowed_value is measured against -- the string
+    values are deliberately identical to Vehicle's own column names
+    (isd_solver.domain.SizeRestriction.dimension does a plain
+    getattr(vehicle, dimension) against them)."""
+
+    LENGTH_M = "length_m"
+    WIDTH_M = "width_m"
+    HEIGHT_M = "height_m"
+    WEIGHT_KG = "weight_kg"
+
+
 class GeographicKnowledgeOverride(Base):
     """spec section 8: local roadway information transportation personnel
     know that commercial mapping data doesn't ("this intersection is
     difficult for full-size buses," "this lot isn't a valid turnaround").
     Per ADR 0007, this is the one piece of routing-relevant data this
     system owns itself, layered on top of an external routing provider's
-    output rather than merged into it — spec section 8's own text defers
-    that wiring to "future route calculations"; this entity only
-    persists the knowledge. `note` is required free text: unlike
-    DriverAbsence (which deliberately avoids free text for PII reasons),
-    the entire value of this entity is staff-authored institutional
-    knowledge, which a category alone can't carry. Who added it is the
-    audit log, not a column here, same precedent as DriverAbsence."""
+    output rather than merged into it. `note` is required free text:
+    unlike DriverAbsence (which deliberately avoids free text for PII
+    reasons), the entire value of this entity is staff-authored
+    institutional knowledge, which a category alone can't carry. Who
+    added it is the audit log, not a column here, same precedent as
+    DriverAbsence.
+
+    `window_start_minute`/`window_end_minute` (required together, and
+    only meaningful, for CONGESTION_WINDOW) and `restricted_dimension`/
+    `max_allowed_value` (required together, and only meaningful, for
+    VEHICLE_SIZE_RESTRICTED) are the routing-wiring fields for those
+    two categories -- see routers/schedule.py for how they're actually
+    applied to a solve. Every other category leaves all four null;
+    schemas.GeographicKnowledgeOverrideCreate enforces this pairing."""
 
     __tablename__ = "geographic_knowledge_overrides"
 
@@ -437,6 +457,12 @@ class GeographicKnowledgeOverride(Base):
         SAEnum(GeographicKnowledgeCategory, native_enum=False, length=32), nullable=False
     )
     note: Mapped[str] = mapped_column(String(1000), nullable=False)
+    window_start_minute: Mapped[int | None] = mapped_column(nullable=True)
+    window_end_minute: Mapped[int | None] = mapped_column(nullable=True)
+    restricted_dimension: Mapped[RestrictedVehicleDimension | None] = mapped_column(
+        SAEnum(RestrictedVehicleDimension, native_enum=False, length=16), nullable=True
+    )
+    max_allowed_value: Mapped[float | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 

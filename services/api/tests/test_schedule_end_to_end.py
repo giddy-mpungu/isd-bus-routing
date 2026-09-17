@@ -290,6 +290,129 @@ def test_schedule_ors_estimator_gets_avoid_polygons_for_hard_avoid_categories_on
     assert min(lats) < 29.70 < max(lats)
 
 
+def test_schedule_applies_a_congestion_window_that_overlaps_todays_run(
+    client, admin_headers, monkeypatch
+):
+    """Spec section 8: CONGESTION_WINDOW is applied per-solve when ANY
+    job being scheduled today has a required window overlapping it —
+    _seed_single_run_scenario's run has window [360, 420] (6:00-7:00am),
+    so a congestion window of [400, 460] (6:40-7:40am) genuinely
+    overlaps and must be included in the avoid geometry."""
+    _school, _crew, _run = _seed_single_run_scenario(client, admin_headers)
+    client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={
+            "location_lat": 29.70,
+            "location_lon": -95.40,
+            "category": "congestion_window",
+            "note": "Backs up during morning drop-off.",
+            "window_start_minute": 400,
+            "window_end_minute": 460,
+        },
+    )
+
+    import isd_api.routers.schedule as schedule_module
+
+    monkeypatch.setattr(schedule_module.settings, "ors_api_key", "test-key")
+    calls = []
+
+    def fake_ors_deadhead_estimator(**kwargs):
+        calls.append(kwargs)
+        return lambda a, b, v: 5
+
+    monkeypatch.setattr(schedule_module, "ors_deadhead_estimator", fake_ors_deadhead_estimator)
+
+    response = client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
+    assert response.status_code == 200, response.text
+
+    avoid_polygons = calls[0]["avoid_polygons"]
+    assert avoid_polygons is not None
+    assert len(avoid_polygons["coordinates"]) == 1
+
+
+def test_schedule_skips_a_congestion_window_that_does_not_overlap_any_run_today(
+    client, admin_headers, monkeypatch
+):
+    """The same congestion override as above, but shifted so its time
+    range no longer overlaps the run's [360, 420] window at all --
+    it must be left out of the avoid geometry entirely."""
+    _school, _crew, _run = _seed_single_run_scenario(client, admin_headers)
+    client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={
+            "location_lat": 29.70,
+            "location_lon": -95.40,
+            "category": "congestion_window",
+            "note": "Backs up during afternoon dismissal.",
+            "window_start_minute": 900,
+            "window_end_minute": 960,
+        },
+    )
+
+    import isd_api.routers.schedule as schedule_module
+
+    monkeypatch.setattr(schedule_module.settings, "ors_api_key", "test-key")
+    calls = []
+
+    def fake_ors_deadhead_estimator(**kwargs):
+        calls.append(kwargs)
+        return lambda a, b, v: 5
+
+    monkeypatch.setattr(schedule_module, "ors_deadhead_estimator", fake_ors_deadhead_estimator)
+
+    response = client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
+    assert response.status_code == 200, response.text
+
+    assert calls[0]["avoid_polygons"] is None
+
+
+def test_schedule_passes_vehicle_size_restrictions_through_to_the_deadhead_estimator(
+    client, admin_headers, monkeypatch
+):
+    """Spec section 8: VEHICLE_SIZE_RESTRICTED overrides reach the
+    estimator as SizeRestriction objects, re-evaluated per vehicle --
+    this test only checks the wiring (that schedule.py builds and
+    passes them through correctly); isd_solver's own
+    test_ors_deadhead_estimator.py covers the per-vehicle avoid-zone
+    behavior itself."""
+    _school, _crew, _run = _seed_single_run_scenario(client, admin_headers)
+    client.post(
+        "/geographic-knowledge",
+        headers=admin_headers,
+        json={
+            "location_lat": 29.75,
+            "location_lon": -95.45,
+            "category": "vehicle_size_restricted",
+            "note": "Covered bridge on Elm St has a 3.0m height limit.",
+            "restricted_dimension": "height_m",
+            "max_allowed_value": 3.0,
+        },
+    )
+
+    import isd_api.routers.schedule as schedule_module
+
+    monkeypatch.setattr(schedule_module.settings, "ors_api_key", "test-key")
+    calls = []
+
+    def fake_ors_deadhead_estimator(**kwargs):
+        calls.append(kwargs)
+        return lambda a, b, v: 5
+
+    monkeypatch.setattr(schedule_module, "ors_deadhead_estimator", fake_ors_deadhead_estimator)
+
+    response = client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
+    assert response.status_code == 200, response.text
+
+    size_restrictions = calls[0]["size_restrictions"]
+    assert len(size_restrictions) == 1
+    assert size_restrictions[0].dimension == "height_m"
+    assert size_restrictions[0].max_allowed == 3.0
+    assert size_restrictions[0].location.lat == 29.75
+    assert size_restrictions[0].location.lon == -95.45
+
+
 def test_schedule_uses_straight_line_estimator_when_no_ors_key_configured(
     client, admin_headers, monkeypatch
 ):

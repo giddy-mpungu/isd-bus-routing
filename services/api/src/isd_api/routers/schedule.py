@@ -22,6 +22,7 @@ from isd_solver import (
 from isd_solver import (
     InfeasibleResult,
     SchedulingResult,
+    SizeRestriction,
     avoid_polygons_geojson,
     ors_deadhead_estimator,
     solve_multi_school_schedule,
@@ -66,21 +67,94 @@ from isd_api.security import get_current_user, require_role
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
 
-# spec section 8: which GeographicKnowledgeOverride categories become a hard
-# ORS avoid-zone. Deliberately NOT all 8 categories — DIFFICULT_INTERSECTION
-# is a caution/cost rather than a block (blanket-avoiding could make routing
-# infeasible for something only meant as "drive carefully here"); CONGESTION_WINDOW
-# is time-of-day dependent and the estimator has no time parameter; VEHICLE_SIZE_RESTRICTED
-# depends on which vehicle, tying to the still-deferred per-vehicle-restrictions
-# follow-up; PREFERRED_ENTRANCE is a positive preference, the opposite of an
+# spec section 8: which GeographicKnowledgeOverride categories become a hard,
+# always-on ORS avoid-zone for the whole solve, regardless of which specific
+# run/vehicle a deadhead leg is between. Deliberately NOT all 8 categories —
+# DIFFICULT_INTERSECTION is a caution/cost rather than a block (blanket-avoiding
+# could make routing infeasible for something only meant as "drive carefully
+# here"); PREFERRED_ENTRANCE is a positive preference, the opposite of an
 # avoidance, needing a different mechanism entirely; OTHER is too ambiguous to
-# apply an unpredictable effect for. See isd_solver.domain.ors_deadhead_estimator's
-# avoid_polygons docstring for the geometry side of this.
+# apply an unpredictable effect for. CONGESTION_WINDOW and VEHICLE_SIZE_RESTRICTED
+# are NOT unconditional like these three -- they're handled by
+# _congestion_avoid_points and _size_restrictions_for_schedule below, since
+# each needs per-solve (time) or per-vehicle context this fixed tuple can't
+# express. See isd_solver.domain.ors_deadhead_estimator's avoid_polygons/
+# size_restrictions docstrings for the geometry/per-call side of this.
 _HARD_AVOID_CATEGORIES = (
     GeographicKnowledgeCategory.FREQUENT_FLOODING,
     GeographicKnowledgeCategory.UNSAFE_TURN,
     GeographicKnowledgeCategory.INVALID_TURNAROUND,
 )
+
+
+def _congestion_avoid_points(db: Session, jobs: list[SolverJob]) -> list[SolverLocation]:
+    """CONGESTION_WINDOW overrides are applied per-solve, not per-leg: a
+    zone is included in the avoid-geometry for this whole POST /schedule
+    call when ANY job actually being solved today has a required
+    window overlapping the override's window_start_minute/
+    window_end_minute — not only the specific deadhead legs that would
+    plausibly occur during that window. This is a deliberate, named
+    precision tradeoff (the same "fixed for the whole solve" shape
+    _HARD_AVOID_CATEGORIES already uses) rather than threading a time
+    parameter through DeadheadEstimator and every scheduler.py call
+    site: a run's own required window is already known before solving
+    even starts, while the exact deadhead-leg travel time is a CP-SAT
+    decision variable, not known until after solving."""
+    overrides = (
+        db.query(GeographicKnowledgeOverride)
+        .filter(
+            GeographicKnowledgeOverride.category == GeographicKnowledgeCategory.CONGESTION_WINDOW
+        )
+        .all()
+    )
+    points = []
+    for override in overrides:
+        # window_start_minute/window_end_minute are required together at
+        # creation for this exact category (routers/geographic_knowledge.py's
+        # _validate_category_specific_fields) -- the DB columns are
+        # nullable only because they're meaningless for every other category.
+        assert override.window_start_minute is not None
+        assert override.window_end_minute is not None
+        overlaps_a_job_today = any(
+            job.window.earliest <= override.window_end_minute
+            and override.window_start_minute <= job.window.latest
+            for job in jobs
+        )
+        if overlaps_a_job_today:
+            points.append(SolverLocation(lat=override.location_lat, lon=override.location_lon))
+    return points
+
+
+def _size_restrictions_for_schedule(db: Session) -> tuple[SizeRestriction, ...]:
+    """VEHICLE_SIZE_RESTRICTED overrides, converted to solver
+    SizeRestriction objects — unlike the always-on categories above,
+    these are re-evaluated by the estimator on every call against the
+    specific Vehicle passed in, so no per-solve time/job filtering is
+    needed here (see isd_solver.domain.ors_deadhead_estimator)."""
+    overrides = (
+        db.query(GeographicKnowledgeOverride)
+        .filter(
+            GeographicKnowledgeOverride.category
+            == GeographicKnowledgeCategory.VEHICLE_SIZE_RESTRICTED
+        )
+        .all()
+    )
+    restrictions = []
+    for override in overrides:
+        # restricted_dimension/max_allowed_value are required together at
+        # creation for this exact category (same precedent as
+        # _congestion_avoid_points above) -- nullable only because they're
+        # meaningless for every other category.
+        assert override.restricted_dimension is not None
+        assert override.max_allowed_value is not None
+        restrictions.append(
+            SizeRestriction(
+                location=SolverLocation(lat=override.location_lat, lon=override.location_lon),
+                dimension=override.restricted_dimension.value,
+                max_allowed=override.max_allowed_value,
+            )
+        )
+    return tuple(restrictions)
 
 
 def _to_solver_inputs(
@@ -258,11 +332,13 @@ def run_schedule(
             .filter(GeographicKnowledgeOverride.category.in_(_HARD_AVOID_CATEGORIES))
             .all()
         ]
+        avoid_points += _congestion_avoid_points(db, unlocked_jobs)
         estimator = ors_deadhead_estimator(
             api_key=settings.ors_api_key,
             base_url=settings.ors_base_url,
             profile=settings.ors_profile,
             avoid_polygons=avoid_polygons_geojson(avoid_points),
+            size_restrictions=_size_restrictions_for_schedule(db),
             fallback=fallback_estimator,
         )
     else:

@@ -12,6 +12,7 @@ from isd_api.models import (
     DriverReportType,
     GeographicKnowledgeCategory,
     QualificationKind,
+    RestrictedVehicleDimension,
     RideDirection,
     RidershipDefault,
     Role,
@@ -363,6 +364,15 @@ class GeographicKnowledgeOverrideCreate(BaseModel):
     location_lon: float = Field(ge=-180, le=180)
     category: GeographicKnowledgeCategory
     note: str = Field(min_length=1, max_length=1000)
+    # Required together, and only meaningful, for category=congestion_window
+    # -- see routers/geographic_knowledge.py for the per-category
+    # validation (same "validate at the router" precedent as FieldTrip's
+    # departure/return checks, not a schema-level model_validator).
+    window_start_minute: int | None = Field(default=None, ge=0, le=1439)
+    window_end_minute: int | None = Field(default=None, ge=0, le=1439)
+    # Required together, and only meaningful, for category=vehicle_size_restricted.
+    restricted_dimension: RestrictedVehicleDimension | None = None
+    max_allowed_value: float | None = Field(default=None, gt=0)
 
 
 class GeographicKnowledgeOverrideRead(BaseModel):
@@ -372,6 +382,10 @@ class GeographicKnowledgeOverrideRead(BaseModel):
     location_lon: float
     category: GeographicKnowledgeCategory
     note: str
+    window_start_minute: int | None
+    window_end_minute: int | None
+    restricted_dimension: RestrictedVehicleDimension | None
+    max_allowed_value: float | None
     created_at: datetime
 
 

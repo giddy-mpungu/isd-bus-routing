@@ -250,6 +250,39 @@ class Crew:
         return capacity >= job.passenger_count
 
 
+@dataclass(frozen=True)
+class SizeRestriction:
+    """Spec section 8's `VEHICLE_SIZE_RESTRICTED` local-knowledge
+    category, e.g. "the covered bridge on Elm St has a 10ft height
+    limit" — local staff knowledge ORS's own map data may not have,
+    distinct from spec section 6's per-vehicle HGV `restrictions`
+    (which ask ORS to route around *its own* known road limits for a
+    vehicle's dimensions). `dimension` names one of `Vehicle`'s own
+    size fields (`length_m`/`width_m`/`height_m`/`weight_kg`) — the one
+    physical property this specific restriction is about; `max_allowed`
+    is in the same units as that field. Only a vehicle whose own
+    dimension is *known* and exceeds the threshold is considered
+    restricted — an unknown vehicle dimension is never treated as an
+    assumed violation (spec section 21: don't guess)."""
+
+    location: Location
+    dimension: str
+    max_allowed: float
+
+    def __post_init__(self) -> None:
+        if self.dimension not in ("length_m", "width_m", "height_m", "weight_kg"):
+            raise ValueError(
+                f"SizeRestriction.dimension must be one of length_m/width_m/height_m/"
+                f"weight_kg, got {self.dimension!r}"
+            )
+        if self.max_allowed <= 0:
+            raise ValueError("SizeRestriction.max_allowed must be > 0")
+
+    def violated_by(self, vehicle: Vehicle) -> bool:
+        value = getattr(vehicle, self.dimension)
+        return value is not None and value > self.max_allowed
+
+
 DeadheadEstimator = Callable[[Location, Location, Vehicle], int]
 
 
@@ -429,12 +462,27 @@ def avoid_polygons_geojson(points: list[Location], buffer_degrees: float = 0.000
     return {"type": "MultiPolygon", "coordinates": rings}
 
 
+def _merge_avoid_polygons(fixed: dict | None, dynamic: dict | None) -> dict | None:
+    """Combines the estimator-lifetime-fixed avoid_polygons with a
+    per-call dynamic one (spec section 8's VEHICLE_SIZE_RESTRICTED
+    zones this specific vehicle violates) into a single MultiPolygon.
+    Both inputs, when present, are always MultiPolygon (the only shape
+    avoid_polygons_geojson produces), so concatenating `coordinates` is
+    a correct merge, not an approximation."""
+    if fixed is None:
+        return dynamic
+    if dynamic is None:
+        return fixed
+    return {"type": "MultiPolygon", "coordinates": fixed["coordinates"] + dynamic["coordinates"]}
+
+
 def ors_deadhead_estimator(
     api_key: str,
     base_url: str = "https://api.openrouteservice.org",
     profile: str = "driving-hgv",
     timeout_seconds: float = 5.0,
     avoid_polygons: dict | None = None,
+    size_restrictions: tuple[SizeRestriction, ...] = (),
     http_post: Callable[[str, dict, dict[str, str], float], dict] | None = None,
     fallback: DeadheadEstimator | None = None,
 ) -> DeadheadEstimator:
@@ -481,28 +529,39 @@ def ors_deadhead_estimator(
     customizable routing graph.
 
     `avoid_polygons` is the wiring point for spec section 8's
-    district-specific geographic knowledge — a GeoJSON Polygon or
+    always-on district-specific geographic knowledge (frequent
+    flooding, unsafe turns, invalid turnarounds) — a GeoJSON Polygon or
     MultiPolygon (see `avoid_polygons_geojson` above for building one
     from points) passed straight into ORS's `options.avoid_polygons`.
     Fixed for the estimator's whole lifetime, not re-evaluated per
     call, since it represents standing local knowledge rather than
-    anything that varies per origin/destination pair. Which
-    `GeographicKnowledgeOverride` categories actually get turned into
-    an avoid-zone (and which deliberately don't — several categories
-    are cautions, time-dependent, vehicle-dependent, or positive
-    preferences that a hard avoid-zone can't correctly express) is
+    anything that varies per origin/destination pair or vehicle.
+
+    `size_restrictions` is the wiring point for spec section 8's
+    `VEHICLE_SIZE_RESTRICTED` category — unlike `avoid_polygons`, this
+    *is* re-evaluated on every call: each `SizeRestriction` is checked
+    against the specific `Vehicle` passed to `estimate`
+    (`SizeRestriction.violated_by`), and only the zones a given vehicle
+    actually violates are merged into that call's `avoid_polygons`
+    (via `_merge_avoid_polygons`) — a small vehicle that fits under a
+    restricted bridge never detours around it, while an oversized one
+    does. Which `GeographicKnowledgeOverride` categories become
+    `avoid_polygons` vs. `size_restrictions` vs. neither (several
+    categories are cautions, time-dependent-but-solve-wide, or positive
+    preferences that no avoid-zone can correctly express) is
     `routers/schedule.py`'s decision, not this function's — it accepts
-    whatever geometry it's given.
+    whatever geometry/restrictions it's given.
 
     Results are cached in-memory per (origin, destination, vehicle
-    restriction signature) for the lifetime of the returned estimator,
-    since the scheduler's pairwise ordering logic may request the same
-    pair more than once — the vehicle is part of the key precisely
-    because two different vehicles at the same two points can now get
-    genuinely different ORS results (a cache keyed on location alone
-    would silently reuse one vehicle's result for another's).
-    `avoid_polygons` is NOT part of the key, since it's fixed for the
-    estimator's whole lifetime, not per-call.
+    restriction signature, violated size-restriction zones) for the
+    lifetime of the returned estimator, since the scheduler's pairwise
+    ordering logic may request the same pair more than once — the
+    vehicle (and, now, which size-restriction zones it violates) is
+    part of the key precisely because two different vehicles at the
+    same two points can now get genuinely different ORS results (a
+    cache keyed on location alone would silently reuse one vehicle's
+    result for another's). `avoid_polygons` is NOT part of the key,
+    since it's fixed for the estimator's whole lifetime, not per-call.
 
     If the API call fails (network error, non-2xx, unexpected response
     shape) and `fallback` is provided, the fallback estimator is used
@@ -519,7 +578,7 @@ def ors_deadhead_estimator(
         raise ValueError("base_url must be a non-empty routing API base URL")
 
     post = http_post or _default_http_post
-    cache: dict[tuple[Location, Location, tuple[float | None, ...]], int] = {}
+    cache: dict[tuple[Location, Location, tuple[float | None, ...], frozenset], int] = {}
 
     def estimate(a: Location, b: Location, vehicle: Vehicle) -> int:
         if a == b:
@@ -530,15 +589,23 @@ def ors_deadhead_estimator(
             vehicle.height_m,
             vehicle.weight_kg,
         )
-        key = (a, b, restriction_signature)
+        violated_zones = frozenset(r for r in size_restrictions if r.violated_by(vehicle))
+        key = (a, b, restriction_signature, violated_zones)
         if key in cache:
             return cache[key]
+
+        effective_avoid_polygons = _merge_avoid_polygons(
+            avoid_polygons,
+            avoid_polygons_geojson([z.location for z in violated_zones])
+            if violated_zones
+            else None,
+        )
 
         url = f"{base_url}/v2/directions/{profile}"
         body: dict = {"coordinates": [[a.lon, a.lat], [b.lon, b.lat]]}
         options: dict = {}
-        if avoid_polygons is not None:
-            options["avoid_polygons"] = avoid_polygons
+        if effective_avoid_polygons is not None:
+            options["avoid_polygons"] = effective_avoid_polygons
         restrictions: dict = {}
         if vehicle.length_m is not None:
             restrictions["length"] = vehicle.length_m
