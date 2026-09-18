@@ -28,6 +28,8 @@ vi.mock('../api/client', async (importOriginal) => {
     createStudent: vi.fn(),
     createGeographicKnowledgeOverride: vi.fn(),
     createAnnouncement: vi.fn(),
+    getAuditLog: vi.fn(),
+    getAuditLogEntityTypes: vi.fn(),
   }
 })
 
@@ -458,6 +460,112 @@ describe('SetupPage', () => {
     await user.type(screen.getByLabelText('Latitude'), '1')
     await user.type(screen.getByLabelText('Longitude'), '1')
     await user.click(screen.getByRole('button', { name: 'Add school' }))
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Not authorized'))
+  })
+
+  it('shows the audit log section for transportation_admin', async () => {
+    renderAsRole(adminUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+    expect(screen.getByRole('heading', { name: 'Audit log' })).toBeInTheDocument()
+  })
+
+  it('hides the audit log section for dispatcher', async () => {
+    renderAsRole(dispatcherUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+    expect(screen.queryByRole('heading', { name: 'Audit log' })).not.toBeInTheDocument()
+  })
+
+  it('loading the audit log fetches entity types and entries, and renders them', async () => {
+    vi.mocked(api.getAuditLogEntityTypes).mockResolvedValue(['announcement', 'school'])
+    vi.mocked(api.getAuditLog).mockResolvedValue([
+      {
+        id: 1,
+        entity_type: 'announcement',
+        entity_id: 5,
+        action: 'created',
+        actor_user_id: 1,
+        actor_full_name: 'Admin',
+        before_state: null,
+        after_state: { message: 'Buses running late.' },
+        created_at: '2026-09-18T12:00:00Z',
+      },
+    ])
+    renderAsRole(adminUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Load audit log' }))
+
+    await waitFor(() =>
+      expect(api.getAuditLog).toHaveBeenCalledWith({
+        entity_type: undefined,
+        entity_id: undefined,
+        limit: 20,
+        offset: 0,
+      }),
+    )
+    expect(screen.getByText(/created announcement #5/)).toBeInTheDocument()
+    expect(screen.getByText('Admin', { exact: false })).toBeInTheDocument()
+  })
+
+  it('filtering the audit log by entity type sends it to the API', async () => {
+    vi.mocked(api.getAuditLogEntityTypes).mockResolvedValue(['announcement', 'school'])
+    vi.mocked(api.getAuditLog).mockResolvedValue([])
+    renderAsRole(adminUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Load audit log' }))
+    await waitFor(() => expect(api.getAuditLog).toHaveBeenCalledTimes(1))
+
+    await user.selectOptions(screen.getByLabelText('Entity type'), 'announcement')
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+
+    await waitFor(() =>
+      expect(api.getAuditLog).toHaveBeenCalledWith({
+        entity_type: 'announcement',
+        entity_id: undefined,
+        limit: 20,
+        offset: 0,
+      }),
+    )
+  })
+
+  it('shows a friendly message when the audit log has no matching entries', async () => {
+    vi.mocked(api.getAuditLogEntityTypes).mockResolvedValue([])
+    vi.mocked(api.getAuditLog).mockResolvedValue([])
+    renderAsRole(adminUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Load audit log' }))
+
+    await waitFor(() =>
+      expect(screen.getByText('No matching audit log entries.')).toBeInTheDocument(),
+    )
+  })
+
+  it('shows an error message when loading the audit log fails', async () => {
+    vi.mocked(api.getAuditLogEntityTypes).mockResolvedValue([])
+    vi.mocked(api.getAuditLog).mockRejectedValue(new ApiError(403, 'Not authorized'))
+    renderAsRole(adminUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Load audit log' }))
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Not authorized'))
   })

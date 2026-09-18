@@ -380,6 +380,26 @@ produces them rather than duplicated here.
   category/audience combination is still exclusively dispatcher-
   authored via `POST /announcements` — this system has no
   ETA-calculation engine to auto-detect a delay, for example.
+  `GET /announcements/mine` also serves `school_admin` (a real gap
+  found by a full spec-vs-code audit, 2026-09-17: §17 explicitly names
+  "transportation notices" in that role's access list, and nothing
+  previously served it) — a `school_admin` reads the same FAMILY-
+  audience feed a parent at that school would, scoped to their own
+  `User.school_id` via `routers/announcements._recipient_school_ids`.
+- **AuditLogEntry** (spec §17/§21): every mutation across this system
+  already wrote here (`isd_api.audit.record`); `GET /audit-log`
+  (2026-09-17 audit finding — spec §17 lists "Reports"/"Historical
+  records" under transportation_admin's access, and nothing had ever
+  read this table back) is the first endpoint that reads any of it
+  back, transportation_admin only (broader than dispatcher's own
+  day-to-day scope elsewhere, since before/after states span every
+  entity in the system). Filterable by `entity_type`/`entity_id`/date
+  range, paginated (`limit`/`offset`, capped at 500), actor name
+  resolved server-side since the model deliberately has no ORM
+  relationship back to `User`. `GET /audit-log/entity-types` populates
+  a filter dropdown with only the values that actually occur, rather
+  than a hardcoded list this endpoint would need to keep in sync with
+  every other router's `record_audit` calls.
 - **DriverReport** (spec §9): the driver app's "Incident reporting" and
   "Vehicle defect reporting" — one entity with a `report_type`
   discriminator (`incident`/`vehicle_defect`) rather than two nearly

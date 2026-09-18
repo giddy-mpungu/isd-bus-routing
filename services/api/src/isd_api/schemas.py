@@ -232,6 +232,27 @@ class DriverAssignmentRead(BaseModel):
     locked: bool
 
 
+class SchoolAssignmentRead(BaseModel):
+    """Denormalized view of an assignment for a school_admin viewing
+    their own school's buses -- spec section 17: "buses serving the
+    school" / "expected arrivals." Resolved driver/vehicle names for
+    the same least-privilege reason as DriverAssignmentRead (school_admin
+    has no other endpoint that can look up GET /drivers or /crews)."""
+
+    id: int
+    run_id: int
+    service_date: date
+    direction: RideDirection
+    window_earliest: int
+    window_latest: int
+    driver_full_name: str
+    vehicle_label: str
+    start_minute: int
+    end_minute: int
+    status: AssignmentStatus
+    locked: bool
+
+
 class ScheduleRequest(BaseModel):
     service_date: date
     average_deadhead_speed_kmh: float = Field(
@@ -575,3 +596,22 @@ class AffectedAssignmentSubstitutes(BaseModel):
     vehicle_id: int
     vehicle_label: str
     candidates: list[SubstituteCandidate]
+
+
+class AuditLogEntryRead(BaseModel):
+    """spec section 17/21: the audit trail made readable. actor_full_name
+    is resolved by the router (models.AuditLogEntry deliberately has no
+    ORM relationship back to User), null for a system-initiated entry
+    with no actor. before_state/after_state are whatever JSON-serializable
+    dict the writing router passed to isd_api.audit.record -- shape
+    varies by entity_type, not a fixed schema."""
+
+    id: int
+    entity_type: str
+    entity_id: int
+    action: str
+    actor_user_id: int | None
+    actor_full_name: str | None
+    before_state: dict | None
+    after_state: dict | None
+    created_at: datetime

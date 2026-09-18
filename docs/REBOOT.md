@@ -454,7 +454,11 @@ PATCH edits that bypass the solver.
 
 33. #33 `feat/phase6-geo-knowledge-difficult-intersection-and-preferred-entrance` — spec §8's remaining two categories, picked up after the user said "continue" post-PR-#32. **DIFFICULT_INTERSECTION**: added to `routers/schedule.py`'s existing `_HARD_AVOID_CATEGORIES` tuple — a deliberate, named compromise (ORS has no soft-cost lever, so "drive carefully here" becomes "avoid entirely," a real behavior change from what the category name implies), reusing the exact same always-on mechanism as flooding/unsafe-turn/invalid-turnaround rather than inventing anything new. **PREFERRED_ENTRANCE**: `GeographicKnowledgeOverride` gains a nullable `school_id` FK (required, and only meaningful, for this one category). Rather than the originally-assumed "needs ORS waypoint routing," the actual mechanism turned out to be much simpler once designed properly: `_preferred_entrance_locations` (new helper in `routers/schedule.py`) substitutes this override's own `location_lat`/`location_lon` for that school's runs' job `location` inside `_to_solver_inputs`, in place of the school's own centroid — a run's deadhead destination becomes the actual gate/entrance point directly, no multi-waypoint ORS request needed at all. When more than one `PREFERRED_ENTRANCE` override exists for the same school, that school is deliberately left out (spec §21: don't guess which one applies) and falls back to the centroid. Field trips are unaffected — they use `DestinationProfile.approved_entrance` (free text) instead, since they're never solved by CP-SAT. Frontend: `/setup`'s geographic-knowledge form gained a conditional School `<select>` for this category. Manually verified live end-to-end: posted a difficult_intersection override and confirmed a real `POST /schedule` solve still succeeds with it in place; posted a preferred_entrance override through the actual browser form linked to a real school, confirmed it round-trips and displays with the school's name; then directly exercised `_preferred_entrance_locations`/`_to_solver_inputs` against the real seeded data — a run's job location came back as the entrance's own coordinates, not the school's; adding a second competing preferred_entrance override for the same school correctly reverted the job location back to the school's centroid (the "don't guess" fallback). **This closes out spec §8 to the extent it's automatable at all** — `OTHER` is the only category left, and it's excluded structurally (the catch-all for knowledge that doesn't fit any other category), not for lack of a follow-up
 
-## Key files (current state, post-PR #33)
+**Full spec-vs-code audit (2026-09-17)** — with §8 (and the rest of the original candidate list) fully closed out, the user asked for a fresh audit of the entire 23-section spec against the actual codebase, not the docs' own summaries of themselves (which this session had already caught drifting stale more than once — e.g. the "5 of 8 categories" count that became "7 of 8" mid-session and needed fixing in three files). Read `Bus Program Specifications Document.docx` directly section by section, cross-checked against `docs/architecture.md`/`docs/domain-model.md` and the actual source, and published the result as an artifact (`Bus Routing Build Audit`, https://claude.ai/artifact/7DM456LsuGAQPs8KSHBTZk) rather than leaving it in chat scrollback. Headline: 9 of 21 gradable sections done, 9 partial, 2 deferred by explicit choice (§7/§10), 1 not started (§19). Two findings surfaced that weren't visible from the docs alone and became PR #34 below (school_admin's missing announcements access and missing frontend entirely; no way to read the audit log back). The single biggest remaining gap, not yet started: **§11's recurring/permanent assignment** — every `Crew` is created fresh, by hand, per `service_date`, with no template that says "this driver+vehicle+run repeats Mon–Fri." User asked to work through the audit's recommended order autonomously, flagging decisions rather than asking upfront — recurring assignments is next.
+
+34. #34 `feat/school-admin-announcements-and-audit-log` — the audit's two "cheap fix" findings, closed together. **`school_admin` announcements access**: `_family_school_ids` renamed `_recipient_school_ids` and extended to resolve a school_admin's own `User.school_id` (a single school, not a set from guardian links) — `Role.SCHOOL_ADMIN` added to `_RECIPIENT_ROLES`, reusing the existing FAMILY-audience feed rather than inventing a new audience value. **Discovered mid-fix, not just the announcements gap**: `school_admin` had zero frontend surface at all — `RoleHome` fell through to `/schedule`, which `ProtectedRoute` then immediately blocked. New `GET /schedule/{service_date}/school-assignments` (transportation_admin/dispatcher-style resolved-name pattern, same shape as `DriverAssignmentRead` — school_admin has no other endpoint that can resolve driver/vehicle names) backs a new `/school` page (`SchoolAdminPage.tsx`): "buses serving the school" with resolved driver/vehicle names, direction, time window, status, plus the same transportation-notices panel `/family` and `/driver` already have. **Audit log made readable**: `GET /audit-log` (new `routers/audit_log.py`, transportation_admin only — broader than dispatcher's own scope elsewhere, since before/after states span every entity) filters by `entity_type`/`entity_id`/date range, paginated (capped at 500), resolves actor names server-side (`AuditLogEntry` deliberately has no ORM relationship back to `User`). `GET /audit-log/entity-types` populates a filter dropdown with only values that actually occur. `/setup` gained an admin-only "Audit log" section (entity-type filter, entity-ID filter, load-more pagination). Manually verified live end-to-end: logged in as a real school_admin user, confirmed the "My School" nav link, the bus card with resolved driver/vehicle names, and a school-scoped transportation notice all render correctly; logged in as transportation_admin, confirmed the audit log loads newest-first with resolved actor names and the entity-type filter narrows results correctly
+
+## Key files (current state, post-PR #34)
 
 - `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal + revocation check), `LoginRateLimiter`/`login_rate_limiter`, `revoke_token`
 - `services/api/src/isd_api/routers/auth.py` — login rate-limited + sets cookie + returns bearer token; `POST /auth/logout` (still no auth required — a no-op if nothing to revoke, but revokes the current token if one is present)
@@ -496,53 +500,54 @@ PATCH edits that bypass the solver.
 
 ## Exact next step (as of this checkpoint)
 
-Every PR through #33 is **merged**, CI green, local `main` synced. PR
-#33 shipped spec §8's last two categories, `DIFFICULT_INTERSECTION` and
-`PREFERRED_ENTRANCE`, picked up after the user said "continue"
-post-PR-#32 — backend + frontend green (67 solver + 191 api + 74 web
-tests, ruff/format/mypy clean, `npm run build`/`lint`/`format:check`/
-`test` all clean) and manually verified live end-to-end (see PR #33's
-entry above).
+Every PR through #34 is **merged**, CI green, local `main` synced. With
+the original candidate list (and spec §8) fully closed out, the user
+asked for a full spec-vs-code audit and a plan for the rest of the
+project — see the audit entry above (2026-09-17) and the published
+artifact for the complete section-by-section breakdown. **The user's
+standing instruction now: work through the audit's recommended order
+autonomously, flagging decisions rather than asking upfront.** PR #34
+closed the audit's two "cheap fix" findings (school_admin
+announcements/frontend, the audit log). That order, in full:
 
-**`PREFERRED_ENTRANCE` turned out simpler than this file previously
-assumed** — the prior checkpoint guessed it would need ORS waypoint
-routing; designing it properly first found a much smaller mechanism:
-just substitute the override's own point for the school's centroid as
-the job's `location` in `_to_solver_inputs` (`_preferred_entrance_locations`
-in `routers/schedule.py`). No `DeadheadEstimator`/ORS request-shape
-changes needed at all. Worth remembering as a general pattern: a
-scope note written before actually designing a feature (this file's
-own prior "needs waypoint-based routing, likely its own plan" line)
-can overestimate the real cost — worth re-deriving from the actual
-architecture before treating an old guess as settled.
+1. ~~Cheap fixes: school_admin RBAC gap, audit-log query endpoint~~ **Done (PR #34).**
+2. **Recurring/permanent assignment (spec §11) — next up, not started.**
+   The audit's single biggest finding: every `Crew` is created fresh,
+   by hand, per `service_date` — there's no template that says "this
+   driver+vehicle+run repeats Mon–Fri." A real district would re-enter
+   every pairing every morning, forever. This needs real design work,
+   not just a quick endpoint — at minimum: a new recurring-template
+   entity (crew pattern + day-of-week rule, or similar), a generation
+   mechanism (on-demand vs. a scheduled job — this system has no
+   background job runner yet, worth naming as its own sub-decision),
+   and how a single day's manual override (a locked assignment, a
+   driver absence) interacts with a template-generated day without the
+   template itself getting mutated. Read `docs/domain-model.md`'s
+   `Crew`/`Run` sections and ADR 0001's original (never-built) `Route`
+   intent before designing this — the recurring-assignment gap and the
+   long-standing missing `Route`/template table (named as a gap since
+   Phase 0) are very likely the same underlying entity, viewed from two
+   different angles (the crew side vs. the route side). Don't build two
+   separate template concepts if one covers both.
+3. Configurable soft-constraint objectives (spec §2.2) — the solver
+   optimizes exactly one objective (minimize crews used) today; the
+   spec names ten and asks for admin-configurable weights. Mileage and
+   ride time are the most concretely measurable with data already in
+   the model.
+4. First real spec §19 integration — **needs the user's decision**:
+   which vendor, or which pilot district's SIS, before there's a real
+   target to build against. ADR 0007 already decided the shape.
+5. Production PostgreSQL+PostGIS + a real deployment — needed before
+   any actual district touches this system, not before.
+6. §7/§10's routing-graph investment — **still deferred by explicit
+   user choice (2026-09-14), not forgotten.** Revisit only if it
+   becomes a felt operational pain point for a specific district's
+   specific problem road, not speculatively. Don't re-raise this as an
+   open question.
 
-**With PR #33, spec §8 is closed out to the extent it's automatable at
-all.** 7 of the 8 categories are wired into real routing behavior; only
-`OTHER` remains excluded, and that's structural (the catch-all for
-knowledge that doesn't fit any other category), not a follow-up
-waiting to happen. Don't re-open §8 looking for more to do here.
-
-**§7 (turn/dead-end safety costs) and §10 (dynamic rerouting) — deferred
-by explicit user choice (2026-09-14), not forgotten.** Both need a
-routing *graph* this system doesn't own (ADR 0007) — self-hosting
-(OSRM/Valhalla) or a new paid vendor, a materially different
-commitment than anything else in Phase 6. Presented three options;
-user picked "defer for now." Phase 6's existing ORS-based routing
-(§6/§8) already gives legal/safe HGV routing; §7/§10 are refinements
-beyond that safety baseline. **Don't re-raise this as an open question
-in a future session — it's decided.** Revisit only if the user brings
-it up, or if it becomes a real, felt operational pain point they
-mention. Turn-by-turn navigation (the last piece of spec §9) is
-deferred along with it for the same reason.
-
-**Everything this session's original candidate list named is now done,
-including §8** (§4.3 scoped, §6, §8, §9, §12, §13, §18, §20). Once PR
-#33 merges, there is no open follow-on work left from that list. Phase
-6 §19 integrations (SIS/HR/SSO/fleet-maintenance) remain out of reach
-until a real external vendor exists to integrate against — ADR 0007
-wrote the shape, nothing to build speculatively. If the user says
-"continue" again with no specific target, say so plainly rather than
-inventing new scope.
+If the user says "continue" with no specific target, the next
+unstarted item in this list (currently #2) is the default — not a new
+question, and not something to reinterpret or re-scope without reason.
 
 ## Environment specifics (this machine)
 

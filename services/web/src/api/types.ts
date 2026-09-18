@@ -108,6 +108,21 @@ export interface DriverAssignment {
   locked: boolean
 }
 
+export interface SchoolAssignment {
+  id: number
+  run_id: number
+  service_date: string
+  direction: RideDirection
+  window_earliest: number
+  window_latest: number
+  driver_full_name: string
+  vehicle_label: string
+  start_minute: number
+  end_minute: number
+  status: AssignmentStatus
+  locked: boolean
+}
+
 export interface SchoolCreate {
   name: string
   location_lat: number
@@ -462,4 +477,24 @@ export interface FieldTripObservedDuration {
   average_actual_minutes: number | null
   most_recent_actual_minutes: number | null
   most_recent_departure_date: string | null
+}
+
+// spec §17/§21: the audit trail made readable. transportation_admin only.
+export interface AuditLogEntry {
+  id: number
+  entity_type: string
+  entity_id: number
+  action: string
+  actor_user_id: number | null
+  actor_full_name: string | null
+  before_state: Record<string, unknown> | null
+  after_state: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface AuditLogQuery {
+  entity_type?: string
+  entity_id?: number
+  limit?: number
+  offset?: number
 }

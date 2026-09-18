@@ -681,6 +681,62 @@ def test_driver_only_sees_own_crews_assignments(client, admin_headers, db_sessio
     assert response2.json() == []
 
 
+def test_school_admin_sees_resolved_assignments_for_their_own_school(
+    client, admin_headers, db_session
+):
+    """spec section 17: School Administrator sees "buses serving the
+    school" / "expected arrivals" for their own school, with
+    driver/vehicle names resolved (they have no other endpoint that
+    can look those up)."""
+    school, driver, vehicle, _crew, runs = _seed_spec_section5_scenario(client, admin_headers)
+    client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
+
+    make_user(
+        db_session, email="schooladmin@example.org", role=Role.SCHOOL_ADMIN, school_id=school["id"]
+    )
+    token = login(client, email="schooladmin@example.org")
+    response = client.get("/schedule/2026-09-01/school-assignments", headers=auth_headers(token))
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body) == 3
+    assert {a["run_id"] for a in body} == {r["id"] for r in runs}
+    assert all(a["driver_full_name"] == driver["full_name"] for a in body)
+    assert all(a["vehicle_label"] == vehicle["label"] for a in body)
+
+
+def test_school_admin_sees_nothing_for_a_different_schools_date(client, admin_headers, db_session):
+    _seed_spec_section5_scenario(client, admin_headers)
+    client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
+
+    other_school = client.post(
+        "/schools",
+        headers=admin_headers,
+        json={"name": "Other School", "location_lat": 29.8, "location_lon": -95.5},
+    ).json()
+    make_user(
+        db_session,
+        email="schooladmin_other@example.org",
+        role=Role.SCHOOL_ADMIN,
+        school_id=other_school["id"],
+    )
+    token = login(client, email="schooladmin_other@example.org")
+    response = client.get("/schedule/2026-09-01/school-assignments", headers=auth_headers(token))
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_school_admin_with_no_school_id_is_rejected(client, admin_headers, db_session):
+    make_user(db_session, email="schooladmin_unlinked@example.org", role=Role.SCHOOL_ADMIN)
+    token = login(client, email="schooladmin_unlinked@example.org")
+    response = client.get("/schedule/2026-09-01/school-assignments", headers=auth_headers(token))
+    assert response.status_code == 403
+
+
+def test_school_assignments_endpoint_requires_school_admin_role(client, admin_headers):
+    response = client.get("/schedule/2026-09-01/school-assignments", headers=admin_headers)
+    assert response.status_code == 403
+
+
 def test_rescheduling_replaces_prior_assignments_and_audits_both(client, admin_headers, db_session):
     _seed_spec_section5_scenario(client, admin_headers)
     first = client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})

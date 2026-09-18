@@ -18,6 +18,8 @@ import type {
   Assignment,
   AssignmentPatch,
   AssignmentStatus,
+  AuditLogEntry,
+  AuditLogQuery,
   BusPosition,
   Crew,
   CrewCreate,
@@ -48,6 +50,7 @@ import type {
   RunCreate,
   RunUpdate,
   School,
+  SchoolAssignment,
   SchoolCreate,
   ScheduleResult,
   Stop,
@@ -208,6 +211,10 @@ export async function deleteAssignment(id: number): Promise<void> {
 
 export async function getMyAssignments(serviceDate: string): Promise<DriverAssignment[]> {
   return request<DriverAssignment[]>(`/schedule/${serviceDate}/my-assignments`)
+}
+
+export async function getSchoolAssignments(serviceDate: string): Promise<SchoolAssignment[]> {
+  return request<SchoolAssignment[]>(`/schedule/${serviceDate}/school-assignments`)
 }
 
 export async function updateAssignmentStatus(
@@ -373,4 +380,26 @@ export async function getBusPosition(
   return request<BusPosition>(
     `/students/${studentId}/bus-position?service_date=${serviceDate}&direction=${direction}`,
   )
+}
+
+export async function getAuditLog(query: AuditLogQuery): Promise<AuditLogEntry[]> {
+  const params = new URLSearchParams()
+  if (query.entity_type) {
+    params.set('entity_type', query.entity_type)
+  }
+  if (query.entity_id != null) {
+    params.set('entity_id', String(query.entity_id))
+  }
+  if (query.limit != null) {
+    params.set('limit', String(query.limit))
+  }
+  if (query.offset != null) {
+    params.set('offset', String(query.offset))
+  }
+  const search = params.toString()
+  return request<AuditLogEntry[]>(`/audit-log${search ? `?${search}` : ''}`)
+}
+
+export async function getAuditLogEntityTypes(): Promise<string[]> {
+  return request<string[]>('/audit-log/entity-types')
 }

@@ -27,21 +27,31 @@ from isd_api.security import require_role
 router = APIRouter(prefix="/announcements", tags=["announcements"])
 
 _WRITE_ROLES = (Role.TRANSPORTATION_ADMIN, Role.DISPATCHER)
-_RECIPIENT_ROLES = (Role.DRIVER, Role.STUDENT, Role.PARENT)
+_RECIPIENT_ROLES = (Role.DRIVER, Role.STUDENT, Role.PARENT, Role.SCHOOL_ADMIN)
 
 
-def _family_school_ids(db: Session, current_user: User) -> set[int]:
-    """Schools this family user's own linked student(s) attend -- used
-    to filter school-scoped announcements. Empty set for a student
-    account with no linked record, or a parent with none linked yet;
-    that's not an error here (unlike routers/students.py's
-    _linked_students) since district-wide announcements should still
-    come through regardless."""
+def _recipient_school_ids(db: Session, current_user: User) -> set[int]:
+    """Schools relevant to this non-driver recipient -- used to filter
+    school-scoped FAMILY-audience announcements down to the ones that
+    actually concern them. Empty set for a student account with no
+    linked record, a parent with none linked yet, or a school_admin
+    account not linked to a school; that's not an error here (unlike
+    routers/students.py's _linked_students) since district-wide
+    announcements should still come through regardless.
+
+    spec section 17: school_admin's own access list names "transportation
+    notices" for their school specifically -- reusing FAMILY-audience
+    scoping is the closest fit, since there's no separate audience
+    value for school staff and the actual content (delays,
+    substitutions, route changes for that school) is the same thing a
+    parent at that school would see."""
     if current_user.role == Role.STUDENT:
         if current_user.student_id is None:
             return set()
         student = db.get(Student, current_user.student_id)
         return {student.school_id} if student is not None else set()
+    if current_user.role == Role.SCHOOL_ADMIN:
+        return {current_user.school_id} if current_user.school_id is not None else set()
     return {s.school_id for s in current_user.guardian_of}
 
 
@@ -106,7 +116,10 @@ def list_my_announcements(
             .order_by(Announcement.created_at.desc())
             .all()
         )
-    school_ids = _family_school_ids(db, current_user)
+    # STUDENT/PARENT/SCHOOL_ADMIN all read the same FAMILY-audience
+    # feed, filtered to schools relevant to each -- see
+    # _recipient_school_ids's docstring for school_admin's inclusion.
+    school_ids = _recipient_school_ids(db, current_user)
     announcements = (
         db.query(Announcement)
         .filter(Announcement.audience.in_([AnnouncementAudience.ALL, AnnouncementAudience.FAMILY]))
