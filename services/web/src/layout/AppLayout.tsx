@@ -26,6 +26,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <NavLink to="/family">My Family</NavLink>
           </nav>
         )}
+        {user && user.role === 'school_admin' && (
+          <nav className="app-nav">
+            <NavLink to="/school">My School</NavLink>
+          </nav>
+        )}
         {user && (
           <div className="user-info">
             <span>

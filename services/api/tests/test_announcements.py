@@ -297,6 +297,119 @@ def test_family_sees_district_wide_announcement_regardless_of_school(
     assert [a["message"] for a in response.json()] == ["District-wide"]
 
 
+def test_school_admin_sees_their_own_schools_scoped_announcement(client, admin_headers, db_session):
+    """spec section 17: school_admin's access list names "transportation
+    notices" for their school -- this was a real gap this role had no
+    route to at all before now."""
+    school, _student = _seed_family(client, admin_headers)
+    make_user(
+        db_session,
+        email="schooladmin_a@example.org",
+        role=Role.SCHOOL_ADMIN,
+        school_id=school["id"],
+    )
+    admin_token = login(client, email="schooladmin_a@example.org")
+    school_admin_headers = auth_headers(admin_token)
+
+    client.post(
+        "/announcements",
+        headers=admin_headers,
+        json={"message": "Riverside only", "audience": "family", "school_id": school["id"]},
+    )
+    response = client.get("/announcements/mine", headers=school_admin_headers)
+    assert response.status_code == 200, response.text
+    assert [a["message"] for a in response.json()] == ["Riverside only"]
+
+
+def test_school_admin_does_not_see_a_different_schools_scoped_announcement(
+    client, admin_headers, db_session
+):
+    school_a, _student_a = _seed_family(client, admin_headers, school_name="School A")
+    school_b, _student_b = _seed_family(client, admin_headers, school_name="School B")
+    make_user(
+        db_session,
+        email="schooladmin_b@example.org",
+        role=Role.SCHOOL_ADMIN,
+        school_id=school_a["id"],
+    )
+    admin_token = login(client, email="schooladmin_b@example.org")
+    school_admin_headers = auth_headers(admin_token)
+
+    client.post(
+        "/announcements",
+        headers=admin_headers,
+        json={"message": "School B only", "audience": "family", "school_id": school_b["id"]},
+    )
+    response = client.get("/announcements/mine", headers=school_admin_headers)
+    assert response.status_code == 200, response.text
+    assert response.json() == []
+
+
+def test_school_admin_sees_district_wide_announcements(client, admin_headers, db_session):
+    school, _student = _seed_family(client, admin_headers)
+    make_user(
+        db_session,
+        email="schooladmin_c@example.org",
+        role=Role.SCHOOL_ADMIN,
+        school_id=school["id"],
+    )
+    admin_token = login(client, email="schooladmin_c@example.org")
+    school_admin_headers = auth_headers(admin_token)
+
+    client.post(
+        "/announcements",
+        headers=admin_headers,
+        json={"message": "District-wide", "audience": "family"},
+    )
+    response = client.get("/announcements/mine", headers=school_admin_headers)
+    assert response.status_code == 200, response.text
+    assert [a["message"] for a in response.json()] == ["District-wide"]
+
+
+def test_school_admin_with_no_school_id_sees_only_district_wide_announcements(
+    client, admin_headers, db_session
+):
+    school, _student = _seed_family(client, admin_headers)
+    make_user(db_session, email="schooladmin_unlinked@example.org", role=Role.SCHOOL_ADMIN)
+    admin_token = login(client, email="schooladmin_unlinked@example.org")
+    school_admin_headers = auth_headers(admin_token)
+
+    client.post(
+        "/announcements",
+        headers=admin_headers,
+        json={"message": "Riverside only", "audience": "family", "school_id": school["id"]},
+    )
+    client.post(
+        "/announcements",
+        headers=admin_headers,
+        json={"message": "District-wide", "audience": "family"},
+    )
+    response = client.get("/announcements/mine", headers=school_admin_headers)
+    assert response.status_code == 200, response.text
+    assert [a["message"] for a in response.json()] == ["District-wide"]
+
+
+def test_school_admin_does_not_see_driver_only_announcements(client, admin_headers, db_session):
+    school, _student = _seed_family(client, admin_headers)
+    make_user(
+        db_session,
+        email="schooladmin_d@example.org",
+        role=Role.SCHOOL_ADMIN,
+        school_id=school["id"],
+    )
+    admin_token = login(client, email="schooladmin_d@example.org")
+    school_admin_headers = auth_headers(admin_token)
+
+    client.post(
+        "/announcements",
+        headers=admin_headers,
+        json={"message": "For drivers", "audience": "driver"},
+    )
+    response = client.get("/announcements/mine", headers=school_admin_headers)
+    assert response.status_code == 200, response.text
+    assert response.json() == []
+
+
 def test_crew_driver_change_with_no_assignments_yet_creates_no_announcement(client, admin_headers):
     school = client.post(
         "/schools",

@@ -7,6 +7,7 @@ import { FamilyPage } from './pages/FamilyPage'
 import { FieldTripsPage } from './pages/FieldTripsPage'
 import { LoginPage } from './pages/LoginPage'
 import { SchedulePage } from './pages/SchedulePage'
+import { SchoolAdminPage } from './pages/SchoolAdminPage'
 import { SetupPage } from './pages/SetupPage'
 
 function RoleHome() {
@@ -22,6 +23,9 @@ function RoleHome() {
   }
   if (user?.role === 'student' || user?.role === 'parent') {
     return <Navigate to="/family" replace />
+  }
+  if (user?.role === 'school_admin') {
+    return <Navigate to="/school" replace />
   }
   return <Navigate to="/schedule" replace />
 }
@@ -78,6 +82,17 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['student', 'parent']} deniedMessage="the family app">
                 <FamilyPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/school"
+            element={
+              <ProtectedRoute
+                allowedRoles={['school_admin']}
+                deniedMessage="the school administrator view"
+              >
+                <SchoolAdminPage />
               </ProtectedRoute>
             }
           />

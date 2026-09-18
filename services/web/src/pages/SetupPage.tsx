@@ -5,6 +5,7 @@ import type {
   Announcement,
   AnnouncementAudience,
   AnnouncementCategory,
+  AuditLogEntry,
   Driver,
   GeographicKnowledgeCategory,
   GeographicKnowledgeOverride,
@@ -409,6 +410,41 @@ export function SetupPage() {
 
   const schoolsById = new Map(schools.map((s) => [s.id, s]))
   const stopsById = new Map(stops.map((s) => [s.id, s]))
+
+  // --- Audit log (spec section 17/21) --- transportation_admin only,
+  // loaded on demand rather than as part of loadAll(), since a
+  // dispatcher visiting this page would otherwise trigger a pointless
+  // 403 on every load.
+  const [auditEntityTypes, setAuditEntityTypes] = useState<string[]>([])
+  const [auditEntityTypeFilter, setAuditEntityTypeFilter] = useState('')
+  const [auditEntityIdFilter, setAuditEntityIdFilter] = useState('')
+  const [auditEntries, setAuditEntries] = useState<AuditLogEntry[]>([])
+  const [auditError, setAuditError] = useState<string | null>(null)
+  const [isLoadingAudit, setIsLoadingAudit] = useState(false)
+  const [hasLoadedAudit, setHasLoadedAudit] = useState(false)
+  const auditPageSize = 20
+
+  async function loadAuditLog(offset: number) {
+    setAuditError(null)
+    setIsLoadingAudit(true)
+    try {
+      if (auditEntityTypes.length === 0) {
+        setAuditEntityTypes(await api.getAuditLogEntityTypes())
+      }
+      const entries = await api.getAuditLog({
+        entity_type: auditEntityTypeFilter || undefined,
+        entity_id: auditEntityIdFilter ? Number(auditEntityIdFilter) : undefined,
+        limit: auditPageSize,
+        offset,
+      })
+      setAuditEntries(offset === 0 ? entries : [...auditEntries, ...entries])
+      setHasLoadedAudit(true)
+    } catch (err) {
+      setAuditError(err instanceof ApiError ? err.message : 'Failed to load the audit log.')
+    } finally {
+      setIsLoadingAudit(false)
+    }
+  }
 
   return (
     <main className="setup-page">
@@ -995,6 +1031,72 @@ export function SetupPage() {
           </form>
         )}
       </section>
+
+      {canCreate && (
+        <section>
+          <h2>Audit log</h2>
+          <div className="audit-log-filters">
+            <label htmlFor="audit-entity-type">Entity type</label>
+            <select
+              id="audit-entity-type"
+              value={auditEntityTypeFilter}
+              onChange={(event) => setAuditEntityTypeFilter(event.target.value)}
+            >
+              <option value="">All</option>
+              {auditEntityTypes.map((t) => (
+                <option key={t} value={t}>
+                  {t.replace(/_/g, ' ')}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="audit-entity-id">Entity ID (optional)</label>
+            <input
+              id="audit-entity-id"
+              type="number"
+              value={auditEntityIdFilter}
+              onChange={(event) => setAuditEntityIdFilter(event.target.value)}
+            />
+            <button type="button" disabled={isLoadingAudit} onClick={() => void loadAuditLog(0)}>
+              {isLoadingAudit ? 'Loading…' : hasLoadedAudit ? 'Refresh' : 'Load audit log'}
+            </button>
+          </div>
+          {auditError && (
+            <p role="alert" className="error">
+              {auditError}
+            </p>
+          )}
+          {hasLoadedAudit && auditEntries.length === 0 && !auditError && (
+            <p className="status">No matching audit log entries.</p>
+          )}
+          <ul className="audit-log-list">
+            {auditEntries.map((entry) => (
+              <li key={entry.id} className="audit-log-entry">
+                <div className="audit-log-entry-head">
+                  <span className="mono">{entry.created_at}</span>
+                  {' — '}
+                  <b>{entry.actor_full_name ?? 'system'}</b>
+                  {' — '}
+                  {entry.action} {entry.entity_type.replace(/_/g, ' ')} #{entry.entity_id}
+                </div>
+                {entry.after_state && (
+                  <pre className="audit-log-state">{JSON.stringify(entry.after_state)}</pre>
+                )}
+              </li>
+            ))}
+          </ul>
+          {hasLoadedAudit &&
+            auditEntries.length > 0 &&
+            auditEntries.length % auditPageSize === 0 && (
+              <button
+                type="button"
+                disabled={isLoadingAudit}
+                onClick={() => void loadAuditLog(auditEntries.length)}
+              >
+                {isLoadingAudit ? 'Loading…' : 'Load more'}
+              </button>
+            )}
+        </section>
+      )}
     </main>
   )
 }

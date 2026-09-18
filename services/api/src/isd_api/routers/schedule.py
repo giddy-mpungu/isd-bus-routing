@@ -62,6 +62,7 @@ from isd_api.schemas import (
     DriverAssignmentRead,
     ScheduleRequest,
     ScheduleResult,
+    SchoolAssignmentRead,
 )
 from isd_api.security import get_current_user, require_role
 
@@ -661,6 +662,52 @@ def list_my_assignments(
             run_id=a.run_id,
             service_date=a.run.service_date,
             school_name=a.run.school.name,
+            vehicle_label=a.crew.vehicle.label,
+            start_minute=a.start_minute,
+            end_minute=a.end_minute,
+            status=a.status,
+            locked=a.locked,
+        )
+        for a in assignments
+    ]
+
+
+@router.get("/{service_date}/school-assignments", response_model=list[SchoolAssignmentRead])
+def list_school_assignments(
+    service_date: date,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.SCHOOL_ADMIN)),
+) -> list[SchoolAssignmentRead]:
+    """spec section 17: School Administrator sees "buses serving the
+    school" and "expected arrivals" for their own school — resolved
+    driver/vehicle names server-side, the same least-privilege reason
+    DriverAssignmentRead exists (school_admin has no other endpoint
+    that can resolve GET /drivers or /crews). "Delayed buses" from that
+    same access list isn't surfaced here — there's no ETA-calculation
+    engine anywhere in this system (spec §18's own gap), so there's
+    nothing honest to compute a delay against yet."""
+    if current_user.school_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This school_admin account is not linked to a school",
+        )
+    assignments = (
+        db.query(Assignment)
+        .join(DBRun, Assignment.run_id == DBRun.id)
+        .join(DBCrew, Assignment.crew_id == DBCrew.id)
+        .filter(DBRun.service_date == service_date, DBRun.school_id == current_user.school_id)
+        .order_by(Assignment.start_minute)
+        .all()
+    )
+    return [
+        SchoolAssignmentRead(
+            id=a.id,
+            run_id=a.run_id,
+            service_date=a.run.service_date,
+            direction=a.run.direction,
+            window_earliest=a.run.window_earliest,
+            window_latest=a.run.window_latest,
+            driver_full_name=a.crew.driver.full_name,
             vehicle_label=a.crew.vehicle.label,
             start_minute=a.start_minute,
             end_minute=a.end_minute,

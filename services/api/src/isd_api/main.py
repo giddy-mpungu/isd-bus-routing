@@ -11,6 +11,7 @@ from isd_api.db import Base, engine
 from isd_api.routers import (
     absences,
     announcements,
+    audit_log,
     auth,
     crews,
     destination_profiles,
@@ -78,6 +79,7 @@ app.include_router(destination_profiles.router)
 app.include_router(announcements.router)
 app.include_router(driver_reports.router)
 app.include_router(driver_reports.all_reports_router)
+app.include_router(audit_log.router)
 
 
 @app.get("/health")
