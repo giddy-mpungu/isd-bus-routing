@@ -55,6 +55,7 @@ from isd_api.models import (
 from isd_api.models import Crew as DBCrew
 from isd_api.models import Run as DBRun
 from isd_api.routers.announcements import _maybe_create_substitution_announcement
+from isd_api.routers.optimization_settings import load_objective_weights
 from isd_api.schemas import (
     AssignmentRead,
     AssignmentStatusUpdate,
@@ -385,7 +386,9 @@ def run_schedule(
         )
     else:
         estimator = fallback_estimator
-    result = solve_multi_school_schedule(unlocked_jobs, solvable_crews, estimator)
+    result = solve_multi_school_schedule(
+        unlocked_jobs, solvable_crews, estimator, weights=load_objective_weights(db)
+    )
 
     if isinstance(result, InfeasibleResult):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=result.reason)
@@ -450,6 +453,8 @@ def run_schedule(
     return ScheduleResult(
         crews_used=len({a.crew_id for a in all_assignments}),
         assignments=[AssignmentRead.model_validate(a) for a in all_assignments],
+        total_deadhead_minutes=result.total_deadhead_minutes,
+        total_arrival_buffer_minutes=result.total_arrival_buffer_minutes,
     )
 
 

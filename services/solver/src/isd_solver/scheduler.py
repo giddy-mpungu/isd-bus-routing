@@ -32,9 +32,20 @@ per ADR 0002):
     crew's other locked assignments on a re-solve). No deadhead buffer
     is enforced around a busy interval — see Crew's docstring.
 
-Soft objective implemented here: minimize the number of distinct crews
-used (spec section 2.2, objective 1). Other soft objectives (mileage,
-ride time, etc.) are out of scope for Phase 1 — see docs/domain-model.md.
+Soft objectives implemented here (spec section 2.2), combined as a
+weighted sum with administrator-configurable weights (ObjectiveWeights):
+  - crews_used: minimize the number of distinct crews (objectives 1-2,
+    buses/drivers — a crew is one driver+one vehicle, so they coincide).
+  - deadhead_minutes: minimize deadhead travel between jobs sharing a
+    crew (objective 3's mileage, measured in travel minutes since that
+    is what the DeadheadEstimator returns). Applied to every pair of
+    jobs on a shared crew, not only adjacent ones, so for a crew with
+    3+ jobs it over-counts relative to the true chain — see
+    ObjectiveWeights. The reported total_deadhead_minutes is exact.
+  - arrival_buffer: finish jobs earlier, leaving more slack before each
+    school's required window end (objective 10, operational buffers).
+The rest (stops, ride time, walking, turns) need data this system does
+not model yet — see docs/domain-model.md.
 """
 
 from __future__ import annotations
@@ -48,6 +59,41 @@ from ortools.sat.python import cp_model
 from isd_solver.domain import Crew, DeadheadEstimator, Job
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ObjectiveWeights:
+    """Relative weights for the soft objectives (spec section 2.2:
+    "administrators should be able to configure the relative weights").
+    Non-negative integers (CP-SAT needs an integer objective); a larger
+    weight makes that objective matter more. Hard constraints are never
+    traded off against these — they only rank feasible schedules.
+
+    The defaults reproduce the original behavior exactly (minimize crews
+    used, nothing else). Units differ — crews_used counts crews while
+    the other two count minutes — so to let mileage or buffers matter
+    against a whole crew, give crews_used a proportionally larger weight
+    (e.g. 100 vs 1).
+
+    deadhead_minutes is a pairwise measure: every two jobs sharing a
+    crew contribute their deadhead between them in the order actually
+    driven, whether or not they are adjacent. It is exact for crews with
+    up to two jobs and over-counts non-adjacent pairs beyond that;
+    SchedulingResult.total_deadhead_minutes is always the exact chain
+    total, computed after solving.
+    """
+
+    crews_used: int = 1
+    deadhead_minutes: int = 0
+    arrival_buffer: int = 0
+
+    def __post_init__(self) -> None:
+        for name in ("crews_used", "deadhead_minutes", "arrival_buffer"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} weight must be a non-negative integer, got {value!r}")
+        if self.crews_used == 0 and self.deadhead_minutes == 0 and self.arrival_buffer == 0:
+            raise ValueError("at least one objective weight must be greater than zero")
 
 
 @dataclass(frozen=True)
@@ -93,6 +139,11 @@ class Assignment:
 class SchedulingResult:
     assignments: tuple[Assignment, ...]
     crews_used: int
+    # Exact totals of the realized schedule (independent of the weights):
+    # deadhead travel between consecutive jobs on the same crew, and the
+    # summed slack between each job's end and its window's latest bound.
+    total_deadhead_minutes: int = 0
+    total_arrival_buffer_minutes: int = 0
 
 
 @dataclass(frozen=True)
@@ -106,6 +157,7 @@ def solve_multi_school_schedule(
     deadhead_estimator: DeadheadEstimator,
     time_limit_seconds: float = 10.0,
     num_search_workers: int = 8,
+    weights: ObjectiveWeights | None = None,
 ) -> SchedulingResult | InfeasibleResult:
     """Solve the multi-school crew scheduling problem (spec section 5).
 
@@ -114,6 +166,7 @@ def solve_multi_school_schedule(
     small problems (tests, toy examples) a lower value (e.g. 1-2) avoids
     thread-pool startup overhead dominating the runtime.
     """
+    weights = weights or ObjectiveWeights()
     logger.info("Solving multi-school schedule: %d job(s), %d crew(s)", len(jobs), len(crews))
     if not jobs:
         logger.info("No jobs supplied — nothing to schedule.")
@@ -220,6 +273,7 @@ def solve_multi_school_schedule(
     # a chain), which is what makes it correctly bound the full span
     # for a crew working any number of jobs in a day, not just two.
     job_list = list(jobs)
+    deadhead_cost_terms: list[cp_model.LinearExpr] = []
     for i in range(len(job_list)):
         for j in range(i + 1, len(job_list)):
             job_a, job_b = job_list[i], job_list[j]
@@ -240,6 +294,23 @@ def solve_multi_school_schedule(
                 model.Add(end_vars[job_b.id] + deadhead_ba <= start_vars[job_a.id]).OnlyEnforceIf(
                     both + [order.Not()]
                 )
+                if weights.deadhead_minutes > 0:
+                    # Only ever forced true, never false: the objective
+                    # is minimized and costs are non-negative, so an
+                    # unforced cost variable settles at 0 on its own.
+                    for cost, direction in ((deadhead_ab, order), (deadhead_ba, order.Not())):
+                        if cost <= 0:
+                            continue
+                        paid = model.NewBoolVar(f"dh_{job_a.id}_{job_b.id}_{crew_id}_{cost}")
+                        model.AddBoolOr(
+                            [
+                                x[job_a.id][crew_id].Not(),
+                                x[job_b.id][crew_id].Not(),
+                                direction.Not(),
+                                paid,
+                            ]
+                        )
+                        deadhead_cost_terms.append(cost * paid)
                 max_continuous = crew_by_id[crew_id].driver.max_continuous_minutes
                 if max_continuous is not None:
                     model.Add(
@@ -277,7 +348,14 @@ def solve_multi_school_schedule(
             model.Add(used == 0)
         crew_used[crew_id] = used
 
-    model.Minimize(sum(crew_used.values()))
+    objective = weights.crews_used * sum(crew_used.values())
+    if weights.deadhead_minutes > 0 and deadhead_cost_terms:
+        objective += weights.deadhead_minutes * sum(deadhead_cost_terms)
+    if weights.arrival_buffer > 0:
+        # Maximizing slack (latest - end) is minimizing end; the constant
+        # `latest` terms don't change which schedule wins.
+        objective += weights.arrival_buffer * sum(end_vars[job.id] for job in jobs)
+    model.Minimize(objective)
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit_seconds
@@ -367,6 +445,13 @@ def solve_multi_school_schedule(
             )
         )
 
+    total_deadhead = 0
+    for crew_id, crew_jobs in jobs_by_crew.items():
+        vehicle = crew_by_id[crew_id].vehicle
+        for earlier, later in zip(crew_jobs, crew_jobs[1:], strict=False):
+            total_deadhead += deadhead_estimator(earlier.location, later.location, vehicle)
+    total_buffer = sum(job.window.latest - solver.Value(end_vars[job.id]) for job in jobs)
+
     crews_used = sum(1 for c in crew_used.values() if solver.Value(c) == 1)
     logger.info(
         "Schedule found: %d job(s) assigned using %d crew(s) (of %d available)",
@@ -374,4 +459,9 @@ def solve_multi_school_schedule(
         crews_used,
         len(crews),
     )
-    return SchedulingResult(assignments=tuple(assignments), crews_used=crews_used)
+    return SchedulingResult(
+        assignments=tuple(assignments),
+        crews_used=crews_used,
+        total_deadhead_minutes=total_deadhead,
+        total_arrival_buffer_minutes=total_buffer,
+    )

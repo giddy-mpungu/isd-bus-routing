@@ -10,6 +10,8 @@
 // full session-cookie reasoning.
 
 import type {
+  OptimizationSettings,
+  OptimizationSettingsUpdate,
   GenerateFromTemplatesResult,
   RouteTemplate,
   RouteTemplateCreate,
@@ -451,4 +453,14 @@ export async function generateFromTemplates(
   return request<GenerateFromTemplatesResult>(`/schedule/${serviceDate}/generate-from-templates`, {
     method: 'POST',
   })
+}
+
+export async function getOptimizationSettings(): Promise<OptimizationSettings> {
+  return request<OptimizationSettings>('/optimization-settings')
+}
+
+export async function updateOptimizationSettings(
+  payload: OptimizationSettingsUpdate,
+): Promise<OptimizationSettings> {
+  return request<OptimizationSettings>('/optimization-settings', jsonInit('PUT', payload))
 }

@@ -138,7 +138,11 @@ export function SchedulePage() {
     setErrorMessage(null)
     try {
       const result = await api.runSchedule(serviceDate)
-      setStatusMessage(`Schedule solved using ${result.crews_used} crew(s).`)
+      const detail =
+        result.total_deadhead_minutes === null || result.total_arrival_buffer_minutes === null
+          ? ''
+          : ` Total deadhead ${result.total_deadhead_minutes} min; ${result.total_arrival_buffer_minutes} min of slack before the bells.`
+      setStatusMessage(`Schedule solved using ${result.crews_used} crew(s).${detail}`)
       await loadAll(serviceDate)
     } catch (err) {
       setErrorMessage(err instanceof ApiError ? err.message : 'Failed to run schedule.')
