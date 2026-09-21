@@ -10,6 +10,7 @@
 // full session-cookie reasoning.
 
 import type {
+  SisImportResult,
   OptimizationSettings,
   OptimizationSettingsUpdate,
   GenerateFromTemplatesResult,
@@ -463,4 +464,27 @@ export async function updateOptimizationSettings(
   payload: OptimizationSettingsUpdate,
 ): Promise<OptimizationSettings> {
   return request<OptimizationSettings>('/optimization-settings', jsonInit('PUT', payload))
+}
+
+export async function updateSchoolExternalId(
+  schoolId: number,
+  externalId: string | null,
+): Promise<School> {
+  return request<School>(`/schools/${schoolId}`, jsonInit('PATCH', { external_id: externalId }))
+}
+
+export async function importSisStudents(
+  file: File,
+  dryRun: boolean,
+  linkByName: boolean,
+): Promise<SisImportResult> {
+  // Multipart, so no JSON Content-Type: the browser sets the boundary itself.
+  const form = new FormData()
+  form.append('file', file)
+  form.append('dry_run', String(dryRun))
+  form.append('link_by_name', String(linkByName))
+  return request<SisImportResult>('/integrations/sis/students/import', {
+    method: 'POST',
+    body: form,
+  })
 }

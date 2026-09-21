@@ -228,6 +228,10 @@ class School(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     location_lat: Mapped[float] = mapped_column(nullable=False)
     location_lon: Mapped[float] = mapped_column(nullable=False)
+    # The SIS's identifier for this school (OneRoster org sourcedId). Set
+    # by an administrator, never inferred: a roster row can only be
+    # placed at a school someone has explicitly mapped (ADR 0007).
+    external_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
 
     runs: Mapped[list[Run]] = relationship(back_populates="school")
 
@@ -259,6 +263,10 @@ class Student(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     school_id: Mapped[int] = mapped_column(ForeignKey("schools.id"), nullable=False)
+    # SIS identifier (OneRoster user sourcedId); NULL for students entered
+    # by hand. The SIS owns name and school assignment for rows that have
+    # one; stop_id and default_ridership stay owned by this system.
+    external_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     stop_id: Mapped[int | None] = mapped_column(ForeignKey("stops.id"), nullable=True)
     default_ridership: Mapped[RidershipDefault] = mapped_column(
         SAEnum(RidershipDefault, native_enum=False, length=20),

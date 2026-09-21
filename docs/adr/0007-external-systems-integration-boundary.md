@@ -124,3 +124,10 @@ student/parent endpoints).
   as long as no district IdP integration exists, and should not be
   treated as a stopgap that blocks security hardening (rate limiting,
   token revocation — ADR 0006's own follow-ups) in the meantime.
+- **Update (PR #37): SIS is now the first synced-entity integration.**
+  It follows the "integration code shape" above: a pure adapter under
+  `services/api/src/isd_api/integrations/` (`oneroster.py`) behind
+  reconciliation logic in the router. It is vendor-neutral on purpose --
+  OneRoster CSV, not any one vendor's API -- and is real data intake, not
+  a stub. The reconciliation step this ADR predicted for pre-integration
+  data is `link_by_name`, and it is opt-in after a dry run, never assumed.

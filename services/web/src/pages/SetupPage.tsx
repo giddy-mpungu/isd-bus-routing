@@ -20,6 +20,7 @@ import type {
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { OptimizationSettingsSection } from './OptimizationSettingsSection'
+import { SisImportSection } from './SisImportSection'
 
 // Creating a school/qualification/driver/vehicle is transportation_admin
 // only (services/api/src/isd_api/routers/{schools,qualifications,drivers,
@@ -1034,6 +1035,8 @@ export function SetupPage() {
       </section>
 
       <OptimizationSettingsSection canEdit={canCreate} />
+
+      {canCreate && <SisImportSection schools={schools} onSchoolsChanged={loadAll} />}
 
       {canCreate && (
         <section>
