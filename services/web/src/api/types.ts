@@ -85,6 +85,18 @@ export interface Assignment {
 export interface ScheduleResult {
   crews_used: number
   assignments: Assignment[]
+  total_deadhead_minutes: number | null
+  total_arrival_buffer_minutes: number | null
+}
+
+export interface OptimizationSettingsUpdate {
+  crews_used_weight: number
+  deadhead_minutes_weight: number
+  arrival_buffer_weight: number
+}
+
+export interface OptimizationSettings extends OptimizationSettingsUpdate {
+  is_default: boolean
 }
 
 export interface AssignmentPatch {

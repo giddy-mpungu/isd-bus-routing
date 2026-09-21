@@ -38,3 +38,13 @@ are objectives to trade off, weighted by district configuration.
 - Adding a new hard constraint later is a one-line addition to
   `constraints.py` with a spec citation, not a rewrite of the
   objective function.
+
+## Update (PR #36): weights are now configurable
+
+`isd_solver.ObjectiveWeights` is the configuration object this ADR called
+for, and the API persists it as the `OptimizationSettings` singleton (edited
+by a transportation administrator, applied on the next solve). Three of the
+ten §2.2 objectives are weighted today (crews used, deadhead, arrival
+buffer); the others need data the system does not model. See
+`docs/domain-model.md` "Optimization weights" for the exact semantics,
+including the deliberately pairwise deadhead term.

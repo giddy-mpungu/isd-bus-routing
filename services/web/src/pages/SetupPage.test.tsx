@@ -12,6 +12,7 @@ vi.mock('../api/client', async (importOriginal) => {
   return {
     ...actual,
     getCurrentUser: vi.fn(),
+    getOptimizationSettings: vi.fn(),
     getSchools: vi.fn(),
     getQualifications: vi.fn(),
     getDrivers: vi.fn(),
@@ -85,6 +86,12 @@ function mockLoad() {
   vi.mocked(api.getStudents).mockResolvedValue([])
   vi.mocked(api.getGeographicKnowledgeOverrides).mockResolvedValue([])
   vi.mocked(api.getAnnouncements).mockResolvedValue([])
+  vi.mocked(api.getOptimizationSettings).mockResolvedValue({
+    crews_used_weight: 1,
+    deadhead_minutes_weight: 0,
+    arrival_buffer_weight: 0,
+    is_default: true,
+  })
 }
 
 function renderAsRole(user: CurrentUser) {

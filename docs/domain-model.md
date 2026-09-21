@@ -450,6 +450,48 @@ independently modeled resources.
 - UI: `/templates` page (create/list/deactivate both kinds) and a "Generate
   from templates" button on the Schedule page.
 
+## Optimization weights (spec section 2.2)
+
+- **`isd_solver.ObjectiveWeights`** (`crews_used`, `deadhead_minutes`,
+  `arrival_buffer`; non-negative ints, at least one > 0) is an optional
+  argument to `solve_multi_school_schedule`. The CP-SAT objective is the
+  weighted sum of three exact-or-documented terms. Defaults
+  (`crews_used=1`, others 0) reproduce the original minimize-crews behavior.
+  Weights only rank schedules that already satisfy every hard constraint —
+  none can trade a hard rule away (ADR 0002).
+  - `crews_used`: number of distinct crews. A crew is one driver + one
+    vehicle, so "minimize buses" and "minimize drivers" (§2.2 objectives
+    1-2) are the same term.
+  - `deadhead_minutes`: §2.2's mileage, measured in travel minutes because
+    that is what `DeadheadEstimator` returns. **Pairwise, not chain-exact:**
+    every two jobs sharing a crew contribute their deadhead in the order
+    driven, adjacent or not, so it over-counts for crews with 3+ jobs
+    (exact adjacency needs O(n^3) betweenness variables or a per-crew
+    circuit model; not worth it until real problem sizes demand it).
+  - `arrival_buffer`: minimizes each job's end time, i.e. maximizes slack
+    before its window's latest bound (§2.2 "maintain realistic operational
+    buffers").
+  - `SchedulingResult.total_deadhead_minutes` / `total_arrival_buffer_minutes`
+    are always the **exact** realized totals (chain deadhead, summed slack),
+    whatever the weights, and are returned by `POST /schedule`
+    (`null` when everything was already locked and nothing was solved).
+- **`OptimizationSettings`** (`optimization_settings`): singleton row (id 1),
+  three int weights (0-1000) + `updated_at`. Absent row = defaults, reported
+  as `is_default: true`. `GET /optimization-settings` (admin, dispatcher),
+  `PUT /optimization-settings` (transportation_admin only, spec §17
+  "optimization parameters"), audited with before/after. Read at the start
+  of every solve (`load_objective_weights`), so a change applies to the next
+  solve, never retroactively.
+- **Not implemented, and why:** spec §2.2's stops, ride time, walking
+  distance, and turn-difficulty objectives need data this system does not
+  model (no stop sequence, no student-to-stop assignment, no routing
+  graph). "Maximize on-time arrival" is a hard constraint here (a job must
+  fit its window), and "maximize utilization across schools" is the
+  consolidation `crews_used` already drives.
+- UI: "Optimization weights" section on `/setup` (editable by
+  transportation_admin, read-only for dispatchers); the Schedule page's
+  solve message reports the exact deadhead and slack totals.
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)

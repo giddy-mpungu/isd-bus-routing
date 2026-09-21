@@ -178,6 +178,36 @@ describe('SchedulePage', () => {
     expect(screen.getByRole('option', { name: 'Sam Substitute — Bus 202' })).toBeInTheDocument()
   })
 
+  it('reports deadhead and buffer totals after solving, and omits them when nothing was solved', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.runSchedule).mockResolvedValueOnce({
+      crews_used: 2,
+      assignments: [assignment],
+      total_deadhead_minutes: 22,
+      total_arrival_buffer_minutes: 90,
+    })
+    render(<SchedulePage />)
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: 'Run schedule' }))
+    expect(await screen.findByText(/Schedule solved using 2 crew\(s\)\./)).toHaveTextContent(
+      'Total deadhead 22 min; 90 min of slack before the bells.',
+    )
+
+    vi.mocked(api.runSchedule).mockResolvedValueOnce({
+      crews_used: 1,
+      assignments: [assignment],
+      total_deadhead_minutes: null,
+      total_arrival_buffer_minutes: null,
+    })
+    await user.click(screen.getByRole('button', { name: 'Run schedule' }))
+    await waitFor(() =>
+      expect(screen.getByText(/Schedule solved using 1 crew\(s\)\./)).not.toHaveTextContent(
+        'Total deadhead',
+      ),
+    )
+  })
+
   it('generates the day from templates for the selected date and reports what changed', async () => {
     vi.mocked(api.generateFromTemplates).mockResolvedValue({
       service_date: today(),

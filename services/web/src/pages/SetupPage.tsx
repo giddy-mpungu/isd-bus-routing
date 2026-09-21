@@ -19,6 +19,7 @@ import type {
   Vehicle,
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import { OptimizationSettingsSection } from './OptimizationSettingsSection'
 
 // Creating a school/qualification/driver/vehicle is transportation_admin
 // only (services/api/src/isd_api/routers/{schools,qualifications,drivers,
@@ -1031,6 +1032,8 @@ export function SetupPage() {
           </form>
         )}
       </section>
+
+      <OptimizationSettingsSection canEdit={canCreate} />
 
       {canCreate && (
         <section>

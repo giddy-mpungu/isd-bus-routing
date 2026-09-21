@@ -794,6 +794,23 @@ class Announcement(Base):
     school: Mapped[School | None] = relationship()
 
 
+class OptimizationSettings(Base):
+    """Administrator-configured soft-objective weights (spec section
+    2.2). A singleton: at most one row, id fixed at 1, absent = the
+    solver's defaults. Weights only rank feasible schedules; they never
+    relax a hard constraint."""
+
+    __tablename__ = "optimization_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    crews_used_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    deadhead_minutes_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    arrival_buffer_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+
 class AuditLogEntry(Base):
     """Append-only audit trail (spec section 14, ADR 0004).
 

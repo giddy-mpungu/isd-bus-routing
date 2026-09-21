@@ -1,0 +1,93 @@
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import * as api from '../api/client'
+import { ApiError } from '../api/client'
+import { OptimizationSettingsSection } from './OptimizationSettingsSection'
+
+vi.mock('../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/client')>()
+  return {
+    ...actual,
+    getOptimizationSettings: vi.fn(),
+    updateOptimizationSettings: vi.fn(),
+  }
+})
+
+const defaults = {
+  crews_used_weight: 1,
+  deadhead_minutes_weight: 0,
+  arrival_buffer_weight: 0,
+  is_default: true,
+}
+
+describe('OptimizationSettingsSection', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.mocked(api.getOptimizationSettings).mockResolvedValue(defaults)
+  })
+
+  it('shows the current weights and says defaults are in effect', async () => {
+    render(<OptimizationSettingsSection canEdit />)
+
+    expect(await screen.findByLabelText('Crews used')).toHaveValue(1)
+    expect(screen.getByLabelText('Deadhead travel')).toHaveValue(0)
+    expect(screen.getByLabelText('Arrival buffer')).toHaveValue(0)
+    expect(screen.getByText(/defaults are in effect/)).toBeInTheDocument()
+  })
+
+  it('saves edited weights', async () => {
+    vi.mocked(api.updateOptimizationSettings).mockResolvedValue({
+      crews_used_weight: 100,
+      deadhead_minutes_weight: 2,
+      arrival_buffer_weight: 0,
+      is_default: false,
+    })
+    const user = userEvent.setup()
+    render(<OptimizationSettingsSection canEdit />)
+    const crews = await screen.findByLabelText('Crews used')
+
+    await user.clear(crews)
+    await user.type(crews, '100')
+    await user.clear(screen.getByLabelText('Deadhead travel'))
+    await user.type(screen.getByLabelText('Deadhead travel'), '2')
+    await user.click(screen.getByRole('button', { name: 'Save weights' }))
+
+    await waitFor(() =>
+      expect(api.updateOptimizationSettings).toHaveBeenCalledWith({
+        crews_used_weight: 100,
+        deadhead_minutes_weight: 2,
+        arrival_buffer_weight: 0,
+      }),
+    )
+    expect(await screen.findByText(/apply the next time a schedule is solved/)).toBeInTheDocument()
+    expect(screen.queryByText(/defaults are in effect/)).not.toBeInTheDocument()
+  })
+
+  it('shows the API error when saving is rejected', async () => {
+    vi.mocked(api.updateOptimizationSettings).mockRejectedValue(
+      new ApiError(422, 'at least one objective weight must be greater than zero'),
+    )
+    const user = userEvent.setup()
+    render(<OptimizationSettingsSection canEdit />)
+    await screen.findByLabelText('Crews used')
+
+    await user.click(screen.getByRole('button', { name: 'Save weights' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('at least one objective weight')
+  })
+
+  it('is read-only without edit permission', async () => {
+    render(<OptimizationSettingsSection canEdit={false} />)
+
+    expect(await screen.findByLabelText('Crews used')).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Save weights' })).not.toBeInTheDocument()
+    expect(screen.getByText(/Only a transportation administrator/)).toBeInTheDocument()
+  })
+
+  it('shows a load error', async () => {
+    vi.mocked(api.getOptimizationSettings).mockRejectedValue(new ApiError(403, 'Forbidden'))
+    render(<OptimizationSettingsSection canEdit />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Forbidden')
+  })
+})

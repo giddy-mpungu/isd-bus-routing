@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from isd_api.models import (
     AbsenceReason,
@@ -362,9 +362,36 @@ class ScheduleRequest(BaseModel):
     )
 
 
+class OptimizationSettingsBase(BaseModel):
+    crews_used_weight: int = Field(ge=0, le=1000)
+    deadhead_minutes_weight: int = Field(ge=0, le=1000)
+    arrival_buffer_weight: int = Field(ge=0, le=1000)
+
+    @model_validator(mode="after")
+    def _at_least_one_positive(self) -> OptimizationSettingsBase:
+        if not (
+            self.crews_used_weight or self.deadhead_minutes_weight or self.arrival_buffer_weight
+        ):
+            raise ValueError("at least one objective weight must be greater than zero")
+        return self
+
+
+class OptimizationSettingsUpdate(OptimizationSettingsBase):
+    pass
+
+
+class OptimizationSettingsRead(OptimizationSettingsBase):
+    # False when nothing has been saved yet and the solver defaults apply.
+    is_default: bool
+
+
 class ScheduleResult(BaseModel):
     crews_used: int
     assignments: list[AssignmentRead]
+    # Exact totals for the schedule just solved; None when nothing was
+    # solved this call (everything already locked).
+    total_deadhead_minutes: int | None = None
+    total_arrival_buffer_minutes: int | None = None
 
 
 class ScheduleInfeasible(BaseModel):

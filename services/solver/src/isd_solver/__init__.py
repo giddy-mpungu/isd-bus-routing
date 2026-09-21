@@ -29,6 +29,7 @@ from isd_solver.scheduler import (
     Assignment,
     Explanation,
     InfeasibleResult,
+    ObjectiveWeights,
     SchedulingResult,
     solve_multi_school_schedule,
 )
@@ -51,6 +52,7 @@ __all__ = [
     "Assignment",
     "Explanation",
     "InfeasibleResult",
+    "ObjectiveWeights",
     "SchedulingResult",
     "solve_multi_school_schedule",
 ]
