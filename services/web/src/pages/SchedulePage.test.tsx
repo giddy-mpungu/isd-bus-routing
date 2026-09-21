@@ -37,6 +37,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getQualifications: vi.fn(),
     getAssignments: vi.fn(),
     runSchedule: vi.fn(),
+    generateFromTemplates: vi.fn(),
     updateAssignment: vi.fn(),
     deleteAssignment: vi.fn(),
     createCrew: vi.fn(),
@@ -175,6 +176,41 @@ describe('SchedulePage', () => {
     expect(select).toHaveValue(String(crew.id))
     expect(screen.getByRole('option', { name: 'Jordan Driver — Bus 101' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Sam Substitute — Bus 202' })).toBeInTheDocument()
+  })
+
+  it('generates the day from templates for the selected date and reports what changed', async () => {
+    vi.mocked(api.generateFromTemplates).mockResolvedValue({
+      service_date: today(),
+      runs_created: 2,
+      runs_already_existing: 1,
+      crews_created: 3,
+      crews_already_existing: 0,
+      crews_skipped_absent_driver_ids: [driverRecord.id],
+    })
+    const user = userEvent.setup()
+    render(<SchedulePage />)
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: 'Generate from templates' }))
+
+    await waitFor(() => expect(api.generateFromTemplates).toHaveBeenCalledWith(today()))
+    const status = await screen.findByText(/Generated 2 run\(s\) and 3 crew\(s\)/)
+    expect(status).toHaveTextContent('1 already existed and were left unchanged')
+    expect(status).toHaveTextContent('skipped crew for absent driver(s): Jordan Driver')
+    expect(status).toHaveTextContent('then run the schedule')
+    // Generation never solves on its own.
+    expect(api.runSchedule).not.toHaveBeenCalled()
+  })
+
+  it('shows an error when generating from templates fails', async () => {
+    vi.mocked(api.generateFromTemplates).mockRejectedValue(new ApiError(403, 'Forbidden'))
+    const user = userEvent.setup()
+    render(<SchedulePage />)
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: 'Generate from templates' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Forbidden')
   })
 
   it('renders a reported fleet position with driver/vehicle names and coordinates', async () => {

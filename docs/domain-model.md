@@ -410,12 +410,52 @@ produces them rather than duplicated here.
   §9: "minimal typing"). Nullable when the driver has no crew that
   date, or the incident doesn't involve a specific vehicle.
 
+## Recurring templates (spec §11 "Permanent Assignment"; ADR 0001's Route)
+
+Two entities, deliberately **separate** — REBOOT.md's earlier note guessed
+one template would cover both the missing `Route` table and the recurring
+crew gap. Designing it showed why two is right: a route template that
+*owned* a driver+vehicle would make generation bypass the CP-SAT solver
+(its whole value is deciding which crew serves which runs, consolidating
+schools onto one crew), and ADR 0001 says drivers and vehicles stay
+independently modeled resources.
+
+- **RouteTemplate** (`route_templates`, + `route_template_required_qualifications`):
+  school, direction, window, duration, buffer, required qualifications,
+  `days_of_week` (JSON list, Python weekday numbers Mon=0..Sun=6), optional
+  `active_from`/`active_until`, `is_active`. Owns no driver/vehicle.
+- **CrewTemplate** (`crew_templates`): driver, vehicle, availability window,
+  `days_of_week`, optional active range, `is_active`.
+- **Provenance columns**: `Run.route_template_id` and `Crew.crew_template_id`
+  (nullable FKs; NULL = hand-made). Provenance only — editing a generated
+  row never touches its template. `route_template_id` is also what makes
+  generation idempotent.
+- **Recurrence** is a weekday list plus a date range, not an RFC 5545 rule —
+  nothing in the spec asks for more. Templates are immutable except
+  `is_active` (PATCH); changing a template means creating a new one and
+  deactivating the old, so past generated days stay traceable.
+- **Generation** — `POST /schedule/{date}/generate-from-templates`
+  (admin/dispatcher): create-only and idempotent. Skips a route template that
+  already produced a run that date; skips a crew template when its driver or
+  vehicle already has *any* crew that date (hand-made, substituted or generated
+  — an existing row always wins, so a dispatcher's substitution survives
+  re-generation); skips a crew whose driver has an absence *fully* covering the
+  template window (partial-day absences still generate; the absences workflow
+  handles substitutes). Never edits or deletes rows, never runs the solver
+  (spec §21: a human reviews the generated day, then solves). The response
+  reports counts and skipped absent-driver ids.
+- **No background job runner** exists, so generation is an explicit action (UI
+  button, or an external cron hitting the endpoint) rather than a scheduled
+  job — a real deployment can add a cron trigger without any code change here.
+- UI: `/templates` page (create/list/deactivate both kinds) and a "Generate
+  from templates" button on the Schedule page.
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)
 - Spec §4.3's actual behavior — stop-sequence route shortening ("if all riders at a stop don't ride, remove that stop, recalculate sequence/ETAs") — needs a `Route`/stop-sequence model this system has never built (ADR 0001 named the intent, never built). What *is* done: `GET /runs/{id}/expected-riders` computes a real rider count from `Student`/`RidershipOverride` as decision support for `Run.passenger_count` (see "Phase 6 entities" above) — closer to reality than the fully-manual guess it replaced, but not the stop-shortening optimization spec §4.3 describes
 - Ridership reporting cutoff / route-lock configuration (spec §4.4)
-- A recurring `route` (template) table distinct from dated `run` instances — ADR 0001 named this intention for Phase 2+, never built; Phase 5 worked around its absence rather than building it (see RidershipOverride above). Observed-run-duration (§20, above) approximates route identity via (school_id, direction) instead of a real template — good enough for learning, not a substitute for the real table
+- ~~A recurring `route` (template) table~~ — **built** as `RouteTemplate` (below, "Recurring templates"). Still true: there is no stop-sequence model, so spec §4.3's stop-shortening remains out of scope, and observed-run-duration (§20, above) still approximates route identity via (school_id, direction); `Run.route_template_id` now exists, so a future slice *could* key learning on the real template instead
 - Field trips (spec §12) is done end-to-end (`FieldTrip` + `/field-trips` UI, overnight trips, `DestinationProfile` §12.3, and observed-duration §20, above) — not yet: conflict-checking against training/maintenance (no such entity exists — a genuine gap, not an oversight)
 - Spec §6 is now done to the extent an external point-to-point routing API can express it: real road-network travel time, per-vehicle length/width/height/weight restrictions, and district-specific avoid-zones (§8) are all applied via `ors_deadhead_estimator`. Turn/dead-end safety costs (§7) and dynamic rerouting (§10) remain genuinely out of scope — both need a routing *graph* this system doesn't own, not just a point-to-point directions call, a different technical approach than anything built so far.
 - District-specific geographic knowledge / local roadway overrides (spec §8) — persistence done, and 7 of 8 categories now applied to routing: flooding/difficult-intersection/unsafe-turn/invalid-turnaround via always-on ORS `avoid_polygons`, congestion-window per-solve when a run's window overlaps it, vehicle-size-restriction per-vehicle via `isd_solver.SizeRestriction`, preferred-entrance by substituting a run's job location with the override's own point (`GeographicKnowledgeOverride`, above). Only `other` remains excluded, structurally rather than provisionally — it's the catch-all for knowledge that doesn't fit any other category, so by construction it has no defined routing behavior
