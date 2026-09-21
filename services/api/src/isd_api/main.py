@@ -25,6 +25,7 @@ from isd_api.routers import (
     runs,
     schedule,
     schools,
+    sis_import,
     stops,
     students,
     templates,
@@ -82,6 +83,7 @@ app.include_router(announcements.router)
 app.include_router(driver_reports.router)
 app.include_router(driver_reports.all_reports_router)
 app.include_router(audit_log.router)
+app.include_router(sis_import.router)
 app.include_router(optimization_settings.router)
 app.include_router(templates.route_router)
 app.include_router(templates.crew_router)

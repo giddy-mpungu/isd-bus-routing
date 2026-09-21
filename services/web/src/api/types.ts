@@ -21,6 +21,9 @@ export interface School {
   name: string
   location_lat: number
   location_lon: number
+  // The SIS's identifier for this school; roster rows can only be placed
+  // at a school that has one.
+  external_id?: string | null
 }
 
 export type QualificationKind = 'license' | 'vehicle_capability'
@@ -568,4 +571,24 @@ export interface GenerateFromTemplatesResult {
   crews_created: number
   crews_already_existing: number
   crews_skipped_absent_driver_ids: number[]
+}
+
+export type SisImportAction =
+  'created' | 'updated' | 'unchanged' | 'linked' | 'needs_review' | 'removal_requested' | 'error'
+
+export interface SisImportRow {
+  line: number
+  source_id: string | null
+  full_name: string | null
+  action: SisImportAction
+  detail: string | null
+  student_id: number | null
+}
+
+export interface SisImportResult {
+  dry_run: boolean
+  counts: Record<SisImportAction, number>
+  rows: SisImportRow[]
+  rows_truncated: boolean
+  ignored_non_student_rows: number
 }

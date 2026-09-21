@@ -65,6 +65,14 @@ class SchoolCreate(BaseModel):
     name: str
     location_lat: float = Field(ge=-90, le=90)
     location_lon: float = Field(ge=-180, le=180)
+    external_id: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+class SchoolUpdate(BaseModel):
+    """Only the SIS mapping is editable after creation. An explicit null
+    clears it."""
+
+    external_id: str | None = Field(min_length=1, max_length=64)
 
 
 class SchoolRead(BaseModel):
@@ -73,6 +81,7 @@ class SchoolRead(BaseModel):
     name: str
     location_lat: float
     location_lon: float
+    external_id: str | None = None
 
 
 class VehicleCreate(BaseModel):
@@ -425,6 +434,7 @@ class StudentRead(BaseModel):
     id: int
     full_name: str
     school_id: int
+    external_id: str | None = None
     stop_id: int | None
     default_ridership: RidershipDefault
 
@@ -735,3 +745,22 @@ class AuditLogEntryRead(BaseModel):
     before_state: dict | None
     after_state: dict | None
     created_at: datetime
+
+
+class SisImportRow(BaseModel):
+    line: int
+    source_id: str | None
+    full_name: str | None
+    # created | updated | unchanged | linked | needs_review | removal_requested | error
+    action: str
+    detail: str | None = None
+    student_id: int | None = None
+
+
+class SisImportResult(BaseModel):
+    dry_run: bool
+    counts: dict[str, int]
+    # Rows that are not "unchanged", capped; counts above are always complete.
+    rows: list[SisImportRow]
+    rows_truncated: bool
+    ignored_non_student_rows: int

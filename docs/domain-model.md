@@ -492,6 +492,50 @@ independently modeled resources.
   transportation_admin, read-only for dispatchers); the Schedule page's
   solve message reports the exact deadhead and slack totals.
 
+## SIS roster import (spec section 19; ADR 0007 "synced read-model")
+
+The first real external-system integration. Vendor-neutral by choice (the
+user picked this over a specific vendor): it reads a **OneRoster 1.1
+`users.csv`**, the public standard most SIS vendors export.
+
+- **Ownership (ADR 0007):** the SIS owns a student's identity, name and
+  school assignment; this system keeps stop assignment and ridership, which
+  an import never touches. New students get the model defaults.
+- **External IDs:** `School.external_id` (the OneRoster org sourcedId) and
+  `Student.external_id` (user sourcedId), both nullable, unique, max 64.
+  A school's ID is set by a transportation administrator
+  (`POST /schools` with `external_id`, or `PATCH /schools/{id}`) and is
+  never inferred, so a roster row can only land at a school someone has
+  explicitly mapped — no coordinates are ever guessed.
+- **Adapter:** `isd_api/integrations/oneroster.py` is pure parsing (no DB).
+  It keeps only sourcedId, status, role, givenName, familyName and
+  orgSourcedIds — emails, phones and other columns are dropped (PII
+  minimalism). Limits: 5 MB, 50,000 rows, UTF-8 only, control characters
+  stripped, names/IDs length-capped. Non-`student` roles are counted and
+  ignored. Bad rows are reported per line and never block good ones; a
+  file that isn't a users.csv at all is a 400.
+- **Endpoint:** `POST /integrations/sis/students/import` (multipart:
+  `file`, `dry_run` default **true**, `link_by_name` default false;
+  transportation_admin only). Row outcomes: `created`, `updated` (name or
+  school changed, before/after audited), `unchanged`, `linked`,
+  `needs_review`, `removal_requested`, `error`. Counts are always complete;
+  the row list omits `unchanged` and is capped at 1000.
+- **Never guessed (spec section 21):** an unmapped school, a student in two
+  mapped schools, or several hand-entered namesakes is reported, not
+  resolved. A roster student matching exactly one hand-entered student
+  (same name and school, no SIS ID yet) is `needs_review` unless the admin
+  re-runs with `link_by_name` (ADR 0007's match-by-name-and-confirm). A
+  `tobedeleted` status is reported as `removal_requested` and **never
+  applied** — students carry overrides and history.
+- UI: "SIS roster import" on `/setup` (transportation_admin only): per-school
+  SIS ID fields, file picker, Preview then Apply. Apply is only enabled for
+  the exact file and options that were just previewed.
+- **Not built yet:** guardian/parent links (OneRoster `agentSourcedIds`),
+  grade level, a scheduled REST pull from a OneRoster server (needs the
+  district's credentials and endpoint — the CSV path needs neither),
+  deactivation of students absent from a later file, and the other §19
+  systems (HR/absence, SSO, fleet maintenance, bell schedules).
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)
