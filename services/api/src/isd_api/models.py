@@ -174,6 +174,13 @@ run_required_qualifications = Table(
     Column("qualification_id", ForeignKey("qualifications.id"), primary_key=True),
 )
 
+route_template_required_qualifications = Table(
+    "route_template_required_qualifications",
+    Base.metadata,
+    Column("route_template_id", ForeignKey("route_templates.id"), primary_key=True),
+    Column("qualification_id", ForeignKey("qualifications.id"), primary_key=True),
+)
+
 field_trip_required_qualifications = Table(
     "field_trip_required_qualifications",
     Base.metadata,
@@ -480,6 +487,59 @@ class GeographicKnowledgeOverride(Base):
     school: Mapped[School | None] = relationship()
 
 
+class RouteTemplate(Base):
+    """ADR 0001's "Route": the permanent template a Run is generated from
+    (spec section 11 "Permanent Assignment"). Deliberately owns no
+    driver/vehicle -- who serves it on a given day is still decided by
+    the solver, so multi-school consolidation keeps working. Recurrence
+    is a plain weekday list plus an optional active date range, not a
+    full RFC 5545 rule."""
+
+    __tablename__ = "route_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    school_id: Mapped[int] = mapped_column(ForeignKey("schools.id"), nullable=False)
+    direction: Mapped[RideDirection] = mapped_column(
+        SAEnum(RideDirection, native_enum=False, length=8), nullable=False
+    )
+    window_earliest: Mapped[int] = mapped_column(Integer, nullable=False)
+    window_latest: Mapped[int] = mapped_column(Integer, nullable=False)
+    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    buffer_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Python weekday numbers: Monday=0 .. Sunday=6.
+    days_of_week: Mapped[list[int]] = mapped_column(JSON, nullable=False)
+    active_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    active_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    school: Mapped[School] = relationship()
+    required_qualifications: Mapped[list[Qualification]] = relationship(
+        secondary=route_template_required_qualifications
+    )
+
+
+class CrewTemplate(Base):
+    """The recurring counterpart of Crew: a driver+vehicle pairing that
+    is normally available on certain weekdays. Independent of
+    RouteTemplate on purpose (ADR 0001: drivers and vehicles stay
+    independently modeled resources)."""
+
+    __tablename__ = "crew_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    driver_id: Mapped[int] = mapped_column(ForeignKey("drivers.id"), nullable=False)
+    vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"), nullable=False)
+    available_window_earliest: Mapped[int] = mapped_column(Integer, nullable=False)
+    available_window_latest: Mapped[int] = mapped_column(Integer, nullable=False)
+    days_of_week: Mapped[list[int]] = mapped_column(JSON, nullable=False)
+    active_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    active_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    driver: Mapped[Driver] = relationship()
+    vehicle: Mapped[Vehicle] = relationship()
+
+
 class Crew(Base):
     """A Driver+Vehicle pairing for one service_date (ADR 0001)."""
 
@@ -495,6 +555,12 @@ class Crew(Base):
     vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"), nullable=False)
     available_window_earliest: Mapped[int] = mapped_column(Integer, nullable=False)
     available_window_latest: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Set only when generated from a CrewTemplate; hand-made crews leave
+    # it NULL. Provenance, not ownership -- editing a generated crew
+    # never touches its template.
+    crew_template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("crew_templates.id"), nullable=True
+    )
 
     driver: Mapped[Driver] = relationship(back_populates="crews")
     vehicle: Mapped[Vehicle] = relationship(back_populates="crews")
@@ -522,6 +588,11 @@ class Run(Base):
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     buffer_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     passenger_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Set only when generated from a RouteTemplate (ADR 0001's Route);
+    # NULL for hand-made runs. Also what makes generation idempotent.
+    route_template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("route_templates.id"), nullable=True
+    )
 
     school: Mapped[School] = relationship(back_populates="runs")
     required_qualifications: Mapped[list[Qualification]] = relationship(

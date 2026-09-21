@@ -10,6 +10,9 @@
 // full session-cookie reasoning.
 
 import type {
+  GenerateFromTemplatesResult,
+  RouteTemplate,
+  RouteTemplateCreate,
   Absence,
   AbsenceCreate,
   AffectedAssignmentSubstitutes,
@@ -23,6 +26,8 @@ import type {
   BusPosition,
   Crew,
   CrewCreate,
+  CrewTemplate,
+  CrewTemplateCreate,
   CurrentUser,
   DestinationProfile,
   DestinationProfileCreate,
@@ -402,4 +407,48 @@ export async function getAuditLog(query: AuditLogQuery): Promise<AuditLogEntry[]
 
 export async function getAuditLogEntityTypes(): Promise<string[]> {
   return request<string[]>('/audit-log/entity-types')
+}
+
+export async function getRouteTemplates(): Promise<RouteTemplate[]> {
+  return request<RouteTemplate[]>('/route-templates')
+}
+
+export async function createRouteTemplate(payload: RouteTemplateCreate): Promise<RouteTemplate> {
+  return request<RouteTemplate>('/route-templates', jsonInit('POST', payload))
+}
+
+export async function setRouteTemplateActive(
+  templateId: number,
+  isActive: boolean,
+): Promise<RouteTemplate> {
+  return request<RouteTemplate>(
+    `/route-templates/${templateId}`,
+    jsonInit('PATCH', { is_active: isActive }),
+  )
+}
+
+export async function getCrewTemplates(): Promise<CrewTemplate[]> {
+  return request<CrewTemplate[]>('/crew-templates')
+}
+
+export async function createCrewTemplate(payload: CrewTemplateCreate): Promise<CrewTemplate> {
+  return request<CrewTemplate>('/crew-templates', jsonInit('POST', payload))
+}
+
+export async function setCrewTemplateActive(
+  templateId: number,
+  isActive: boolean,
+): Promise<CrewTemplate> {
+  return request<CrewTemplate>(
+    `/crew-templates/${templateId}`,
+    jsonInit('PATCH', { is_active: isActive }),
+  )
+}
+
+export async function generateFromTemplates(
+  serviceDate: string,
+): Promise<GenerateFromTemplatesResult> {
+  return request<GenerateFromTemplatesResult>(`/schedule/${serviceDate}/generate-from-templates`, {
+    method: 'POST',
+  })
 }

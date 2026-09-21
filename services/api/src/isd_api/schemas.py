@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from isd_api.models import (
     AbsenceReason,
@@ -163,6 +163,99 @@ class RunRead(BaseModel):
 
 class RunUpdate(BaseModel):
     passenger_count: int | None = Field(default=None, ge=0)
+
+
+def _validate_days_of_week(value: list[int]) -> list[int]:
+    if not value:
+        raise ValueError("days_of_week must contain at least one weekday")
+    if any(d < 0 or d > 6 for d in value):
+        raise ValueError("days_of_week values must be 0 (Monday) through 6 (Sunday)")
+    if len(set(value)) != len(value):
+        raise ValueError("days_of_week must not contain duplicates")
+    return sorted(value)
+
+
+class RouteTemplateCreate(BaseModel):
+    school_id: int
+    direction: RideDirection
+    window_earliest: int = Field(ge=0, lt=1440)
+    window_latest: int = Field(ge=0, lt=1440)
+    duration_minutes: int = Field(gt=0)
+    buffer_minutes: int = Field(ge=0, default=0)
+    days_of_week: list[int]
+    active_from: date | None = None
+    active_until: date | None = None
+    required_qualification_codes: list[str] = Field(default_factory=list)
+
+    @field_validator("days_of_week")
+    @classmethod
+    def _days(cls, value: list[int]) -> list[int]:
+        return _validate_days_of_week(value)
+
+
+class RouteTemplateRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    school_id: int
+    direction: RideDirection
+    window_earliest: int
+    window_latest: int
+    duration_minutes: int
+    buffer_minutes: int
+    days_of_week: list[int]
+    active_from: date | None
+    active_until: date | None
+    is_active: bool
+    required_qualifications: list[QualificationRead]
+
+
+class CrewTemplateCreate(BaseModel):
+    driver_id: int
+    vehicle_id: int
+    available_window_earliest: int = Field(ge=0, lt=1440)
+    available_window_latest: int = Field(ge=0, lt=1440)
+    days_of_week: list[int]
+    active_from: date | None = None
+    active_until: date | None = None
+
+    @field_validator("days_of_week")
+    @classmethod
+    def _days(cls, value: list[int]) -> list[int]:
+        return _validate_days_of_week(value)
+
+
+class CrewTemplateRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    driver_id: int
+    vehicle_id: int
+    available_window_earliest: int
+    available_window_latest: int
+    days_of_week: list[int]
+    active_from: date | None
+    active_until: date | None
+    is_active: bool
+
+
+class TemplateUpdate(BaseModel):
+    """Shared by route and crew templates: deactivating/reactivating is
+    the only edit supported. Changing a template's contents means
+    creating a new one and deactivating the old, so past generated days
+    stay traceable to exactly what generated them."""
+
+    is_active: bool
+
+
+class GenerateFromTemplatesRead(BaseModel):
+    service_date: date
+    runs_created: int
+    runs_already_existing: int
+    crews_created: int
+    crews_already_existing: int
+    # Driver ids skipped because an absence fully covers the crew
+    # template's window that day (spec section 13; substitutes are the
+    # absences workflow's job, not generation's).
+    crews_skipped_absent_driver_ids: list[int]
 
 
 class ExpectedRidersRead(BaseModel):

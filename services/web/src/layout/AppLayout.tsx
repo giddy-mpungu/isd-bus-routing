@@ -13,6 +13,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <nav className="app-nav">
             <NavLink to="/schedule">Schedule</NavLink>
             <NavLink to="/field-trips">Field Trips</NavLink>
+            <NavLink to="/templates">Templates</NavLink>
             <NavLink to="/setup">Setup</NavLink>
           </nav>
         )}

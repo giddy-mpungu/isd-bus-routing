@@ -147,6 +147,34 @@ export function SchedulePage() {
     }
   }
 
+  async function handleGenerateFromTemplates() {
+    setIsBusy(true)
+    setStatusMessage(null)
+    setErrorMessage(null)
+    try {
+      const r = await api.generateFromTemplates(serviceDate)
+      const parts = [
+        `Generated ${r.runs_created} run(s) and ${r.crews_created} crew(s) from templates`,
+      ]
+      const existing = r.runs_already_existing + r.crews_already_existing
+      if (existing > 0) {
+        parts.push(`${existing} already existed and were left unchanged`)
+      }
+      if (r.crews_skipped_absent_driver_ids.length > 0) {
+        const names = r.crews_skipped_absent_driver_ids.map(
+          (id) => driversById.get(id)?.full_name ?? `Driver #${id}`,
+        )
+        parts.push(`skipped crew for absent driver(s): ${names.join(', ')}`)
+      }
+      setStatusMessage(`${parts.join('; ')}. Review the day, then run the schedule.`)
+      await loadAll(serviceDate)
+    } catch (err) {
+      setErrorMessage(err instanceof ApiError ? err.message : 'Failed to generate from templates.')
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
   async function handleReassignCrew(assignment: Assignment, crewId: number) {
     if (crewId === assignment.crew_id) {
       return
@@ -454,6 +482,9 @@ export function SchedulePage() {
             onChange={(event) => setServiceDate(event.target.value)}
           />
         </div>
+        <button type="button" onClick={() => void handleGenerateFromTemplates()} disabled={isBusy}>
+          Generate from templates
+        </button>
         <button type="button" onClick={() => void handleRunSchedule()} disabled={isBusy}>
           {isBusy ? 'Working…' : 'Run schedule'}
         </button>

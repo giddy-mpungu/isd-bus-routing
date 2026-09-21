@@ -9,6 +9,7 @@ import { LoginPage } from './pages/LoginPage'
 import { SchedulePage } from './pages/SchedulePage'
 import { SchoolAdminPage } from './pages/SchoolAdminPage'
 import { SetupPage } from './pages/SetupPage'
+import { TemplatesPage } from './pages/TemplatesPage'
 
 function RoleHome() {
   // No role has a reason to land on the dispatcher console by default
@@ -55,6 +56,17 @@ function App() {
                 deniedMessage="the dispatcher console"
               >
                 <SetupPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/templates"
+            element={
+              <ProtectedRoute
+                allowedRoles={['dispatcher', 'transportation_admin']}
+                deniedMessage="the dispatcher console"
+              >
+                <TemplatesPage />
               </ProtectedRoute>
             }
           />

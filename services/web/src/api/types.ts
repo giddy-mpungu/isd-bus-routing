@@ -498,3 +498,62 @@ export interface AuditLogQuery {
   limit?: number
   offset?: number
 }
+
+export interface RouteTemplate {
+  id: number
+  school_id: number
+  direction: RideDirection
+  window_earliest: number
+  window_latest: number
+  duration_minutes: number
+  buffer_minutes: number
+  days_of_week: number[]
+  active_from: string | null
+  active_until: string | null
+  is_active: boolean
+  required_qualifications: Qualification[]
+}
+
+export interface RouteTemplateCreate {
+  school_id: number
+  direction: RideDirection
+  window_earliest: number
+  window_latest: number
+  duration_minutes: number
+  buffer_minutes: number
+  days_of_week: number[]
+  active_from: string | null
+  active_until: string | null
+  required_qualification_codes: string[]
+}
+
+export interface CrewTemplate {
+  id: number
+  driver_id: number
+  vehicle_id: number
+  available_window_earliest: number
+  available_window_latest: number
+  days_of_week: number[]
+  active_from: string | null
+  active_until: string | null
+  is_active: boolean
+}
+
+export interface CrewTemplateCreate {
+  driver_id: number
+  vehicle_id: number
+  available_window_earliest: number
+  available_window_latest: number
+  days_of_week: number[]
+  active_from: string | null
+  active_until: string | null
+}
+
+export interface GenerateFromTemplatesResult {
+  service_date: string
+  runs_created: number
+  runs_already_existing: number
+  crews_created: number
+  crews_already_existing: number
+  crews_skipped_absent_driver_ids: number[]
+}
