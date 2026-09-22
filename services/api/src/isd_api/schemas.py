@@ -371,6 +371,19 @@ class AssignmentStatusUpdate(BaseModel):
     status: AssignmentStatus
 
 
+class AssignmentStopRoster(BaseModel):
+    """One stop's worth of expected riders for a driver's assignment
+    (spec section 9: "Stops", "Authorized student information").
+    Deliberately an UNORDERED grouping, not a sequenced/optimized stop
+    order — this system has no stop-sequence model (see
+    docs/domain-model.md's "Not yet implemented", spec section 4.3's
+    same scope boundary). `stop_label` is None for students with no
+    `stop_id` set, grouped together rather than dropped."""
+
+    stop_label: str | None
+    student_names: list[str]
+
+
 class DriverAssignmentRead(BaseModel):
     """Denormalized view of an assignment for the driver who's working
     it — resolved school/vehicle names instead of raw ids, since a
@@ -386,6 +399,13 @@ class DriverAssignmentRead(BaseModel):
     end_minute: int
     status: AssignmentStatus
     locked: bool
+    # spec section 21 "don't guess": True when more than one Run shares
+    # this run's (school_id, service_date, direction) — same ambiguity
+    # rule as GET /runs/{id}/expected-riders. `stops` is always empty
+    # when this is True; the driver app shows a note instead of a
+    # possibly-wrong roster.
+    roster_ambiguous: bool
+    stops: list[AssignmentStopRoster]
 
 
 class SchoolAssignmentRead(BaseModel):

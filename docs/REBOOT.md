@@ -481,7 +481,9 @@ PATCH edits that bypass the solver.
 
 40. #40 `feat/user-management-dashboard` — #2 of the 3 gaps found by the 2026-09-22 re-audit (see entry 39). `POST`/`GET /users` existed since Phase 2 with zero frontend, and no way to edit/deactivate an account at all. `PATCH /users/{id}` (transportation_admin only): reassigns `role`, relinks `driver_id`/`school_id`/`student_id` (each validated to exist — a pre-existing gap in `POST /users` too, fixed alongside since it's the same validation code path; a duplicate link is a 409), and/or flips `is_active`. **Deactivation takes effect immediately, not on next login** — `get_current_user` already checked `User.is_active` on every request for the existing account-disable path, so `PATCH` just reuses it; confirmed live by deactivating a real account and watching its next login attempt fail with 401 mid-verification. **An admin cannot deactivate their own account** (400) — the one lockout guard this adds; does not check for "last remaining admin." Deliberately does NOT cover email/password — no reset flow exists, and changing another user's credentials is a materially more sensitive action than role/linkage management; named as out of scope, not silently skipped. `UserRead` gained `created_at` (already a column, just not exposed). Frontend: new `/users` page (`UsersPage.tsx`), nav link "Users" (transportation_admin only, narrower than the rest of the console), a table with inline Edit (role + role-conditional driver/school/student link) and Deactivate/Reactivate, a create form; the signed-in admin's own row's Deactivate button is disabled with an explanatory title, mirroring the backend guard. 11 new API tests, 8 new web tests; totals now solver 81, api 283, web 134. Manually verified live in the browser: created a dispatcher account through the form, edited its role to school_admin and linked it to a real school, confirmed both persisted; deactivated it and confirmed a real login attempt for that account then returned 401.
 
-## Key files (current state, post-PR #40)
+41. #41 `feat/driver-assignment-roster` — #3 of 3 gaps found by the 2026-09-22 re-audit (see entry 39). Spec §9 requires the driver app to show "Stops" and "Authorized student information" per assignment; `DriverAssignmentRead` had school/vehicle/time/status only. **Deliberately did NOT build the still-missing stop-sequence/student-to-run model** — same scope boundary already drawn for spec §4.3's stop-shortening; this closes the literal display gap, not routing. `_resolve_riding_students` extracted from `GET /runs/{id}/expected-riders` (`routers/runs.py`) — same override-with-default-fallback resolution, now shared instead of duplicated. New `_stop_roster_for` (`routers/schedule.py`) groups the result by `Student.stop_id` — an **unordered** grouping, `AssignmentStopRoster(stop_label, student_names)`, `stop_label=None` bucketed together for students with no stop set — shared between `GET .../my-assignments` and `PATCH .../status` so the roster looks the same either way. Same "don't guess" ambiguity rule as `expected-riders`: `DriverAssignmentRead.roster_ambiguous=True` and `stops=[]` when more than one `Run` shares this run's `(school_id, service_date, direction)`. Frontend: `DriverPage.tsx`'s run card gains an "Expected riders by stop" list with an explicit "not a route order" note, a no-riders message, or the ambiguous note. 4 new API tests (one needed rewriting mid-session: it assumed a specific driver would get a specific run, but the solver's minimize-crews-used tie-break could legitimately assign either crew — fixed by checking whichever assignments exist across both drivers, not assuming one), 3 new web tests; totals now solver 81, api 287, web 137. Manually verified live in the browser: seeded 5 students (2+1 at two stops, 1 with no stop, 1 correctly excluded as not-riding) against a real solved run, confirmed the driver's page grouped them correctly; added a second run for the same school/leg and confirmed both of the driver's resulting assignments correctly showed the ambiguous note instead of a roster. **This closes all 3 gaps from the 2026-09-22 re-audit (entries 39-41) — the user's "take these on now and clear them all" instruction is fully done.**
+
+## Key files (current state, post-PR #41)
 
 - `services/api/src/isd_api/security.py` — cookie auth (`SESSION_COOKIE_NAME`, `create_session_token`, `set_session_cookie`/`clear_session_cookie`, `get_current_user` does dual header-or-cookie auth + renewal + revocation check), `LoginRateLimiter`/`login_rate_limiter`, `revoke_token`
 - `services/api/src/isd_api/routers/auth.py` — login rate-limited + sets cookie + returns bearer token; `POST /auth/logout` (still no auth required — a no-op if nothing to revoke, but revokes the current token if one is present)
@@ -523,7 +525,7 @@ PATCH edits that bypass the solver.
 
 ## Exact next step (as of this checkpoint)
 
-Every PR through #40 is **merged** (#38 squash-merged as `6c33f43` — see the "Environment specifics" gotchas below for why squash instead of the usual merge commit), CI green, local `main` synced. With
+Every PR through #41 is **merged** (#38 squash-merged as `6c33f43` — see the "Environment specifics" gotchas below for why squash instead of the usual merge commit), CI green, local `main` synced. With
 the original candidate list (and spec §8) fully closed out, the user
 asked for a full spec-vs-code audit and a plan for the rest of the
 project — see the audit entry above (2026-09-17) and the published
@@ -582,22 +584,15 @@ to the numbered list above, not lower, until all three are done:
 
 39. ~~Master-data edit/deactivate (Vehicle/Driver/Qualification/Stop)~~ **Done (PR #39) — see entry 39.**
 40. ~~User-management dashboard~~ **Done (PR #40) — see entry 40.**
-41. Driver app shows no stops or student roster per assignment — spec
-    §9 requires both; `DriverAssignmentRead` today has only school/
-    vehicle/time/status. Root cause is the long-standing missing
-    stop-sequence/student-to-run model (do NOT attempt to build that
-    in full — same scope boundary already drawn for spec §4.3). Scoped
-    plan: reuse `GET /runs/{id}/expected-riders`'s exact override-
-    resolution logic to compute an *unordered* list of expected riders
-    grouped by their `Stop`, embedded on `DriverAssignmentRead`; honor
-    the same `ambiguous` "don't guess" flag when multiple runs share a
-    school/date/direction. Named explicitly as NOT sequencing/
-    optimizing stop order — informational only.
+41. ~~Driver app shows no stops or student roster per assignment~~ **Done (PR #41) — see entry 41. All 3 gaps from the 2026-09-22 re-audit are now closed.**
 
-If the user says "continue" with no specific target, item 41 above is
-the default (pure engineering, no user decision needed) — prefer it
-over #5's remaining half, which still needs the user's own host
-decision and can't be defaulted into. #6 stays deferred.
+If the user says "continue" with no specific target: every item from
+both lists is done except #5's remaining half (choosing a real host to
+deploy to), which needs the user's own decision and can't be defaulted
+into — present options rather than picking one. #6 stays deferred. If
+there's nothing else queued, the honest answer is that the roadmap is
+caught up; ask the user what they'd like next rather than inventing
+new scope.
 
 ## Environment specifics (this machine)
 

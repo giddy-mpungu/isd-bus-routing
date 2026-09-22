@@ -194,3 +194,148 @@ def test_assignment_status_update_rejects_invalid_status_value(client, admin_hea
         json={"status": "on_the_moon"},
     )
     assert response.status_code == 422
+
+
+# --- Roster (spec section 9 "Stops"/"Authorized student information") ---
+# GET .../my-assignments and PATCH .../status both embed an unordered,
+# stop-grouped list of expected riders -- deliberately not a sequenced
+# stop order, which needs a stop-sequence model this system doesn't have.
+
+
+def _add_student(
+    client, admin_headers, *, school_id, full_name, stop_id=None, default_ridership="rides"
+):
+    payload = {
+        "full_name": full_name,
+        "school_id": school_id,
+        "default_ridership": default_ridership,
+    }
+    if stop_id is not None:
+        payload["stop_id"] = stop_id
+    return client.post("/students", headers=admin_headers, json=payload).json()
+
+
+def test_my_assignments_roster_groups_riders_by_stop(client, admin_headers, db_session):
+    school, driver, _vehicle, _crew, run = _seed_single_run_scenario(client, admin_headers)
+    stop_a = client.post(
+        "/stops",
+        headers=admin_headers,
+        json={"label": "Elm St", "location_lat": 1, "location_lon": 1},
+    ).json()
+    stop_b = client.post(
+        "/stops",
+        headers=admin_headers,
+        json={"label": "Oak St", "location_lat": 2, "location_lon": 2},
+    ).json()
+    _add_student(
+        client, admin_headers, school_id=school["id"], full_name="Ana", stop_id=stop_a["id"]
+    )
+    _add_student(
+        client, admin_headers, school_id=school["id"], full_name="Ben", stop_id=stop_a["id"]
+    )
+    _add_student(
+        client, admin_headers, school_id=school["id"], full_name="Cy", stop_id=stop_b["id"]
+    )
+    _add_student(client, admin_headers, school_id=school["id"], full_name="Dee")  # no stop
+    _add_student(
+        client,
+        admin_headers,
+        school_id=school["id"],
+        full_name="Not Riding",
+        stop_id=stop_a["id"],
+        default_ridership="does_not_ride",
+    )
+    client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
+
+    driver_headers = _login_as_driver(client, db_session, admin_headers, driver["id"])
+    response = client.get("/schedule/2026-09-01/my-assignments", headers=driver_headers)
+    assert response.status_code == 200, response.text
+    body = response.json()[0]
+    assert body["roster_ambiguous"] is False
+    stops = {s["stop_label"]: sorted(s["student_names"]) for s in body["stops"]}
+    assert stops == {"Elm St": ["Ana", "Ben"], "Oak St": ["Cy"], None: ["Dee"]}
+    assert run["id"] == body["run_id"]
+
+
+def test_my_assignments_roster_is_empty_and_flagged_when_ambiguous(
+    client, admin_headers, db_session
+):
+    school, driver, vehicle, _crew, _run = _seed_single_run_scenario(client, admin_headers)
+    # A second run for the same school/date/direction makes ridership
+    # unattributable to either one specifically.
+    client.post(
+        "/runs",
+        headers=admin_headers,
+        json={
+            "service_date": "2026-09-01",
+            "school_id": school["id"],
+            "direction": "am",
+            "window_earliest": 460,
+            "window_latest": 520,
+            "duration_minutes": 40,
+            "buffer_minutes": 10,
+        },
+    )
+    driver2 = client.post("/drivers", headers=admin_headers, json={"full_name": "Driver 2"}).json()
+    vehicle2 = client.post("/vehicles", headers=admin_headers, json={"label": "Bus 202"}).json()
+    client.post(
+        "/crews",
+        headers=admin_headers,
+        json={
+            "service_date": "2026-09-01",
+            "driver_id": driver2["id"],
+            "vehicle_id": vehicle2["id"],
+            "available_window_earliest": 0,
+            "available_window_latest": 1439,
+        },
+    )
+    _add_student(client, admin_headers, school_id=school["id"], full_name="Ana")
+    client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
+
+    # Either crew could end up with either or both runs (a solver tie
+    # between interchangeable crews, not something this test should
+    # assume) -- check whichever assignments exist across both drivers.
+    driver_headers = _login_as_driver(client, db_session, admin_headers, driver["id"])
+    driver2_headers = _login_as_driver(
+        client, db_session, admin_headers, driver2["id"], email="driver2@example.org"
+    )
+    all_bodies = [
+        *client.get("/schedule/2026-09-01/my-assignments", headers=driver_headers).json(),
+        *client.get("/schedule/2026-09-01/my-assignments", headers=driver2_headers).json(),
+    ]
+    assert len(all_bodies) == 2
+    for body in all_bodies:
+        assert body["roster_ambiguous"] is True
+        assert body["stops"] == []
+
+
+def test_my_assignments_roster_is_empty_when_no_students_ride(client, admin_headers, db_session):
+    _school, driver, _vehicle, _crew, _run = _seed_single_run_scenario(client, admin_headers)
+    client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
+
+    driver_headers = _login_as_driver(client, db_session, admin_headers, driver["id"])
+    response = client.get("/schedule/2026-09-01/my-assignments", headers=driver_headers)
+    body = response.json()[0]
+    assert body["roster_ambiguous"] is False
+    assert body["stops"] == []
+
+
+def test_status_update_response_also_includes_the_roster(client, admin_headers, db_session):
+    school, driver, _vehicle, _crew, _run = _seed_single_run_scenario(client, admin_headers)
+    stop = client.post(
+        "/stops",
+        headers=admin_headers,
+        json={"label": "Elm St", "location_lat": 1, "location_lon": 1},
+    ).json()
+    _add_student(client, admin_headers, school_id=school["id"], full_name="Ana", stop_id=stop["id"])
+    schedule = client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
+    assignment_id = schedule.json()["assignments"][0]["id"]
+
+    driver_headers = _login_as_driver(client, db_session, admin_headers, driver["id"])
+    response = client.patch(
+        f"/schedule/assignments/{assignment_id}/status",
+        headers=driver_headers,
+        json={"status": "in_progress"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["stops"] == [{"stop_label": "Elm St", "student_names": ["Ana"]}]

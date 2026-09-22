@@ -233,6 +233,30 @@ export function DriverPage() {
             <div className="driver-run-school">{a.school_name}</div>
             <div className="driver-run-vehicle">Vehicle: {a.vehicle_label}</div>
             <div className="driver-run-status">Status: {STATUS_LABELS[a.status]}</div>
+            <div className="driver-run-roster">
+              {a.roster_ambiguous ? (
+                <p>
+                  Rider list unavailable — more than one bus serves this school today, so it can't
+                  be split between them.
+                </p>
+              ) : a.stops.length === 0 ? (
+                <p>No riders expected today.</p>
+              ) : (
+                <>
+                  <h3>Expected riders by stop</h3>
+                  <p className="driver-run-roster-note">
+                    Not a route order — stops aren't sequenced yet.
+                  </p>
+                  <ul>
+                    {a.stops.map((stop) => (
+                      <li key={stop.stop_label ?? '__no_stop__'}>
+                        {stop.stop_label ?? 'No stop assigned'}: {stop.student_names.join(', ')}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
             <div className="driver-run-actions">
               <button
                 type="button"

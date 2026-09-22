@@ -598,6 +598,40 @@ master-data lifecycle gap above.
   and a create form. The signed-in admin's own row's Deactivate button
   is disabled with an explanatory title, mirroring the backend's guard.
 
+## Driver-app assignment roster (spec section 9 "Stops", "Authorized
+student information")
+
+The last of the three gaps found in the 2026-09-22 re-audit (see the
+two sections above). `DriverAssignmentRead` had school/vehicle/time/
+status only -- nothing about which stops or which students.
+
+- **Deliberately NOT the missing stop-sequence model.** This system
+  has no per-run stop order or student-to-specific-run assignment (the
+  same long-standing gap named for spec section 4.3's stop-shortening,
+  never built). Building that in full was explicitly out of scope here
+  -- this closes the literal driver-app display gap without pretending
+  to solve routing.
+- **`_resolve_riding_students`** (extracted from
+  `GET /runs/{id}/expected-riders`, `routers/runs.py`, now shared) is
+  the same override-with-default-fallback resolution, reused rather
+  than duplicated. `_stop_roster_for` (`routers/schedule.py`) groups
+  the result by `Student.stop_id` -- an **unordered** grouping, not a
+  route sequence -- and is shared between `GET .../my-assignments` and
+  `PATCH .../status` so a driver's roster looks the same whether they
+  just loaded their day or just updated a run's status.
+- **`AssignmentStopRoster`**: `stop_label` (`None` for a student with
+  no stop set, grouped together rather than dropped) + `student_names`.
+- **Same "don't guess" ambiguity rule as `expected-riders`**:
+  `DriverAssignmentRead.roster_ambiguous` is `True`, and `stops` is
+  always empty, when more than one `Run` shares this run's
+  `(school_id, service_date, direction)` -- ridership can't be
+  correctly attributed to just one of several runs serving the same
+  school/leg. The driver app shows an explanatory note instead of a
+  possibly-wrong roster.
+- UI: `DriverPage.tsx`'s run card gains an "Expected riders by stop"
+  list with an explicit "not a route order" note, a no-riders message,
+  or the ambiguous note -- whichever applies.
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)

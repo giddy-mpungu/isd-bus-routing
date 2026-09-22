@@ -210,28 +210,17 @@ def update_run(
     return run
 
 
-@router.get("/{run_id}/expected-riders", response_model=ExpectedRidersRead)
-def get_expected_riders(
-    run_id: int,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_role(*_WRITE_ROLES)),
-) -> ExpectedRidersRead:
-    """Decision support (spec section 21: never autonomous) for setting
-    Run.passenger_count from real Student/RidershipOverride data,
-    instead of the fully manual guess it is today. Mirrors
-    routers/students.py's get_my_family override-with-default-fallback
-    resolution exactly. ambiguous=True when more than one Run exists
-    for this run's (school_id, service_date, direction) — this system
-    has no student-to-specific-run assignment, so a count can't be
-    correctly attributed to just one of several runs serving the same
-    school/leg that day; the caller should not apply the count in that
-    case (routers/runs.py's PATCH doesn't enforce this itself — the
-    frontend disables "Apply" when ambiguous, same as every other
-    decision-support-not-autonomous-authority flow in this project)."""
-    run = db.get(Run, run_id)
-    if run is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
-
+def _resolve_riding_students(db: Session, run: Run) -> tuple[list[Student], bool]:
+    """The override-with-default-fallback resolution shared by
+    GET /runs/{id}/expected-riders and the driver-app roster
+    (routers/schedule.py's list_my_assignments) — mirrors
+    routers/students.py's get_my_family exactly. Returns the riding
+    students and whether the result is ambiguous: True when more than
+    one Run exists for this run's (school_id, service_date, direction)
+    — this system has no student-to-specific-run assignment, so
+    ridership can't be correctly attributed to just one of several runs
+    serving the same school/leg that day (spec section 21: don't guess).
+    Callers must not use the students list when ambiguous is True."""
     other_runs_same_leg = (
         db.query(Run)
         .filter(
@@ -257,8 +246,28 @@ def get_expected_riders(
     riding_students = [
         s for s in students if overrides.get(s.id, s.default_ridership.value == "rides")
     ]
+    return riding_students, other_runs_same_leg > 0
+
+
+@router.get("/{run_id}/expected-riders", response_model=ExpectedRidersRead)
+def get_expected_riders(
+    run_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role(*_WRITE_ROLES)),
+) -> ExpectedRidersRead:
+    """Decision support (spec section 21: never autonomous) for setting
+    Run.passenger_count from real Student/RidershipOverride data,
+    instead of the fully manual guess it is today. ambiguous=True: the
+    frontend disables "Apply" rather than using an unattributable
+    count, same as every other decision-support-not-autonomous-
+    authority flow in this project."""
+    run = db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+
+    riding_students, ambiguous = _resolve_riding_students(db, run)
     return ExpectedRidersRead(
         expected_passenger_count=len(riding_students),
-        ambiguous=other_runs_same_leg > 0,
+        ambiguous=ambiguous,
         riding_student_names=[s.full_name for s in riding_students],
     )
