@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
@@ -9,14 +11,24 @@ from isd_api.main import app
 from isd_api.models import Role, User
 from isd_api.security import hash_password
 
+# Unset in every normal run (local or CI) — the entire suite runs
+# against in-memory SQLite by default, same as always. The
+# api-postgres CI job (.github/workflows/ci.yml) sets this to a real
+# postgresql+psycopg:// URL so the exact same suite, unmodified, also
+# proves out against production's real target database (ADR 0003/0006).
+_TEST_DATABASE_URL = os.environ.get("ISD_API_TEST_DATABASE_URL")
+
 
 @pytest.fixture()
 def db_session():
-    """A fresh in-memory SQLite DB per test, shared across the whole
-    test's connections via StaticPool (needed because FastAPI's
-    TestClient and the fixture itself both need to see the same DB) —
-    make_engine("sqlite://") applies StaticPool automatically."""
-    engine = make_engine("sqlite://")
+    """A fresh DB per test. Against the SQLite default, this is an
+    in-memory database shared across the test's own connections via
+    StaticPool (needed because FastAPI's TestClient and the fixture
+    itself must see the same DB) — make_engine("sqlite://") applies
+    StaticPool automatically. Against a real server (Postgres CI job),
+    it's create-all/drop-all per test on a shared instance instead —
+    slower, but proves real per-test isolation still holds."""
+    engine = make_engine(_TEST_DATABASE_URL or "sqlite://")
     Base.metadata.create_all(bind=engine)
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     session = TestingSessionLocal()
@@ -25,6 +37,7 @@ def db_session():
     finally:
         session.close()
         Base.metadata.drop_all(bind=engine)
+        engine.dispose()
 
 
 @pytest.fixture()

@@ -1,0 +1,114 @@
+# Production orchestration — see docs/deployment.md for the full
+# runbook (provisioning, DNS, first-time setup, backups, updates).
+#
+# Differences from the dev docker-compose.yml at the repo root:
+#   - Real PostgreSQL (ADR 0003/0006) instead of a SQLite file/volume.
+#   - Caddy in front of both services for automatic HTTPS (Let's
+#     Encrypt) — set CADDY_DOMAIN and point its DNS A/AAAA record at
+#     this host before starting. Caddy is one reasonable default,
+#     chosen so a first deployment needs no manual certificate work;
+#     swap it for your own reverse proxy if you already run one.
+#   - No default JWT secret, no default CORS origin, no default
+#     ISD_API_ENVIRONMENT — every security-relevant value must come
+#     from your own .env (copy .env.prod.example), and the app itself
+#     refuses to start in production with an insecure default
+#     (Settings.require_production_ready(), src/isd_api/config.py).
+#   - `restart: unless-stopped` on every long-running service.
+#   - The database password is a Docker secret (a file under
+#     ./secrets/, gitignored — see docs/deployment.md), not a plain
+#     environment variable: it never shows up in `docker inspect` or
+#     `docker compose config`, and Postgres reads it via its own
+#     official `POSTGRES_PASSWORD_FILE` convention. The api container
+#     still needs the same password inside its connection string —
+#     that string is one opaque required value from your .env
+#     (ISD_API_DATABASE_URL), not assembled here from parts.
+#
+# Still NOT done by this file: provisioning the host, DNS, backups,
+# and the very first `alembic upgrade head` / bootstrap-admin run —
+# see docs/deployment.md for those as explicit one-time steps.
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_DB: ${POSTGRES_DB:-isd_api}
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-isd}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Not published to the host on purpose — only `api` and one-off
+    # `docker compose run` commands (e.g. alembic, bootstrap_admin)
+    # need to reach it, both on this compose network.
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ISD_API_ENVIRONMENT: production
+      # The full connection string, including the same password as
+      # ./secrets/postgres_password.txt — one required opaque value
+      # from .env, not assembled here (see the file header comment).
+      # psycopg (v3) — the `+psycopg` scheme is required, see
+      # pyproject.toml's `postgres` extra; this image installs it.
+      ISD_API_DATABASE_URL: ${ISD_API_DATABASE_URL:?set the full postgresql+psycopg:// connection string in .env — see docs/deployment.md}
+      ISD_API_JWT_SECRET_KEY: ${ISD_API_JWT_SECRET_KEY:?set a real random secret in .env — see docs/deployment.md}
+      ISD_API_CORS_ALLOWED_ORIGINS: ${ISD_API_CORS_ALLOWED_ORIGINS:?set the real public web origin(s) as a JSON list in .env, e.g. ["https://bus.yourdistrict.example.org"]}
+      ISD_API_ORS_API_KEY: ${ISD_API_ORS_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    # Not published to the host — reached only via Caddy's reverse proxy below.
+
+  web:
+    build:
+      context: services/web
+      dockerfile: Dockerfile
+      args:
+        # Baked in at build time (see services/web/Dockerfile) — must
+        # be the same public origin Caddy serves the api under.
+        VITE_API_BASE_URL: ${PUBLIC_API_ORIGIN:?set the public https:// origin the api is reachable at in .env}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    # Not published to the host — reached only via Caddy's reverse proxy below.
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN:?set the public DNS name for this deployment in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password.txt
