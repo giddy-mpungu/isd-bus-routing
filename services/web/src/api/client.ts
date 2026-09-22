@@ -32,6 +32,9 @@ import type {
   CrewTemplate,
   CrewTemplateCreate,
   CurrentUser,
+  User,
+  UserCreate,
+  UserUpdate,
   DestinationProfile,
   DestinationProfileCreate,
   Driver,
@@ -134,6 +137,18 @@ export async function logout(): Promise<void> {
 
 export async function getCurrentUser(): Promise<CurrentUser> {
   return request<CurrentUser>('/users/me')
+}
+
+export async function getUsers(): Promise<User[]> {
+  return request<User[]>('/users')
+}
+
+export async function createUser(payload: UserCreate): Promise<User> {
+  return request<User>('/users', jsonInit('POST', payload))
+}
+
+export async function updateUser(id: number, payload: UserUpdate): Promise<User> {
+  return request<User>(`/users/${id}`, jsonInit('PATCH', payload))
 }
 
 export async function getSchools(): Promise<School[]> {

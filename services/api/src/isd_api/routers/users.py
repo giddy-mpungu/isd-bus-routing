@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from isd_api.audit import record as record_audit
 from isd_api.db import get_db
-from isd_api.models import Role, User
-from isd_api.schemas import UserCreate, UserRead
+from isd_api.models import Driver, Role, School, Student, User
+from isd_api.schemas import UserCreate, UserRead, UserUpdate
 from isd_api.security import get_current_user, hash_password, require_role
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -22,6 +23,12 @@ def create_user(
     Administrator responsibility."""
     if db.query(User).filter(User.email == payload.email).one_or_none() is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+    if payload.driver_id is not None and db.get(Driver, payload.driver_id) is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown driver_id")
+    if payload.school_id is not None and db.get(School, payload.school_id) is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown school_id")
+    if payload.student_id is not None and db.get(Student, payload.student_id) is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown student_id")
 
     user = User(
         email=payload.email,
@@ -33,7 +40,14 @@ def create_user(
         student_id=payload.student_id,
     )
     db.add(user)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That driver_id or student_id is already linked to another user",
+        ) from exc
     record_audit(
         db,
         entity_type="user",
@@ -58,3 +72,76 @@ def list_users(
     _: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
 ) -> list[User]:
     return list(db.query(User).order_by(User.id).all())
+
+
+@router.patch("/{user_id}", response_model=UserRead)
+def update_user(
+    user_id: int,
+    payload: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+) -> User:
+    """spec section 17 "user permissions": reassign a role, relink a
+    driver/school/student record, or deactivate an account. Deactivation
+    takes effect immediately, not just on next login -- get_current_user
+    checks User.is_active on every request, so an existing session's
+    bearer token or cookie stops working on its very next use."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if user_id == current_user.id and payload.is_active is False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot deactivate your own account",
+        )
+    if payload.driver_id is not None and db.get(Driver, payload.driver_id) is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown driver_id")
+    if payload.school_id is not None and db.get(School, payload.school_id) is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown school_id")
+    if payload.student_id is not None and db.get(Student, payload.student_id) is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown student_id")
+
+    before_state = {
+        "role": user.role.value,
+        "is_active": user.is_active,
+        "driver_id": user.driver_id,
+        "school_id": user.school_id,
+        "student_id": user.student_id,
+    }
+    if payload.role is not None:
+        user.role = payload.role
+    if payload.is_active is not None:
+        user.is_active = payload.is_active
+    if payload.driver_id is not None:
+        user.driver_id = payload.driver_id
+    if payload.school_id is not None:
+        user.school_id = payload.school_id
+    if payload.student_id is not None:
+        user.student_id = payload.student_id
+
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That driver_id or student_id is already linked to another user",
+        ) from exc
+    record_audit(
+        db,
+        entity_type="user",
+        entity_id=user.id,
+        action="updated",
+        actor=current_user,
+        before_state=before_state,
+        after_state={
+            "role": user.role.value,
+            "is_active": user.is_active,
+            "driver_id": user.driver_id,
+            "school_id": user.school_id,
+            "student_id": user.student_id,
+        },
+    )
+    db.commit()
+    db.refresh(user)
+    return user

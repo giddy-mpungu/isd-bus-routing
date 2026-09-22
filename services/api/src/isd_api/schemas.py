@@ -45,6 +45,23 @@ class UserRead(BaseModel):
     driver_id: int | None = None
     school_id: int | None = None
     student_id: int | None = None
+    created_at: datetime
+
+
+class UserUpdate(BaseModel):
+    """spec section 17: "user permissions" — role reassignment and
+    deactivation. Deliberately does NOT cover email or password: this
+    system has no password-reset flow, and changing another user's
+    email/password is a materially more security-sensitive action than
+    anything else this endpoint does; a user's own credentials stay
+    self-service (there is none yet) or an admin re-creates the
+    account, not silently overwritten here."""
+
+    role: Role | None = None
+    is_active: bool | None = None
+    driver_id: int | None = None
+    school_id: int | None = None
+    student_id: int | None = None
 
 
 class QualificationCreate(BaseModel):
