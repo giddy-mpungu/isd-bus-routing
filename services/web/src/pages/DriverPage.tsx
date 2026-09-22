@@ -9,6 +9,7 @@ import type {
   DriverReportType,
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import { Badge, type BadgeTone } from '../components/Badge'
 
 const ABSENCE_REASONS: AbsenceReason[] = [
   'sick_leave',
@@ -38,6 +39,13 @@ const STATUS_LABELS: Record<AssignmentStatus, string> = {
   in_progress: 'In progress',
   completed: 'Completed',
   no_show: 'No-show',
+}
+
+const STATUS_TONES: Record<AssignmentStatus, BadgeTone> = {
+  scheduled: 'neutral',
+  in_progress: 'info',
+  completed: 'success',
+  no_show: 'danger',
 }
 
 function speakAssignment(a: DriverAssignment) {
@@ -232,7 +240,9 @@ export function DriverPage() {
             </div>
             <div className="driver-run-school">{a.school_name}</div>
             <div className="driver-run-vehicle">Vehicle: {a.vehicle_label}</div>
-            <div className="driver-run-status">Status: {STATUS_LABELS[a.status]}</div>
+            <div className="driver-run-status">
+              Status: <Badge tone={STATUS_TONES[a.status]}>{STATUS_LABELS[a.status]}</Badge>
+            </div>
             <div className="driver-run-roster">
               {a.roster_ambiguous ? (
                 <p>

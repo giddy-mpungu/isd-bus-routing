@@ -67,7 +67,7 @@ describe('SchoolAdminPage', () => {
     await waitFor(() => expect(screen.getByText('Driver: Jordan Driver')).toBeInTheDocument())
     expect(screen.getByText('Vehicle: Bus 101')).toBeInTheDocument()
     expect(screen.getByText('AM: 06:00 – 06:50')).toBeInTheDocument()
-    expect(screen.getByText('Status: Not started')).toBeInTheDocument()
+    expect(screen.getByText('Not started')).toBeInTheDocument()
   })
 
   it('shows a friendly message when no buses are scheduled yet', async () => {

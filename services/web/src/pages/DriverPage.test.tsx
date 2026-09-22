@@ -91,7 +91,7 @@ describe('DriverPage', () => {
     await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
     expect(screen.getByText('Vehicle: Bus 101')).toBeInTheDocument()
     expect(screen.getByText('06:00 – 06:50')).toBeInTheDocument()
-    expect(screen.getByText('Status: Not started')).toBeInTheDocument()
+    expect(screen.getByText('Not started')).toBeInTheDocument()
   })
 
   it('shows expected riders grouped by stop, and notes it is not a route order', async () => {

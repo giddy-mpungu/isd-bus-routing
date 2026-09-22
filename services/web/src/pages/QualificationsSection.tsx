@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { Qualification, QualificationKind } from '../api/types'
+import { Badge } from '../components/Badge'
 
 function qualificationLabel(q: Qualification): string {
   return q.description ? `${q.code} — ${q.description}` : q.code
@@ -112,7 +113,8 @@ export function QualificationsSection({
             </li>
           ) : (
             <li key={q.id}>
-              {qualificationLabel(q)} ({q.kind}){!q.is_active && ' — inactive'}
+              {qualificationLabel(q)} ({q.kind}){' '}
+              {!q.is_active && <Badge tone="neutral">inactive</Badge>}
               {canEdit && (
                 <>
                   {' '}

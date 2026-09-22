@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { Driver, Qualification } from '../api/types'
+import { Badge } from '../components/Badge'
 
 function qualificationLabel(q: Qualification): string {
   return q.description ? `${q.code} — ${q.description}` : q.code
@@ -196,7 +197,12 @@ export function DriversSection({
               {d.full_name}
               {d.qualifications.length > 0 &&
                 ` (${d.qualifications.map((q) => q.code).join(', ')})`}
-              {!d.is_active && ' — inactive'}
+              {!d.is_active && (
+                <>
+                  {' '}
+                  <Badge tone="neutral">inactive</Badge>
+                </>
+              )}
               {canEdit && (
                 <>
                   {' '}

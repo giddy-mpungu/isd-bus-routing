@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { Qualification, Vehicle } from '../api/types'
+import { Badge } from '../components/Badge'
 
 function qualificationLabel(q: Qualification): string {
   return q.description ? `${q.code} — ${q.description}` : q.code
@@ -273,7 +274,12 @@ export function VehiclesSection({
               {v.weight_kg != null && ` — ${v.weight_kg}kg`}
               {v.qualifications.length > 0 &&
                 ` (${v.qualifications.map((q) => q.code).join(', ')})`}
-              {!v.is_active && ' — inactive'}
+              {!v.is_active && (
+                <>
+                  {' '}
+                  <Badge tone="neutral">inactive</Badge>
+                </>
+              )}
               {canEdit && (
                 <>
                   {' '}

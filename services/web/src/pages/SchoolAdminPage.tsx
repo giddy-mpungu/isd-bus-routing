@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { Announcement, AssignmentStatus, SchoolAssignment } from '../api/types'
+import { Badge, type BadgeTone } from '../components/Badge'
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -18,6 +19,13 @@ const STATUS_LABELS: Record<AssignmentStatus, string> = {
   in_progress: 'In progress',
   completed: 'Completed',
   no_show: 'No-show',
+}
+
+const STATUS_TONES: Record<AssignmentStatus, BadgeTone> = {
+  scheduled: 'neutral',
+  in_progress: 'info',
+  completed: 'success',
+  no_show: 'danger',
 }
 
 export function SchoolAdminPage() {
@@ -84,7 +92,9 @@ export function SchoolAdminPage() {
             </div>
             <div className="school-admin-assignment-driver">Driver: {a.driver_full_name}</div>
             <div className="school-admin-assignment-vehicle">Vehicle: {a.vehicle_label}</div>
-            <div className="school-admin-assignment-status">Status: {STATUS_LABELS[a.status]}</div>
+            <div className="school-admin-assignment-status">
+              Status: <Badge tone={STATUS_TONES[a.status]}>{STATUS_LABELS[a.status]}</Badge>
+            </div>
           </li>
         ))}
       </ul>
