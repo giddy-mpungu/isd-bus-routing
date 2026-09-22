@@ -37,6 +37,7 @@ import type {
   Driver,
   DriverAssignment,
   DriverCreate,
+  DriverUpdate,
   DriverReport,
   DriverReportCreate,
   ExpectedRiders,
@@ -52,6 +53,7 @@ import type {
   PositionUpdate,
   Qualification,
   QualificationCreate,
+  QualificationUpdate,
   RideDirection,
   RidershipOverrideUpdate,
   Run,
@@ -63,10 +65,12 @@ import type {
   ScheduleResult,
   Stop,
   StopCreate,
+  StopUpdate,
   Student,
   StudentCreate,
   Vehicle,
   VehicleCreate,
+  VehicleUpdate,
   VehiclePosition,
 } from './types'
 
@@ -148,6 +152,13 @@ export async function createQualification(payload: QualificationCreate): Promise
   return request<Qualification>('/qualifications', jsonInit('POST', payload))
 }
 
+export async function updateQualification(
+  id: number,
+  payload: QualificationUpdate,
+): Promise<Qualification> {
+  return request<Qualification>(`/qualifications/${id}`, jsonInit('PATCH', payload))
+}
+
 export async function getDrivers(): Promise<Driver[]> {
   return request<Driver[]>('/drivers')
 }
@@ -156,12 +167,20 @@ export async function createDriver(payload: DriverCreate): Promise<Driver> {
   return request<Driver>('/drivers', jsonInit('POST', payload))
 }
 
+export async function updateDriver(id: number, payload: DriverUpdate): Promise<Driver> {
+  return request<Driver>(`/drivers/${id}`, jsonInit('PATCH', payload))
+}
+
 export async function getVehicles(): Promise<Vehicle[]> {
   return request<Vehicle[]>('/vehicles')
 }
 
 export async function createVehicle(payload: VehicleCreate): Promise<Vehicle> {
   return request<Vehicle>('/vehicles', jsonInit('POST', payload))
+}
+
+export async function updateVehicle(id: number, payload: VehicleUpdate): Promise<Vehicle> {
+  return request<Vehicle>(`/vehicles/${id}`, jsonInit('PATCH', payload))
 }
 
 export async function getRuns(serviceDate: string): Promise<Run[]> {
@@ -241,6 +260,14 @@ export async function getStops(): Promise<Stop[]> {
 
 export async function createStop(payload: StopCreate): Promise<Stop> {
   return request<Stop>('/stops', jsonInit('POST', payload))
+}
+
+export async function updateStop(id: number, payload: StopUpdate): Promise<Stop> {
+  return request<Stop>(`/stops/${id}`, jsonInit('PATCH', payload))
+}
+
+export async function deleteStop(id: number): Promise<void> {
+  await request<void>(`/stops/${id}`, { method: 'DELETE' })
 }
 
 export async function getStudents(): Promise<Student[]> {

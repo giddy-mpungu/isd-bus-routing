@@ -35,6 +35,7 @@ const driver: Driver = {
   id: 2,
   full_name: 'Jordan Driver',
   max_continuous_minutes: null,
+  is_active: true,
   qualifications: [],
 }
 const vehicle: Vehicle = {
@@ -46,9 +47,16 @@ const vehicle: Vehicle = {
   width_m: null,
   height_m: null,
   weight_kg: null,
+  is_active: true,
   qualifications: [],
 }
-const lift: Qualification = { id: 1, code: 'lift', kind: 'vehicle_capability', description: null }
+const lift: Qualification = {
+  id: 1,
+  code: 'lift',
+  kind: 'vehicle_capability',
+  description: null,
+  is_active: true,
+}
 
 const routeTemplate: RouteTemplate = {
   id: 7,

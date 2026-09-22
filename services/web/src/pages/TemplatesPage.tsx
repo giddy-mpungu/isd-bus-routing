@@ -116,7 +116,11 @@ export function TemplatesPage() {
   const schoolsById = new Map(schools.map((s) => [s.id, s]))
   const driversById = new Map(drivers.map((d) => [d.id, d]))
   const vehiclesById = new Map(vehicles.map((v) => [v.id, v]))
-  const vehicleQualifications = qualifications.filter((q) => q.kind === 'vehicle_capability')
+  const vehicleQualifications = qualifications.filter(
+    (q) => q.kind === 'vehicle_capability' && q.is_active,
+  )
+  const activeDrivers = drivers.filter((d) => d.is_active)
+  const activeVehicles = vehicles.filter((v) => v.is_active)
 
   // --- Route template form ---
   const [rtSchoolId, setRtSchoolId] = useState('')
@@ -450,7 +454,7 @@ export function TemplatesPage() {
             <option value="" disabled>
               Select a driver
             </option>
-            {drivers.map((d) => (
+            {activeDrivers.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.full_name}
               </option>
@@ -466,7 +470,7 @@ export function TemplatesPage() {
             <option value="" disabled>
               Select a vehicle
             </option>
-            {vehicles.map((v) => (
+            {activeVehicles.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.label}
               </option>

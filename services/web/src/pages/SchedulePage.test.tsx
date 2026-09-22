@@ -59,6 +59,7 @@ const driverRecord: Driver = {
   id: 2,
   full_name: 'Jordan Driver',
   max_continuous_minutes: null,
+  is_active: true,
   qualifications: [],
 }
 const vehicle: Vehicle = {
@@ -70,6 +71,7 @@ const vehicle: Vehicle = {
   width_m: null,
   height_m: null,
   weight_kg: null,
+  is_active: true,
   qualifications: [],
 }
 const run: Run = {
@@ -95,6 +97,7 @@ const otherDriver: Driver = {
   id: 4,
   full_name: 'Sam Substitute',
   max_continuous_minutes: null,
+  is_active: true,
   qualifications: [],
 }
 const otherVehicle: Vehicle = {
@@ -106,6 +109,7 @@ const otherVehicle: Vehicle = {
   width_m: null,
   height_m: null,
   weight_kg: null,
+  is_active: true,
   qualifications: [],
 }
 const otherCrew: Crew = {
@@ -131,12 +135,14 @@ const vehicleQual: Qualification = {
   code: 'lift',
   kind: 'vehicle_capability',
   description: 'Wheelchair lift',
+  is_active: true,
 }
 
 const thirdDriver: Driver = {
   id: 6,
   full_name: 'Casey NoCrew',
   max_continuous_minutes: null,
+  is_active: true,
   qualifications: [],
 }
 

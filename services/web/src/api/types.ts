@@ -33,12 +33,14 @@ export interface Qualification {
   code: string
   kind: QualificationKind
   description: string | null
+  is_active: boolean
 }
 
 export interface Driver {
   id: number
   full_name: string
   max_continuous_minutes: number | null
+  is_active: boolean
   qualifications: Qualification[]
 }
 
@@ -51,6 +53,7 @@ export interface Vehicle {
   width_m: number | null
   height_m: number | null
   weight_kg: number | null
+  is_active: boolean
   qualifications: Qualification[]
 }
 
@@ -150,10 +153,22 @@ export interface QualificationCreate {
   description?: string
 }
 
+export interface QualificationUpdate {
+  description?: string
+  is_active?: boolean
+}
+
 export interface DriverCreate {
   full_name: string
   max_continuous_minutes?: number
   qualification_codes: string[]
+}
+
+export interface DriverUpdate {
+  full_name?: string
+  max_continuous_minutes?: number
+  qualification_codes?: string[]
+  is_active?: boolean
 }
 
 export interface VehicleCreate {
@@ -165,6 +180,18 @@ export interface VehicleCreate {
   height_m?: number
   weight_kg?: number
   qualification_codes: string[]
+}
+
+export interface VehicleUpdate {
+  label?: string
+  nominal_capacity?: number
+  effective_capacity?: number
+  length_m?: number
+  width_m?: number
+  height_m?: number
+  weight_kg?: number
+  qualification_codes?: string[]
+  is_active?: boolean
 }
 
 export interface CrewCreate {
@@ -210,6 +237,12 @@ export interface Stop {
   label: string
   location_lat: number
   location_lon: number
+}
+
+export interface StopUpdate {
+  label?: string
+  location_lat?: number
+  location_lon?: number
 }
 
 export interface StopCreate {
