@@ -39,6 +39,12 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
 ]
+# ADR 0003/0006: PostgreSQL is the production target; SQLite (no extra
+# needed) remains the dev/test default. Only a deployment that actually
+# sets ISD_API_DATABASE_URL to a postgresql:// URL needs this installed.
+postgres = [
+    "psycopg[binary]>=3.1",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

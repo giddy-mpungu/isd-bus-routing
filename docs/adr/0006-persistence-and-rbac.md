@@ -58,6 +58,19 @@ credentials from the environment and refuses to run if any user
 already exists — so it can create exactly one first admin and can't be
 reused as a backdoor.
 
+## Update (PR #38): PostgreSQL now verified in CI, PostGIS still deferred
+
+The "dialect-portable schema" decision above was written when this
+development environment had no PostgreSQL server to test against at
+all. That's no longer the blocker it was: `.github/workflows/ci.yml`'s
+`api-postgres` job runs every Alembic migration (up, down, up again,
+drift-checked) and the full application test suite against a real
+`postgres:16` server on every push. `docker-compose.prod.yml` /
+`docs/deployment.md` are the first production-shaped deployment
+artifacts. PostGIS itself remains deferred exactly as this ADR
+originally decided — no geospatial column type is used yet, so plain
+`postgres:16` is what CI and the deployment compose file both run.
+
 ## Consequences / follow-ups not yet done
 
 - DB-level enforcement that `audit_log_entries` is truly append-only

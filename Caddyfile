@@ -1,0 +1,20 @@
+# Reverse proxy for docker-compose.prod.yml. Caddy fetches and renews a
+# Let's Encrypt certificate for {$CADDY_DOMAIN} automatically the first
+# time it starts — that needs the domain's DNS A/AAAA record already
+# pointed at this host, and ports 80/443 reachable from the internet.
+#
+# /api/* -> the api container; everything else -> the web (SPA) container.
+# The web image is built with VITE_API_BASE_URL={$PUBLIC_API_ORIGIN}
+# (docker-compose.prod.yml), so PUBLIC_API_ORIGIN in your .env must be
+# this same domain with an /api path, e.g. https://bus.yourdistrict.example.org/api.
+
+{$CADDY_DOMAIN} {
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy api:8000
+    }
+
+    handle {
+        reverse_proxy web:80
+    }
+}

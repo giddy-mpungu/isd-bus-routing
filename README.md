@@ -62,7 +62,7 @@ services/
 - API: Python + FastAPI, SQLAlchemy 2.0, Alembic migrations
 - Data: SQLite (dev/test, used in this environment), PostgreSQL + PostGIS (production target — see ADR 0006)
 - Dispatcher console (Phase 3, MVP shipped): React + TypeScript + Vite, oxlint + Prettier, Vitest + React Testing Library
-- Deployment: containerized (Dockerfiles for api + web, `docker-compose.yml` for local orchestration), cloud-agnostic — see "Getting started (Docker)" below
+- Deployment: containerized (Dockerfiles for api + web, `docker-compose.yml` for local orchestration), cloud-agnostic — see "Getting started (Docker)" below, and `docs/deployment.md` for a real production deployment
 
 ## Getting started (solver)
 
@@ -150,6 +150,15 @@ docker compose down -v   # stop and remove the SQLite volume too
 Migrations are **not** run automatically on container start (multiple
 replicas would race to migrate concurrently) — run them as a one-off:
 `docker compose run --rm api alembic upgrade head`.
+
+## Production deployment
+
+`docker-compose.prod.yml` (PostgreSQL + Caddy for automatic HTTPS) is
+a separate manifest for actually deploying this somewhere real — see
+`docs/deployment.md` for the full runbook (provisioning, first-time
+setup, backups, updates, rollback). Every Alembic migration and the
+full test suite are verified against real PostgreSQL in CI
+(`api-postgres` job), not just SQLite.
 
 ## Development
 

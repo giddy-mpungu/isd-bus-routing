@@ -16,7 +16,11 @@ COPY services/solver ./services/solver
 RUN pip install --no-cache-dir -e ./services/solver
 
 COPY services/api ./services/api
-RUN pip install --no-cache-dir -e ./services/api
+# The `postgres` extra (psycopg) is installed unconditionally so this
+# one image works for both the dev compose file (SQLite) and
+# docker-compose.prod.yml (PostgreSQL, ADR 0003/0006) — no separate
+# production image to keep in sync.
+RUN pip install --no-cache-dir -e "./services/api[postgres]"
 
 RUN useradd --create-home --uid 1000 appuser && chown -R appuser:appuser /app
 # A named volume's mount point is created owned by root by default —

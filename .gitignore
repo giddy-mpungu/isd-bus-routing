@@ -18,3 +18,9 @@ npm-debug.log*
 *.log
 
 .claude/
+
+# Real secrets for docker-compose.prod.yml (see .env.prod.example) —
+# never commit an actual .env.
+.env
+.env.*
+!.env.prod.example
