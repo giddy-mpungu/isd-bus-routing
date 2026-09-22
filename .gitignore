@@ -24,3 +24,7 @@ npm-debug.log*
 .env
 .env.*
 !.env.prod.example
+
+# Docker secret files for docker-compose.prod.yml (see secrets/README.md).
+secrets/*
+!secrets/README.md

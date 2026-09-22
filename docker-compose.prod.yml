@@ -14,6 +14,14 @@
 #     refuses to start in production with an insecure default
 #     (Settings.require_production_ready(), src/isd_api/config.py).
 #   - `restart: unless-stopped` on every long-running service.
+#   - The database password is a Docker secret (a file under
+#     ./secrets/, gitignored — see docs/deployment.md), not a plain
+#     environment variable: it never shows up in `docker inspect` or
+#     `docker compose config`, and Postgres reads it via its own
+#     official `POSTGRES_PASSWORD_FILE` convention. The api container
+#     still needs the same password inside its connection string —
+#     that string is one opaque required value from your .env
+#     (ISD_API_DATABASE_URL), not assembled here from parts.
 #
 # Still NOT done by this file: provisioning the host, DNS, backups,
 # and the very first `alembic upgrade head` / bootstrap-admin run —
@@ -25,8 +33,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_DB: ${POSTGRES_DB:-isd_api}
+    secrets:
+      - postgres_password
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -48,9 +58,12 @@ services:
         condition: service_healthy
     environment:
       ISD_API_ENVIRONMENT: production
-      # psycopg (v3) — the `+psycopg` is required, see pyproject.toml's
-      # `postgres` extra; this image installs it (see the Dockerfile).
-      ISD_API_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?set POSTGRES_USER in .env}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-isd_api}
+      # The full connection string, including the same password as
+      # ./secrets/postgres_password.txt — one required opaque value
+      # from .env, not assembled here (see the file header comment).
+      # psycopg (v3) — the `+psycopg` scheme is required, see
+      # pyproject.toml's `postgres` extra; this image installs it.
+      ISD_API_DATABASE_URL: ${ISD_API_DATABASE_URL:?set the full postgresql+psycopg:// connection string in .env — see docs/deployment.md}
       ISD_API_JWT_SECRET_KEY: ${ISD_API_JWT_SECRET_KEY:?set a real random secret in .env — see docs/deployment.md}
       ISD_API_CORS_ALLOWED_ORIGINS: ${ISD_API_CORS_ALLOWED_ORIGINS:?set the real public web origin(s) as a JSON list in .env, e.g. ["https://bus.yourdistrict.example.org"]}
       ISD_API_ORS_API_KEY: ${ISD_API_ORS_API_KEY:-}
@@ -95,3 +108,7 @@ volumes:
   postgres-data:
   caddy-data:
   caddy-config:
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password.txt

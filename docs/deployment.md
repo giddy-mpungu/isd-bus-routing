@@ -64,17 +64,27 @@ anything that doesn't match.
    `Caddyfile`, `.env.prod.example`, and the `services/` directory
    present, since the compose file builds the images from source).
 
-3. **Create the real secrets file:**
+3. **Create the database secret file** (a Docker secret, not a plain
+   environment variable — see the comment at the top of
+   `docker-compose.prod.yml` for why):
+
+   ```bash
+   openssl rand -base64 32 | tr -d '\n' > secrets/postgres_password.txt
+   chmod 600 secrets/postgres_password.txt
+   ```
+
+4. **Create the real secrets file:**
 
    ```bash
    cp .env.prod.example .env
    ```
 
-   Fill in every value `.env.prod.example` marks as required. Generate
-   the two secrets with:
+   Fill in every value `.env.prod.example` marks as required —
+   including `ISD_API_DATABASE_URL`, which must contain the *exact
+   same* password as `secrets/postgres_password.txt` from step 3.
+   Generate the JWT secret with:
 
    ```bash
-   openssl rand -base64 32   # POSTGRES_PASSWORD
    openssl rand -base64 48   # ISD_API_JWT_SECRET_KEY
    ```
 
@@ -83,7 +93,7 @@ anything that doesn't match.
    rather than silently falling back to an insecure default for any of
    these — that's intentional, not a bug to work around.
 
-4. **Build and start everything:**
+5. **Build and start everything:**
 
    ```bash
    docker compose -f docker-compose.prod.yml up -d --build
@@ -96,7 +106,7 @@ anything that doesn't match.
    docker compose -f docker-compose.prod.yml logs -f caddy
    ```
 
-5. **Run migrations** (not automatic on container start — see the
+6. **Run migrations** (not automatic on container start — see the
    comment in `services/api/Dockerfile` for why: concurrent replicas
    would race):
 
@@ -104,7 +114,7 @@ anything that doesn't match.
    docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
    ```
 
-6. **Create the first administrator** (the same chicken-and-egg
+7. **Create the first administrator** (the same chicken-and-egg
    bootstrap script used in dev — see ADR 0006):
 
    ```bash
@@ -115,14 +125,14 @@ anything that doesn't match.
      api python scripts/bootstrap_admin.py
    ```
 
-7. **Verify:**
+8. **Verify:**
 
    ```bash
    curl -sf https://bus.yourdistrict.example.org/api/health
    ```
 
    Then open `https://bus.yourdistrict.example.org` in a browser and
-   log in with the account from step 6.
+   log in with the account from step 7.
 
 ## Updating to a new version
 
@@ -193,6 +203,9 @@ deployment should ship these logs somewhere durable before go-live.
 
 - [ ] `.env` contains real, unique, generated secrets (never the
       `.env.prod.example` placeholders) and is not committed anywhere.
+- [ ] `secrets/postgres_password.txt` exists, is `chmod 600`, is not
+      committed, and its contents match the password inside
+      `ISD_API_DATABASE_URL` in `.env`.
 - [ ] `ISD_API_CORS_ALLOWED_ORIGINS` is the exact real public origin,
       not a wildcard, not a dev origin.
 - [ ] The host's firewall allows only 80/443 (and SSH for
