@@ -527,7 +527,7 @@ PATCH edits that bypass the solver.
 
 ## Exact next step (as of this checkpoint)
 
-Every PR through #41 is **merged** (#38 squash-merged as `6c33f43` — see the "Environment specifics" gotchas below for why squash instead of the usual merge commit), CI green, local `main` synced. With
+Every PR through #42 is **merged** (#38 squash-merged as `6c33f43` — see the "Environment specifics" gotchas below for why squash instead of the usual merge commit), CI green, local `main` synced. #42 was a full dashboard UI/UX redesign requested directly by the user, not from any audit list — see entry 42. With
 the original candidate list (and spec §8) fully closed out, the user
 asked for a full spec-vs-code audit and a plan for the rest of the
 project — see the audit entry above (2026-09-17) and the published
