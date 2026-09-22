@@ -56,9 +56,11 @@ from isd_api.models import Crew as DBCrew
 from isd_api.models import Run as DBRun
 from isd_api.routers.announcements import _maybe_create_substitution_announcement
 from isd_api.routers.optimization_settings import load_objective_weights
+from isd_api.routers.runs import _resolve_riding_students
 from isd_api.schemas import (
     AssignmentRead,
     AssignmentStatusUpdate,
+    AssignmentStopRoster,
     AssignmentUpdate,
     DriverAssignmentRead,
     ScheduleRequest,
@@ -637,6 +639,26 @@ def list_assignments(
     return list(query.order_by(Assignment.id).all())
 
 
+def _stop_roster_for(db: Session, run: DBRun) -> tuple[bool, list[AssignmentStopRoster]]:
+    """Shared by list_my_assignments and update_assignment_status so a
+    driver's roster looks the same whether they just loaded their day
+    or just updated a status. Grouped by stop, not sequenced/ordered —
+    see AssignmentStopRoster's own docstring for why. Empty when
+    ambiguous (spec section 21: don't guess)."""
+    riding_students, ambiguous = _resolve_riding_students(db, run)
+    if ambiguous:
+        return True, []
+    by_stop: dict[str | None, list[str]] = {}
+    for s in riding_students:
+        label = s.stop.label if s.stop is not None else None
+        by_stop.setdefault(label, []).append(s.full_name)
+    stops = [
+        AssignmentStopRoster(stop_label=label, student_names=sorted(names))
+        for label, names in sorted(by_stop.items(), key=lambda kv: (kv[0] is None, kv[0]))
+    ]
+    return False, stops
+
+
 @router.get("/{service_date}/my-assignments", response_model=list[DriverAssignmentRead])
 def list_my_assignments(
     service_date: date,
@@ -661,20 +683,25 @@ def list_my_assignments(
         .order_by(Assignment.start_minute)
         .all()
     )
-    return [
-        DriverAssignmentRead(
-            id=a.id,
-            run_id=a.run_id,
-            service_date=a.run.service_date,
-            school_name=a.run.school.name,
-            vehicle_label=a.crew.vehicle.label,
-            start_minute=a.start_minute,
-            end_minute=a.end_minute,
-            status=a.status,
-            locked=a.locked,
+    results = []
+    for a in assignments:
+        ambiguous, stops = _stop_roster_for(db, a.run)
+        results.append(
+            DriverAssignmentRead(
+                id=a.id,
+                run_id=a.run_id,
+                service_date=a.run.service_date,
+                school_name=a.run.school.name,
+                vehicle_label=a.crew.vehicle.label,
+                start_minute=a.start_minute,
+                end_minute=a.end_minute,
+                status=a.status,
+                locked=a.locked,
+                roster_ambiguous=ambiguous,
+                stops=stops,
+            )
         )
-        for a in assignments
-    ]
+    return results
 
 
 @router.get("/{service_date}/school-assignments", response_model=list[SchoolAssignmentRead])
@@ -758,6 +785,7 @@ def update_assignment_status(
     )
     db.commit()
     db.refresh(assignment)
+    ambiguous, stops = _stop_roster_for(db, assignment.run)
     return DriverAssignmentRead(
         id=assignment.id,
         run_id=assignment.run_id,
@@ -768,4 +796,6 @@ def update_assignment_status(
         end_minute=assignment.end_minute,
         status=assignment.status,
         locked=assignment.locked,
+        roster_ambiguous=ambiguous,
+        stops=stops,
     )

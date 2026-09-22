@@ -104,6 +104,14 @@ the history of what was found and fixed stays visible.
    deactivation) + a new `/users` page. See `docs/domain-model.md`
    "User management" for what shipped and what's deliberately still
    out (email/password changes -- no reset flow exists).
+0c. ~~**Driver app showed no stops or student roster per assignment.**~~
+   **Closed (2026-09-22).** Spec section 9 requires both;
+   `DriverAssignmentRead` had school/vehicle/time/status only. Third
+   and last gap from the same re-audit as 0/0b. Reuses
+   `GET /runs/{id}/expected-riders`'s exact resolution logic, grouped
+   by stop -- deliberately an unordered grouping, not the still-missing
+   stop-sequence model spec section 4.3 also needs. See
+   `docs/domain-model.md` "Driver-app assignment roster."
 
 1. ~~**No mutation endpoints.**~~ **Closed.** `PATCH`/`DELETE
    /schedule/assignments/{id}` let a dispatcher/admin reassign a

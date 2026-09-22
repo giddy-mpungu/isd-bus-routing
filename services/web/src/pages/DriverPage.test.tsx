@@ -46,6 +46,8 @@ const assignment: DriverAssignment = {
   end_minute: 410,
   status: 'scheduled',
   locked: false,
+  roster_ambiguous: false,
+  stops: [],
 }
 
 function renderPage() {
@@ -90,6 +92,42 @@ describe('DriverPage', () => {
     expect(screen.getByText('Vehicle: Bus 101')).toBeInTheDocument()
     expect(screen.getByText('06:00 – 06:50')).toBeInTheDocument()
     expect(screen.getByText('Status: Not started')).toBeInTheDocument()
+  })
+
+  it('shows expected riders grouped by stop, and notes it is not a route order', async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([
+      {
+        ...assignment,
+        stops: [
+          { stop_label: 'Elm St', student_names: ['Ana', 'Ben'] },
+          { stop_label: null, student_names: ['Cy'] },
+        ],
+      },
+    ])
+    renderPage()
+
+    await waitFor(() => expect(screen.getByText(/Elm St/)).toBeInTheDocument())
+    expect(screen.getByText('Elm St: Ana, Ben')).toBeInTheDocument()
+    expect(screen.getByText('No stop assigned: Cy')).toBeInTheDocument()
+    expect(screen.getByText(/stops aren't sequenced yet/)).toBeInTheDocument()
+  })
+
+  it('shows an ambiguous note instead of a roster when more than one bus serves the school', async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([
+      { ...assignment, roster_ambiguous: true, stops: [] },
+    ])
+    renderPage()
+
+    await waitFor(() =>
+      expect(screen.getByText(/more than one bus serves this school today/)).toBeInTheDocument(),
+    )
+  })
+
+  it('shows a no-riders message when nobody is expected', async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([assignment]) // stops: []
+    renderPage()
+
+    await waitFor(() => expect(screen.getByText('No riders expected today.')).toBeInTheDocument())
   })
 
   it('shows a friendly message when there are no runs today', async () => {

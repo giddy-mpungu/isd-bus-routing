@@ -136,6 +136,11 @@ export interface AssignmentPatch {
 
 export type AssignmentStatus = 'scheduled' | 'in_progress' | 'completed' | 'no_show'
 
+export interface AssignmentStopRoster {
+  stop_label: string | null
+  student_names: string[]
+}
+
 export interface DriverAssignment {
   id: number
   run_id: number
@@ -146,6 +151,8 @@ export interface DriverAssignment {
   end_minute: number
   status: AssignmentStatus
   locked: boolean
+  roster_ambiguous: boolean
+  stops: AssignmentStopRoster[]
 }
 
 export interface SchoolAssignment {
