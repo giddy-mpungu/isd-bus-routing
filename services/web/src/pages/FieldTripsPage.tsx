@@ -83,6 +83,8 @@ export function FieldTripsPage() {
 
   const driversById = new Map(drivers.map((d) => [d.id, d]))
   const vehiclesById = new Map(vehicles.map((v) => [v.id, v]))
+  const activeDrivers = drivers.filter((d) => d.is_active)
+  const activeVehicles = vehicles.filter((v) => v.is_active)
 
   // --- Add field trip ---
   const [requestingParty, setRequestingParty] = useState('')
@@ -362,7 +364,7 @@ export function FieldTripsPage() {
                   }
                 >
                   <option value="">Select a driver</option>
-                  {drivers.map((d) => (
+                  {activeDrivers.map((d) => (
                     <option key={d.id} value={d.id}>
                       {d.full_name}
                     </option>
@@ -377,7 +379,7 @@ export function FieldTripsPage() {
                   }
                 >
                   <option value="">Select a vehicle</option>
-                  {vehicles.map((v) => (
+                  {activeVehicles.map((v) => (
                     <option key={v.id} value={v.id}>
                       {v.label}
                     </option>

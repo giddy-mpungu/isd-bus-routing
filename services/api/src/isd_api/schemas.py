@@ -59,6 +59,17 @@ class QualificationRead(BaseModel):
     code: str
     kind: QualificationKind
     description: str | None = None
+    is_active: bool = True
+
+
+class QualificationUpdate(BaseModel):
+    """`code`/`kind` are deliberately not editable here — many-to-many
+    rows reference a qualification by id, not by code, so this is a
+    scope choice (avoid a code meaning something different than what a
+    driver/vehicle was actually granted), not a technical limit."""
+
+    description: str | None = None
+    is_active: bool | None = None
 
 
 class SchoolCreate(BaseModel):
@@ -105,7 +116,25 @@ class VehicleRead(BaseModel):
     width_m: float | None
     height_m: float | None
     weight_kg: float | None
+    is_active: bool = True
     qualifications: list[QualificationRead]
+
+
+class VehicleUpdate(BaseModel):
+    """Partial update, same convention as StudentUpdate — only provided
+    fields change. A nullable field (e.g. length_m) can be set but not
+    explicitly cleared back to null this way, matching that existing
+    convention's own limit."""
+
+    label: str | None = Field(default=None, min_length=1)
+    nominal_capacity: int | None = Field(default=None, gt=0)
+    effective_capacity: int | None = Field(default=None, gt=0)
+    length_m: float | None = Field(default=None, gt=0)
+    width_m: float | None = Field(default=None, gt=0)
+    height_m: float | None = Field(default=None, gt=0)
+    weight_kg: float | None = Field(default=None, gt=0)
+    qualification_codes: list[str] | None = None
+    is_active: bool | None = None
 
 
 class DriverCreate(BaseModel):
@@ -119,7 +148,15 @@ class DriverRead(BaseModel):
     id: int
     full_name: str
     max_continuous_minutes: int | None
+    is_active: bool = True
     qualifications: list[QualificationRead]
+
+
+class DriverUpdate(BaseModel):
+    full_name: str | None = Field(default=None, min_length=1)
+    max_continuous_minutes: int | None = Field(default=None, gt=0)
+    qualification_codes: list[str] | None = None
+    is_active: bool | None = None
 
 
 class CrewCreate(BaseModel):
@@ -420,6 +457,18 @@ class StopRead(BaseModel):
     label: str
     location_lat: float
     location_lon: float
+
+
+class StopUpdate(BaseModel):
+    """spec section 3.1/21: "relocate" a stop — edits its label and/or
+    coordinates. No is_active/deactivate here: a Stop with no student
+    referencing it can just be deleted outright (DELETE /stops/{id});
+    one still in use can't be relocated out from under a student
+    silently, but it can always be edited to the correct location."""
+
+    label: str | None = Field(default=None, min_length=1)
+    location_lat: float | None = Field(default=None, ge=-90, le=90)
+    location_lon: float | None = Field(default=None, ge=-180, le=180)
 
 
 class StudentCreate(BaseModel):

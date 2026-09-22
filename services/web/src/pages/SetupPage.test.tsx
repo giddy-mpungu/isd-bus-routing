@@ -52,17 +52,25 @@ const school: School = {
   location_lat: 29.7,
   location_lon: -95.4,
 }
-const licenseQual: Qualification = { id: 1, code: 'CDL_B', kind: 'license', description: null }
+const licenseQual: Qualification = {
+  id: 1,
+  code: 'CDL_B',
+  kind: 'license',
+  description: null,
+  is_active: true,
+}
 const vehicleQual: Qualification = {
   id: 2,
   code: 'lift',
   kind: 'vehicle_capability',
   description: 'Wheelchair lift',
+  is_active: true,
 }
 const driver: Driver = {
   id: 1,
   full_name: 'Jordan Driver',
   max_continuous_minutes: null,
+  is_active: true,
   qualifications: [],
 }
 const vehicle: Vehicle = {
@@ -74,6 +82,7 @@ const vehicle: Vehicle = {
   width_m: null,
   height_m: null,
   weight_kg: null,
+  is_active: true,
   qualifications: [],
 }
 

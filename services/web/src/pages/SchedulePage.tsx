@@ -130,7 +130,14 @@ export function SchedulePage() {
   const driversById = new Map(drivers.map((d) => [d.id, d]))
   const vehiclesById = new Map(vehicles.map((v) => [v.id, v]))
   const runsById = new Map(runs.map((r) => [r.id, r]))
-  const vehicleQualifications = qualifications.filter((q) => q.kind === 'vehicle_capability')
+  const vehicleQualifications = qualifications.filter(
+    (q) => q.kind === 'vehicle_capability' && q.is_active,
+  )
+  // Retired drivers/vehicles stay resolvable by id (driversById/vehiclesById
+  // above, for names on existing crews/assignments) but are never offered
+  // as a choice for something new.
+  const activeDrivers = drivers.filter((d) => d.is_active)
+  const activeVehicles = vehicles.filter((v) => v.is_active)
 
   async function handleRunSchedule() {
     setIsBusy(true)
@@ -629,7 +636,7 @@ export function SchedulePage() {
               <option value="" disabled>
                 Select a driver
               </option>
-              {drivers.map((d) => (
+              {activeDrivers.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.full_name}
                 </option>
@@ -645,7 +652,7 @@ export function SchedulePage() {
               <option value="" disabled>
                 Select a vehicle
               </option>
-              {vehicles.map((v) => (
+              {activeVehicles.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.label}
                 </option>
@@ -938,7 +945,7 @@ export function SchedulePage() {
             <option value="" disabled>
               Select a driver
             </option>
-            {drivers.map((d) => (
+            {activeDrivers.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.full_name}
               </option>

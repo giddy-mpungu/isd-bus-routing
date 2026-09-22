@@ -88,6 +88,16 @@ Spec section numbers refer to `Bus Program Specifications Document.docx`.
 Self-identified gaps, kept here (rather than deleted once closed) so
 the history of what was found and fixed stays visible.
 
+0. ~~**Core master data was create-and-list only.**~~ **Closed
+   (2026-09-22).** `Vehicle`, `Driver`, `Qualification` had no edit or
+   deactivate; `Stop` had no edit, relocate, or delete at all, despite
+   spec section 3.1 explicitly requiring "relocate" and section 21
+   requiring "modify." Found by a direct re-audit against the running
+   code rather than trusting the earlier (2026-09-17) spec-vs-code
+   pass's own conclusions -- that pass was accurate for what it
+   covered, but hadn't checked this. See `docs/domain-model.md`
+   "Master-data lifecycle" for what shipped.
+
 1. ~~**No mutation endpoints.**~~ **Closed.** `PATCH`/`DELETE
    /schedule/assignments/{id}` let a dispatcher/admin reassign a
    crew, adjust a time, lock/unlock, or remove a single assignment

@@ -536,6 +536,36 @@ user picked this over a specific vendor): it reads a **OneRoster 1.1
   deactivation of students absent from a later file, and the other §19
   systems (HR/absence, SSO, fleet maintenance, bell schedules).
 
+## Master-data lifecycle (spec section 3.1 "relocate ... stops",
+section 21 "reassign buses"/"reassign drivers")
+
+Found by a fresh audit against the code (2026-09-22), not the earlier
+spec-vs-code pass: `Vehicle`, `Driver`, `Qualification` and `Stop` were
+create-and-list only, in both the API and the frontend -- no way to fix
+a typo, retire a vehicle or driver, or relocate/delete a stop.
+
+- **`Vehicle`/`Driver`/`Qualification`** gained `is_active` (default
+  `True`). `PATCH` edits any field and/or flips `is_active`; there is
+  no `DELETE` for any of the three -- a `Crew`, `Assignment`,
+  `FieldTrip`, `CrewTemplate`, or historical audit/observed-duration
+  data can reference one, and that data must keep meaning what it
+  always meant. Deactivating just hides it from future crew-creation
+  and qualification-picker dropdowns (`services/web`'s `SchedulePage`,
+  `TemplatesPage`, `FieldTripsPage` all filter to `is_active` for new
+  selections; existing assignments still resolve an inactive driver's
+  or vehicle's name normally). `Qualification.code`/`kind` are
+  deliberately immutable after creation -- many-to-many rows reference
+  a qualification by id, not by code.
+- **`Stop`** gained `PATCH` (rename/relocate -- literally spec
+  section 3.1's word) and a real `DELETE`, since nothing but
+  `Student.stop_id` references a stop. Delete is refused with 409 when
+  any `Student` still points at it ("no guessing" -- spec section 21 --
+  rather than silently orphaning the student's stop assignment).
+- UI: `services/web`'s `VehiclesSection`/`DriversSection`/
+  `QualificationsSection`/`StopsSection` (extracted from `SetupPage`
+  into their own components) each show an inline Edit/Deactivate (or
+  Relocate/Delete for stops) control per row, transportation_admin only.
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)

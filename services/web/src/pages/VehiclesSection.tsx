@@ -1,0 +1,380 @@
+import { useState, type FormEvent } from 'react'
+import * as api from '../api/client'
+import { ApiError } from '../api/client'
+import type { Qualification, Vehicle } from '../api/types'
+
+function qualificationLabel(q: Qualification): string {
+  return q.description ? `${q.code} — ${q.description}` : q.code
+}
+
+interface DraftFields {
+  label: string
+  nominal_capacity: string
+  effective_capacity: string
+  length_m: string
+  width_m: string
+  height_m: string
+  weight_kg: string
+  qualification_codes: Set<string>
+}
+
+function draftFrom(v: Vehicle): DraftFields {
+  return {
+    label: v.label,
+    nominal_capacity: v.nominal_capacity != null ? String(v.nominal_capacity) : '',
+    effective_capacity: v.effective_capacity != null ? String(v.effective_capacity) : '',
+    length_m: v.length_m != null ? String(v.length_m) : '',
+    width_m: v.width_m != null ? String(v.width_m) : '',
+    height_m: v.height_m != null ? String(v.height_m) : '',
+    weight_kg: v.weight_kg != null ? String(v.weight_kg) : '',
+    qualification_codes: new Set(v.qualifications.map((q) => q.code)),
+  }
+}
+
+export function VehiclesSection({
+  vehicles,
+  qualifications,
+  canEdit,
+  onChanged,
+}: {
+  vehicles: Vehicle[]
+  qualifications: Qualification[]
+  canEdit: boolean
+  onChanged: () => Promise<void>
+}) {
+  const vehicleQualifications = qualifications.filter(
+    (q) => q.kind === 'vehicle_capability' && q.is_active,
+  )
+
+  // --- Create form ---
+  const [label, setLabel] = useState('')
+  const [nominalCapacity, setNominalCapacity] = useState('')
+  const [effectiveCapacity, setEffectiveCapacity] = useState('')
+  const [length, setLength] = useState('')
+  const [width, setWidth] = useState('')
+  const [height, setHeight] = useState('')
+  const [weight, setWeight] = useState('')
+  const [qualCodes, setQualCodes] = useState<Set<string>>(new Set())
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [isSavingCreate, setIsSavingCreate] = useState(false)
+
+  function toggleCreateQual(code: string) {
+    setQualCodes((prev) => {
+      const next = new Set(prev)
+      if (next.has(code)) {
+        next.delete(code)
+      } else {
+        next.add(code)
+      }
+      return next
+    })
+  }
+
+  async function handleCreate(event: FormEvent) {
+    event.preventDefault()
+    setCreateError(null)
+    setIsSavingCreate(true)
+    try {
+      await api.createVehicle({
+        label,
+        nominal_capacity: nominalCapacity ? Number(nominalCapacity) : undefined,
+        effective_capacity: effectiveCapacity ? Number(effectiveCapacity) : undefined,
+        length_m: length ? Number(length) : undefined,
+        width_m: width ? Number(width) : undefined,
+        height_m: height ? Number(height) : undefined,
+        weight_kg: weight ? Number(weight) : undefined,
+        qualification_codes: Array.from(qualCodes),
+      })
+      setLabel('')
+      setNominalCapacity('')
+      setEffectiveCapacity('')
+      setLength('')
+      setWidth('')
+      setHeight('')
+      setWeight('')
+      setQualCodes(new Set())
+      await onChanged()
+    } catch (err) {
+      setCreateError(err instanceof ApiError ? err.message : 'Failed to create vehicle.')
+    } finally {
+      setIsSavingCreate(false)
+    }
+  }
+
+  // --- Edit ---
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [draft, setDraft] = useState<DraftFields | null>(null)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
+
+  function startEdit(vehicle: Vehicle) {
+    setEditingId(vehicle.id)
+    setDraft(draftFrom(vehicle))
+    setEditError(null)
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setDraft(null)
+    setEditError(null)
+  }
+
+  function toggleEditQual(code: string) {
+    setDraft((prev) => {
+      if (!prev) return prev
+      const next = new Set(prev.qualification_codes)
+      if (next.has(code)) {
+        next.delete(code)
+      } else {
+        next.add(code)
+      }
+      return { ...prev, qualification_codes: next }
+    })
+  }
+
+  async function handleSaveEdit(event: FormEvent) {
+    event.preventDefault()
+    if (editingId === null || !draft) return
+    setEditError(null)
+    setIsSavingEdit(true)
+    try {
+      await api.updateVehicle(editingId, {
+        label: draft.label,
+        nominal_capacity: draft.nominal_capacity ? Number(draft.nominal_capacity) : undefined,
+        effective_capacity: draft.effective_capacity ? Number(draft.effective_capacity) : undefined,
+        length_m: draft.length_m ? Number(draft.length_m) : undefined,
+        width_m: draft.width_m ? Number(draft.width_m) : undefined,
+        height_m: draft.height_m ? Number(draft.height_m) : undefined,
+        weight_kg: draft.weight_kg ? Number(draft.weight_kg) : undefined,
+        qualification_codes: Array.from(draft.qualification_codes),
+      })
+      cancelEdit()
+      await onChanged()
+    } catch (err) {
+      setEditError(err instanceof ApiError ? err.message : 'Failed to save vehicle.')
+    } finally {
+      setIsSavingEdit(false)
+    }
+  }
+
+  async function handleToggleActive(vehicle: Vehicle) {
+    setEditError(null)
+    try {
+      await api.updateVehicle(vehicle.id, { is_active: !vehicle.is_active })
+      await onChanged()
+    } catch (err) {
+      setEditError(err instanceof ApiError ? err.message : 'Failed to update vehicle.')
+    }
+  }
+
+  return (
+    <section className="vehicles-section">
+      <h2>Vehicles</h2>
+      {editError && (
+        <p role="alert" className="error">
+          {editError}
+        </p>
+      )}
+      <ul>
+        {vehicles.map((v) =>
+          editingId === v.id && draft ? (
+            <li key={v.id}>
+              <form onSubmit={(event) => void handleSaveEdit(event)}>
+                <label htmlFor={`vehicle-edit-label-${v.id}`}>Label</label>
+                <input
+                  id={`vehicle-edit-label-${v.id}`}
+                  value={draft.label}
+                  onChange={(event) => setDraft({ ...draft, label: event.target.value })}
+                  required
+                />
+                <label htmlFor={`vehicle-edit-nominal-${v.id}`}>Nominal capacity</label>
+                <input
+                  id={`vehicle-edit-nominal-${v.id}`}
+                  type="number"
+                  min="1"
+                  value={draft.nominal_capacity}
+                  onChange={(event) => setDraft({ ...draft, nominal_capacity: event.target.value })}
+                />
+                <label htmlFor={`vehicle-edit-effective-${v.id}`}>Effective capacity</label>
+                <input
+                  id={`vehicle-edit-effective-${v.id}`}
+                  type="number"
+                  min="1"
+                  value={draft.effective_capacity}
+                  onChange={(event) =>
+                    setDraft({ ...draft, effective_capacity: event.target.value })
+                  }
+                />
+                <label htmlFor={`vehicle-edit-length-${v.id}`}>Length (m)</label>
+                <input
+                  id={`vehicle-edit-length-${v.id}`}
+                  type="number"
+                  step="any"
+                  min="0.01"
+                  value={draft.length_m}
+                  onChange={(event) => setDraft({ ...draft, length_m: event.target.value })}
+                />
+                <label htmlFor={`vehicle-edit-width-${v.id}`}>Width (m)</label>
+                <input
+                  id={`vehicle-edit-width-${v.id}`}
+                  type="number"
+                  step="any"
+                  min="0.01"
+                  value={draft.width_m}
+                  onChange={(event) => setDraft({ ...draft, width_m: event.target.value })}
+                />
+                <label htmlFor={`vehicle-edit-height-${v.id}`}>Height (m)</label>
+                <input
+                  id={`vehicle-edit-height-${v.id}`}
+                  type="number"
+                  step="any"
+                  min="0.01"
+                  value={draft.height_m}
+                  onChange={(event) => setDraft({ ...draft, height_m: event.target.value })}
+                />
+                <label htmlFor={`vehicle-edit-weight-${v.id}`}>Weight (kg)</label>
+                <input
+                  id={`vehicle-edit-weight-${v.id}`}
+                  type="number"
+                  step="any"
+                  min="0.01"
+                  value={draft.weight_kg}
+                  onChange={(event) => setDraft({ ...draft, weight_kg: event.target.value })}
+                />
+                {vehicleQualifications.length > 0 && (
+                  <fieldset>
+                    <legend>Vehicle capability qualifications</legend>
+                    {vehicleQualifications.map((q) => (
+                      <label key={q.id} className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={draft.qualification_codes.has(q.code)}
+                          onChange={() => toggleEditQual(q.code)}
+                        />
+                        {qualificationLabel(q)}
+                      </label>
+                    ))}
+                  </fieldset>
+                )}
+                <button type="submit" disabled={isSavingEdit}>
+                  {isSavingEdit ? 'Saving…' : 'Save'}
+                </button>
+                <button type="button" onClick={cancelEdit} disabled={isSavingEdit}>
+                  Cancel
+                </button>
+              </form>
+            </li>
+          ) : (
+            <li key={v.id}>
+              {v.label}
+              {v.nominal_capacity != null && ` — capacity ${v.nominal_capacity}`}
+              {(v.length_m != null || v.width_m != null || v.height_m != null) &&
+                ` — ${v.length_m ?? '?'}m × ${v.width_m ?? '?'}m × ${v.height_m ?? '?'}m`}
+              {v.weight_kg != null && ` — ${v.weight_kg}kg`}
+              {v.qualifications.length > 0 &&
+                ` (${v.qualifications.map((q) => q.code).join(', ')})`}
+              {!v.is_active && ' — inactive'}
+              {canEdit && (
+                <>
+                  {' '}
+                  <button type="button" onClick={() => startEdit(v)}>
+                    Edit
+                  </button>{' '}
+                  <button type="button" onClick={() => void handleToggleActive(v)}>
+                    {v.is_active ? 'Deactivate' : 'Reactivate'}
+                  </button>
+                </>
+              )}
+            </li>
+          ),
+        )}
+      </ul>
+      {canEdit && (
+        <form onSubmit={(event) => void handleCreate(event)}>
+          <label htmlFor="vehicle-label">Label</label>
+          <input
+            id="vehicle-label"
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+            required
+          />
+          <label htmlFor="vehicle-nominal-capacity">Nominal capacity (optional)</label>
+          <input
+            id="vehicle-nominal-capacity"
+            type="number"
+            min="1"
+            value={nominalCapacity}
+            onChange={(event) => setNominalCapacity(event.target.value)}
+          />
+          <label htmlFor="vehicle-effective-capacity">Effective capacity (optional)</label>
+          <input
+            id="vehicle-effective-capacity"
+            type="number"
+            min="1"
+            value={effectiveCapacity}
+            onChange={(event) => setEffectiveCapacity(event.target.value)}
+          />
+          <label htmlFor="vehicle-length">Length in meters (optional)</label>
+          <input
+            id="vehicle-length"
+            type="number"
+            step="any"
+            min="0.01"
+            value={length}
+            onChange={(event) => setLength(event.target.value)}
+          />
+          <label htmlFor="vehicle-width">Width in meters (optional)</label>
+          <input
+            id="vehicle-width"
+            type="number"
+            step="any"
+            min="0.01"
+            value={width}
+            onChange={(event) => setWidth(event.target.value)}
+          />
+          <label htmlFor="vehicle-height">Height in meters (optional)</label>
+          <input
+            id="vehicle-height"
+            type="number"
+            step="any"
+            min="0.01"
+            value={height}
+            onChange={(event) => setHeight(event.target.value)}
+          />
+          <label htmlFor="vehicle-weight">Weight in kg (optional)</label>
+          <input
+            id="vehicle-weight"
+            type="number"
+            step="any"
+            min="0.01"
+            value={weight}
+            onChange={(event) => setWeight(event.target.value)}
+          />
+          {vehicleQualifications.length > 0 && (
+            <fieldset>
+              <legend>Vehicle capability qualifications</legend>
+              {vehicleQualifications.map((q) => (
+                <label key={q.id} className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={qualCodes.has(q.code)}
+                    onChange={() => toggleCreateQual(q.code)}
+                  />
+                  {qualificationLabel(q)}
+                </label>
+              ))}
+            </fieldset>
+          )}
+          {createError && (
+            <p role="alert" className="error">
+              {createError}
+            </p>
+          )}
+          <button type="submit" disabled={isSavingCreate}>
+            {isSavingCreate ? 'Saving…' : 'Add vehicle'}
+          </button>
+        </form>
+      )}
+    </section>
+  )
+}

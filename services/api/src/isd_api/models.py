@@ -151,6 +151,10 @@ class Qualification(Base):
         SAEnum(QualificationKind, native_enum=False, length=32), nullable=False
     )
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # A retired qualification code: hidden from future assignment (driver/
+    # vehicle/run/template qualification pickers), never hard-deleted --
+    # existing many-to-many rows referencing it by id stay meaningful.
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
 driver_qualifications = Table(
@@ -336,6 +340,11 @@ class Vehicle(Base):
     width_m: Mapped[float | None] = mapped_column(nullable=True)
     height_m: Mapped[float | None] = mapped_column(nullable=True)
     weight_kg: Mapped[float | None] = mapped_column(nullable=True)
+    # A retired/out-of-service vehicle: hidden from future crew-creation
+    # dropdowns, but never hard-deleted -- existing Crew/Assignment/
+    # FieldTrip/CrewTemplate rows referencing it, and everything derived
+    # from them (audit log, observed-duration learning), stay intact.
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     qualifications: Mapped[list[Qualification]] = relationship(secondary=vehicle_qualifications)
     crews: Mapped[list[Crew]] = relationship(back_populates="vehicle")
@@ -356,6 +365,9 @@ class Driver(Base):
     # District-configured; see isd_solver.domain.Driver docstring — this
     # codebase asserts nothing about what any specific driver-hour law requires.
     max_continuous_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # A departed/inactive driver: hidden from future crew-creation
+    # dropdowns, never hard-deleted -- same reasoning as Vehicle.is_active.
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     qualifications: Mapped[list[Qualification]] = relationship(secondary=driver_qualifications)
     crews: Mapped[list[Crew]] = relationship(back_populates="driver")
