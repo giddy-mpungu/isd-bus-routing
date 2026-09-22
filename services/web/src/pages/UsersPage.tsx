@@ -3,6 +3,7 @@ import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import type { Driver, Role, School, Student, User } from '../api/types'
+import { Badge } from '../components/Badge'
 
 // spec section 17: "User permissions" is a Transportation Administrator
 // responsibility, not a dispatcher one -- narrower than the rest of the
@@ -319,7 +320,11 @@ export function UsersPage() {
                 <td>{u.full_name}</td>
                 <td>{u.role}</td>
                 <td>{linkedRecordLabel(u) ?? '—'}</td>
-                <td>{u.is_active ? 'Active' : 'Inactive'}</td>
+                <td>
+                  <Badge tone={u.is_active ? 'success' : 'neutral'}>
+                    {u.is_active ? 'Active' : 'Inactive'}
+                  </Badge>
+                </td>
                 <td>
                   <button type="button" onClick={() => startEdit(u)}>
                     Edit

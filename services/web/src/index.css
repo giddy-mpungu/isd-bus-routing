@@ -1,89 +1,347 @@
+/* ==========================================================================
+   Design tokens
+   ========================================================================== */
 :root {
   color-scheme: light;
   font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
+    -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', 'Segoe UI', system-ui, Roboto,
     sans-serif;
-  --border: #d0d5dd;
-  --text: #1a1f29;
-  --muted: #5b6472;
-  --accent: #2454a8;
-  --danger: #b3261e;
-  --bg: #f7f8fa;
+
+  /* Brand */
+  --brand-50: #eef2ff;
+  --brand-100: #e0e7ff;
+  --brand-200: #c7d2fe;
+  --brand-400: #818cf8;
+  --brand-500: #6366f1;
+  --brand-600: #4f46e5;
+  --brand-700: #4338ca;
+  --brand-900: #312e81;
+
+  /* Neutrals */
+  --gray-50: #f8fafc;
+  --gray-100: #f1f5f9;
+  --gray-200: #e2e8f0;
+  --gray-300: #cbd5e1;
+  --gray-400: #94a3b8;
+  --gray-500: #64748b;
+  --gray-600: #475569;
+  --gray-700: #334155;
+  --gray-800: #1e293b;
+  --gray-900: #0f172a;
+
+  /* Semantic */
+  --success-50: #f0fdf4;
+  --success-500: #22c55e;
+  --success-600: #16a34a;
+  --success-700: #15803d;
+  --warning-50: #fffbeb;
+  --warning-500: #f59e0b;
+  --warning-600: #d97706;
+  --warning-700: #b45309;
+  --danger-50: #fef2f2;
+  --danger-500: #ef4444;
+  --danger-600: #dc2626;
+  --danger-700: #b91c1c;
+  --info-50: #eff6ff;
+  --info-500: #3b82f6;
+  --info-600: #2563eb;
+
+  /* Aliases used throughout the app's own components */
+  --border: var(--gray-200);
+  --text: var(--gray-900);
+  --muted: var(--gray-500);
+  --accent: var(--brand-600);
+  --danger: var(--danger-600);
+  --bg: var(--gray-50);
+
+  /* Elevation */
+  --shadow-xs: 0 1px 2px rgb(15 23 42 / 0.04);
+  --shadow-sm: 0 1px 3px rgb(15 23 42 / 0.06), 0 1px 2px rgb(15 23 42 / 0.04);
+  --shadow-md: 0 4px 12px rgb(15 23 42 / 0.08), 0 2px 4px rgb(15 23 42 / 0.04);
+  --shadow-lg: 0 16px 40px rgb(15 23 42 / 0.14), 0 4px 10px rgb(15 23 42 / 0.06);
+  --shadow-focus: 0 0 0 3px var(--brand-100);
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
+/* ==========================================================================
+   Base
+   ========================================================================== */
 * {
   box-sizing: border-box;
 }
 
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
+html {
+  font-feature-settings: 'tnum' 1;
 }
 
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(1100px 480px at 8% -10%, var(--brand-50) 0%, transparent 60%),
+    radial-gradient(900px 420px at 100% 0%, #eef9f4 0%, transparent 55%), var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--gray-900);
+  margin: 0 0 0.35em;
+}
+
+h1 {
+  font-size: 1.75rem;
+}
+
+h2 {
+  font-size: 1.15rem;
+}
+
+h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+p {
+  color: var(--gray-600);
+}
+
+a {
+  color: var(--brand-600);
+}
+
+code {
+  background: var(--gray-100);
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+  font-size: 0.9em;
+}
+
+::selection {
+  background: var(--brand-200);
+}
+
+/* ==========================================================================
+   Buttons
+   ========================================================================== */
 button {
   font: inherit;
   cursor: pointer;
-  border: 1px solid var(--border);
+  border: 1px solid var(--gray-300);
   background: white;
-  border-radius: 6px;
-  padding: 0.4rem 0.8rem;
+  color: var(--gray-700);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 1rem;
+  font-weight: 600;
+  transition:
+    background-color 0.15s var(--ease),
+    border-color 0.15s var(--ease),
+    box-shadow 0.15s var(--ease),
+    transform 0.1s var(--ease);
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--gray-400);
+  background: var(--gray-50);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: 0.55;
 }
 
-input {
+/* Primary action: any submit button, unless it's inside a filter/search
+   bar. Additive to existing markup — no JSX class changes needed for the
+   vast majority of "Add X" / "Save" buttons across every page. */
+button[type='submit'] {
+  background: linear-gradient(180deg, var(--brand-500), var(--brand-600));
+  border-color: var(--brand-700);
+  color: white;
+  box-shadow:
+    var(--shadow-sm),
+    inset 0 1px 0 rgb(255 255 255 / 0.2);
+}
+
+button[type='submit']:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--brand-600), var(--brand-700));
+  border-color: var(--brand-700);
+}
+
+/* Explicit danger buttons (Deactivate / Delete / Log out / No-show) —
+   the handful of destructive or session-ending actions across the app. */
+button.btn-danger,
+.app-header button {
+  border-color: var(--gray-300);
+  color: var(--gray-600);
+}
+
+button.btn-danger:hover:not(:disabled) {
+  background: var(--danger-50);
+  border-color: var(--danger-500);
+  color: var(--danger-700);
+}
+
+/* ==========================================================================
+   Inputs
+   ========================================================================== */
+input,
+select,
+textarea {
   font: inherit;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.4rem 0.6rem;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
+  border: 1px solid var(--gray-300);
   background: white;
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.7rem;
+  color: var(--gray-900);
+  transition:
+    border-color 0.15s var(--ease),
+    box-shadow 0.15s var(--ease);
 }
 
-th,
-td {
-  text-align: left;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--border);
-  vertical-align: top;
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--gray-400);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--brand-500);
+  box-shadow: var(--shadow-focus);
+}
+
+input:disabled,
+select:disabled {
+  background: var(--gray-100);
+  color: var(--gray-400);
+}
+
+input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand-600);
+}
+
+fieldset {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  background: var(--gray-50);
+  margin: 0.35rem 0;
+  padding: 0.6rem 0.8rem;
+}
+
+legend {
+  padding: 0 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--gray-600);
+}
+
+/* ==========================================================================
+   App shell / header / nav
+   ========================================================================== */
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .app-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 1.5rem;
-  background: white;
-  border-bottom: 1px solid var(--border);
+  gap: 0.5rem 1.5rem;
+  padding: 0.85rem 1.75rem;
+  background: rgb(255 255 255 / 0.85);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--gray-200);
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
 .brand {
-  font-weight: 600;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-size: 1.05rem;
+  white-space: nowrap;
+  flex: none;
+  background: linear-gradient(135deg, var(--brand-600), var(--brand-400));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.brand::before {
+  content: '';
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  flex: none;
+  background: linear-gradient(135deg, var(--brand-500), var(--brand-700));
+  box-shadow: var(--shadow-sm);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M4 16c0 .88.39 1.67 1 2.22V20a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1h8v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm9 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zM6 11V6h12v5H6z'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M4 16c0 .88.39 1.67 1 2.22V20a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1h8v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm9 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zM6 11V6h12v5H6z'/%3E%3C/svg%3E")
+    center / contain no-repeat;
 }
 
 .app-nav {
   display: flex;
-  gap: 1rem;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .app-nav a {
-  color: var(--muted);
+  color: var(--gray-500);
   text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: var(--radius-pill);
+  transition:
+    color 0.15s var(--ease),
+    background-color 0.15s var(--ease);
+}
+
+.app-nav a:hover {
+  color: var(--gray-800);
+  background: var(--gray-100);
 }
 
 .app-nav a.active {
-  color: var(--accent);
-  font-weight: 600;
+  color: var(--brand-700);
+  background: var(--brand-50);
 }
 
 .user-info {
@@ -91,15 +349,93 @@ td {
   align-items: center;
   gap: 0.75rem;
   color: var(--muted);
+  font-size: 0.9rem;
+  flex: none;
+  white-space: nowrap;
 }
 
-.setup-page section,
-.add-forms > div {
+.user-info span {
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+.user-info button {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+.app-body {
+  flex: 1;
+  padding: 2rem 1.75rem 4rem;
+  max-width: 1180px;
+  width: 100%;
+  margin: 0 auto;
+  animation: rise 0.35s var(--ease);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Page title: every page root is `<main className="x-page">` or
+   `<div className="x-page">` (a single class, so this attribute
+   selector reaches all of them) with an optional intro <p> right
+   after the <h1> — both get a little breathing room automatically. */
+[class$='-page'] > h1:first-child {
+  margin-bottom: 0.2rem;
+}
+
+[class$='-page'] > p:first-of-type {
+  color: var(--gray-500);
+  max-width: 60ch;
+  margin-bottom: 1.75rem;
+}
+
+/* ==========================================================================
+   Cards — every <section> inside the app body reads as an elevated card.
+   Purely structural, so this uplifts every page with zero JSX changes.
+   ========================================================================== */
+.app-body section {
   background: white;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1rem 1.25rem;
-  margin-bottom: 1.25rem;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  padding: 1.35rem 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-sm);
+  transition:
+    box-shadow 0.2s var(--ease),
+    border-color 0.2s var(--ease);
+  /* A wide table (many columns, or a long free-text one like an
+     assignment's explanation) scrolls within its own card instead of
+     squeezing every column unreadably narrow — see `table` below. */
+  overflow-x: auto;
+}
+
+.app-body section:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--gray-300);
+}
+
+.app-body section h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.app-body section h2::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brand-500);
+  flex: none;
 }
 
 .add-forms {
@@ -109,92 +445,280 @@ td {
 }
 
 .add-forms > div {
+  background: white;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  padding: 1.35rem 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-sm);
   flex: 1 1 320px;
 }
 
-.setup-page form,
-.add-forms form {
+.app-body form {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  max-width: 360px;
-  margin-top: 0.75rem;
+  gap: 0.5rem;
+  max-width: 380px;
+  margin-top: 0.85rem;
 }
 
 .setup-page label,
-.add-forms label {
-  font-size: 0.85rem;
-  color: var(--muted);
+.add-forms label,
+form label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--gray-600);
+  margin-top: 0.2rem;
 }
 
 .setup-page fieldset,
 .add-forms fieldset {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  margin: 0.25rem 0;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  margin: 0.35rem 0;
 }
 
 .checkbox-label {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.45rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--gray-700);
+  margin-top: 0 !important;
+}
+
+/* ==========================================================================
+   Tables
+   ========================================================================== */
+table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: white;
   font-size: 0.9rem;
+  /* A reliable CSS-only "responsive table" trick: display:block on the
+     table itself makes it an independently scrollable box, while
+     thead/tr/td keep their table-layout roles (unaffected — display
+     doesn't inherit), so the internal column layout is untouched. This
+     is what stops a wide table from pushing the whole page sideways. */
+  display: block;
+  overflow-x: auto;
 }
 
-.app-body {
-  padding: 1.5rem;
-  max-width: 1100px;
-  margin: 0 auto;
+/* A table not already inside a `.app-body section` card (e.g. the
+   Schedule page's assignments table sits directly in the page) gets
+   its own card chrome so it never looks like a bare, unstyled grid. */
+.app-body > main > table,
+.app-body > div > table {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 1.5rem;
 }
 
+thead th {
+  text-align: left;
+  padding: 0.6rem 0.9rem;
+  color: var(--gray-500);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--gray-50);
+  border-bottom: 1px solid var(--gray-200);
+  white-space: nowrap;
+}
+
+thead th:first-child {
+  border-top-left-radius: var(--radius-sm);
+}
+
+thead th:last-child {
+  border-top-right-radius: var(--radius-sm);
+}
+
+td {
+  text-align: left;
+  padding: 0.65rem 0.9rem;
+  border-bottom: 1px solid var(--gray-100);
+  vertical-align: middle;
+  color: var(--gray-800);
+}
+
+tbody tr {
+  transition: background-color 0.12s var(--ease);
+}
+
+tbody tr:hover {
+  background: var(--brand-50);
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+table select,
+table input {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+}
+
+/* ==========================================================================
+   Status badges — a small `.badge`/`.badge-*` utility, applied directly
+   in the handful of places each page renders a status word (Active/
+   Inactive, run status, trip status, etc.).
+   ========================================================================== */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.badge-success {
+  background: var(--success-50);
+  color: var(--success-700);
+}
+
+.badge-warning {
+  background: var(--warning-50);
+  color: var(--warning-700);
+}
+
+.badge-danger {
+  background: var(--danger-50);
+  color: var(--danger-700);
+}
+
+.badge-info {
+  background: var(--info-50);
+  color: var(--info-600);
+}
+
+.badge-neutral {
+  background: var(--gray-100);
+  color: var(--gray-600);
+}
+
+/* ==========================================================================
+   Login page
+   ========================================================================== */
 .login-page {
   display: flex;
   justify-content: center;
-  padding-top: 4rem;
+  padding: 3.5rem 1rem;
 }
 
 .login-page form {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  width: 320px;
+  gap: 0.6rem;
+  width: 340px;
   background: white;
-  padding: 2rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  padding: 2.5rem 2.25rem;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  position: relative;
+  overflow: hidden;
+}
+
+.login-page form::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 5px;
+  background: linear-gradient(90deg, var(--brand-500), var(--brand-400), var(--success-500));
+}
+
+.login-page h1 {
+  font-size: 1.4rem;
+  background: linear-gradient(135deg, var(--brand-700), var(--brand-500));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.login-page p {
+  margin-top: -0.3rem;
+  margin-bottom: 0.5rem;
+  color: var(--gray-500);
 }
 
 .login-page label {
-  font-size: 0.85rem;
-  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--gray-600);
   margin-top: 0.5rem;
 }
 
+.login-page button[type='submit'] {
+  margin-top: 0.9rem;
+  padding: 0.65rem;
+  font-size: 0.95rem;
+}
+
+/* ==========================================================================
+   Schedule page toolbar / misc
+   ========================================================================== */
 .schedule-toolbar {
   display: flex;
   align-items: flex-end;
   gap: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
 }
 
 .schedule-toolbar label {
   display: block;
-  font-size: 0.85rem;
-  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--gray-500);
+  margin-bottom: 0.25rem;
 }
 
 .status {
-  color: var(--accent);
+  display: inline-block;
+  color: var(--success-700);
+  background: var(--success-50);
+  border: 1px solid #bbf7d0;
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.9rem;
+  font-size: 0.88rem;
+  margin-bottom: 1rem;
 }
 
 .error {
-  color: var(--danger);
+  display: inline-block;
+  color: var(--danger-700);
+  background: var(--danger-50);
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.9rem;
+  font-size: 0.88rem;
+  margin-bottom: 1rem;
 }
 
 .explanation {
+  min-width: 220px;
   max-width: 320px;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.83rem;
 }
 
 .unassigned {
@@ -202,91 +726,188 @@ td {
   color: var(--muted);
 }
 
-/* Driver page (spec section 9): large touch targets, high-contrast
-   cards, minimal reading required per card — deliberately not the
-   dispatcher console's dense-table style. */
+.unassigned ul {
+  padding-left: 1.2rem;
+}
+
+/* ==========================================================================
+   Driver page (spec section 9): large touch targets, high-contrast
+   cards, minimal reading required per card.
+   ========================================================================== */
 .driver-run-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.1rem;
 }
 
 .driver-run-card {
   background: white;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  padding: 1.4rem 1.6rem;
+  box-shadow: var(--shadow-sm);
+  border-left: 5px solid var(--brand-500);
+  transition: box-shadow 0.2s var(--ease);
+}
+
+.driver-run-card:hover {
+  box-shadow: var(--shadow-md);
 }
 
 .driver-run-time {
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--gray-900);
 }
 
 .driver-run-school {
   font-size: 1.15rem;
-  margin-top: 0.25rem;
+  font-weight: 600;
+  margin-top: 0.2rem;
 }
 
 .driver-run-vehicle,
 .driver-run-status {
   color: var(--muted);
-  margin-top: 0.25rem;
+  margin-top: 0.3rem;
+  font-size: 0.95rem;
+}
+
+.driver-run-roster {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px dashed var(--gray-200);
+}
+
+.driver-run-roster h3 {
+  margin-bottom: 0.15rem;
+}
+
+.driver-run-roster-note {
+  font-size: 0.78rem;
+  color: var(--gray-400);
+  font-style: italic;
+  margin: 0 0 0.5rem;
+}
+
+.driver-run-roster ul {
+  margin: 0;
+  padding-left: 1.1rem;
 }
 
 .driver-run-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
-  margin-top: 1rem;
+  margin-top: 1.25rem;
 }
 
 .driver-run-actions button {
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   padding: 0.75rem 1.25rem;
+  border-radius: var(--radius-md);
 }
 
-/* Family page (spec section 18): general responsive card style, not
-   the driver app's oversized-touch-target style — section 9's
-   large-controls/audible-instructions language is scoped to the
-   driver app specifically, section 18 doesn't repeat it. */
+/* ==========================================================================
+   Family page (spec section 18)
+   ========================================================================== */
 .family-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.1rem;
 }
 
 .family-card {
   background: white;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1rem 1.25rem;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  padding: 1.15rem 1.4rem;
+  box-shadow: var(--shadow-sm);
+  border-left: 5px solid var(--success-500);
+  transition: box-shadow 0.2s var(--ease);
+}
+
+.family-card:hover {
+  box-shadow: var(--shadow-md);
 }
 
 .family-name {
-  font-size: 1.1rem;
-  font-weight: 600;
+  font-size: 1.15rem;
+  font-weight: 700;
 }
 
 .family-school,
 .family-stop {
   color: var(--muted);
-  margin-top: 0.15rem;
+  margin-top: 0.2rem;
+  font-size: 0.92rem;
 }
 
 .family-leg {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-top: 0.75rem;
+  margin-top: 0.9rem;
 }
 
+/* ==========================================================================
+   School admin page (spec section 17: "buses serving the school")
+   ========================================================================== */
+.school-admin-assignment-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.school-admin-assignment-card {
+  background: white;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  padding: 1.15rem 1.4rem;
+  box-shadow: var(--shadow-sm);
+  border-left: 5px solid var(--info-500);
+  transition: box-shadow 0.2s var(--ease);
+}
+
+.school-admin-assignment-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.school-admin-assignment-time {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.school-admin-assignment-driver,
+.school-admin-assignment-vehicle,
+.school-admin-assignment-status {
+  color: var(--muted);
+  margin-top: 0.2rem;
+  font-size: 0.92rem;
+}
+
+.announcements-panel ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.announcements-panel li {
+  padding: 0.2rem 0;
+}
+
+/* ==========================================================================
+   Absences / substitutes
+   ========================================================================== */
 .absences-section {
   margin-top: 1.5rem;
 }
@@ -295,7 +916,12 @@ td {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.4rem 0;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.absences-section li:last-child {
+  border-bottom: none;
 }
 
 .substitute-results {
@@ -303,16 +929,23 @@ td {
 }
 
 .affected-assignment {
-  background: white;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  margin-top: 0.75rem;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1.1rem;
+  margin-top: 0.85rem;
 }
 
 .affected-assignment li {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.3rem 0;
+  padding: 0.35rem 0;
+}
+
+/* ==========================================================================
+   Small helpers
+   ========================================================================== */
+[role='alert'].error {
+  display: block;
 }
