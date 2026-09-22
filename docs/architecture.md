@@ -97,6 +97,13 @@ the history of what was found and fixed stays visible.
    pass's own conclusions -- that pass was accurate for what it
    covered, but hadn't checked this. See `docs/domain-model.md`
    "Master-data lifecycle" for what shipped.
+0b. ~~**No user-management dashboard.**~~ **Closed (2026-09-22).**
+   `POST`/`GET /users` existed since Phase 2 with zero frontend and no
+   way to edit or deactivate an account. Found in the same re-audit as
+   0 above. `PATCH /users/{id}` (role, driver/school/student relinking,
+   deactivation) + a new `/users` page. See `docs/domain-model.md`
+   "User management" for what shipped and what's deliberately still
+   out (email/password changes -- no reset flow exists).
 
 1. ~~**No mutation endpoints.**~~ **Closed.** `PATCH`/`DELETE
    /schedule/assignments/{id}` let a dispatcher/admin reassign a

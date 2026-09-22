@@ -16,6 +16,28 @@ export interface CurrentUser {
   student_id: number | null
 }
 
+export interface User extends CurrentUser {
+  created_at: string
+}
+
+export interface UserCreate {
+  email: string
+  password: string
+  full_name: string
+  role: Role
+  driver_id?: number
+  school_id?: number
+  student_id?: number
+}
+
+export interface UserUpdate {
+  role?: Role
+  is_active?: boolean
+  driver_id?: number
+  school_id?: number
+  student_id?: number
+}
+
 export interface School {
   id: number
   name: string

@@ -566,6 +566,38 @@ a typo, retire a vehicle or driver, or relocate/delete a stop.
   into their own components) each show an inline Edit/Deactivate (or
   Relocate/Delete for stops) control per row, transportation_admin only.
 
+## User management (spec section 17 "user permissions")
+
+`POST`/`GET /users` existed since Phase 2; nothing let an admin edit or
+deactivate an account. Found in the same 2026-09-22 re-audit as the
+master-data lifecycle gap above.
+
+- **`PATCH /users/{id}`** (transportation_admin only): reassigns `role`,
+  relinks `driver_id`/`school_id`/`student_id` (each validated to exist,
+  same as `POST`; a duplicate link -- e.g. a `driver_id` another user
+  already has -- is a 409, `Driver.user_id`/`Student.user_id` are
+  effectively unique via the FK's own `unique=True`), and/or flips
+  `is_active`. Deliberately does NOT cover email or password -- this
+  system has no password-reset flow, and changing another user's
+  credentials is a materially more sensitive action than role/linkage
+  management; re-create the account instead.
+- **Deactivation takes effect immediately, not on next login** --
+  `get_current_user` (`security.py`) already checked `User.is_active`
+  on every request for the existing account-disable path; `PATCH`
+  simply reuses it, so an already-issued bearer token or session
+  cookie stops working on its very next use, no separate revocation
+  needed.
+- **An admin cannot deactivate their own account** (400) -- the one
+  guard against a self-inflicted lockout this endpoint adds; it does
+  NOT check whether the target is the last remaining admin.
+- `UserRead` gained `created_at` (already a column, just not exposed).
+- UI: new `/users` page (`UsersPage.tsx`, nav link "Users",
+  transportation_admin only -- narrower than the rest of the console's
+  dispatcher-visible pages), a table with inline Edit (role +
+  role-conditional driver/school/student link) and Deactivate/Reactivate,
+  and a create form. The signed-in admin's own row's Deactivate button
+  is disabled with an explanatory title, mirroring the backend's guard.
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)
