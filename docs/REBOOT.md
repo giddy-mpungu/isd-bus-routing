@@ -186,6 +186,22 @@ Monorepo, 3 services, each separately installed:
     run the *complete* check set `.github/workflows/ci.yml` actually
     runs before pushing, and always branch first — no exceptions
     beyond this file itself.
+11. **GitGuardian's PR check scans every commit *reachable* in the PR's
+    history, not just the final diff** — a later fix-up commit that
+    removes a flagged pattern does NOT clear an earlier commit's flag
+    (PR #38: an interpolated `${VAR:?msg}` placeholder in
+    `docker-compose.prod.yml`, no literal secret, still tripped
+    "Generic Password"; a follow-up commit that removed the pattern
+    left the check still failing). The only fix is to keep that string
+    out of every commit reachable from the PR, which for an
+    already-multi-commit PR means squash-merging (`gh pr merge --squash`,
+    a deliberate one-off exception to this project's usual `--merge`)
+    rather than another commit. Separately, GitHub Actions can have a
+    genuine multi-minute delay picking up a push to an already-open
+    PR (confirmed empirically: two consecutive pushes, including a
+    forced empty commit, produced no new run for several minutes
+    before one finally appeared) — not a code problem, just needs a
+    wait-and-recheck rather than repeated pushes.
 
 **Auth (revised mid-session — see PR #6, hardened in PR #14):** httpOnly,
 `SameSite=Lax` session cookie (`isd_session`), sliding 30-min
@@ -504,7 +520,7 @@ PATCH edits that bypass the solver.
 
 ## Exact next step (as of this checkpoint)
 
-Every PR through #34 is **merged** (#35, #36, #37 merged; #38 production-deployment prep in flight until noted above), CI green, local `main` synced. With
+Every PR through #38 is **merged** (#38 squash-merged as `6c33f43` — see the "Environment specifics" gotchas below for why squash instead of the usual merge commit), CI green, local `main` synced. With
 the original candidate list (and spec §8) fully closed out, the user
 asked for a full spec-vs-code audit and a plan for the rest of the
 project — see the audit entry above (2026-09-17) and the published
