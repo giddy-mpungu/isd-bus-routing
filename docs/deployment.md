@@ -11,6 +11,14 @@ Nothing in this document has been run against a real server. Treat the
 first real run of these steps as itself a test, and report back
 anything that doesn't match.
 
+The same `docker-compose.prod.yml` stack *has* been run end to end on a
+laptop, with migrations, production mode, and Caddy, through the local
+demo overlay: see [docs/demo.md](demo.md). That run caught one real bug,
+now fixed: the web image's healthcheck used `localhost`, which resolves
+to IPv6 inside Alpine, while nginx listens only on IPv4, so a healthy
+web container was reported unhealthy. What the demo doesn't exercise is
+a real domain, Let's Encrypt, and an internet-facing host.
+
 ## What this is (and isn't)
 
 - **Is**: a self-hosted, single-server deployment — PostgreSQL, the API,

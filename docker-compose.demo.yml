@@ -1,0 +1,45 @@
+# Local demo / beta-test overlay for docker-compose.prod.yml — see
+# docs/demo.md. Don't run this directly; use scripts/demo.ps1, which
+# generates the secrets and .env.demo this file expects and seeds a
+# fictional district:
+#
+#   docker compose --env-file .env.demo -f docker-compose.prod.yml -f docker-compose.demo.yml ...
+#
+# It deliberately reuses the production stack unchanged (PostgreSQL,
+# migrations, ISD_API_ENVIRONMENT=production, Secure session cookies,
+# Caddy in front) so what testers see is what a real server runs, and
+# moving to a VPS later is just the prod file on its own with a real
+# .env (docs/deployment.md). Only three things differ here:
+
+name: isd-demo
+
+services:
+  caddy:
+    # 1. Plain HTTP on port 8080, bound to 127.0.0.1 only: nothing on
+    #    your Wi-Fi/LAN can reach it. Friends reach it through the
+    #    HTTPS tunnel below, never an open port on your laptop.
+    #    (.env.demo sets CADDY_DOMAIN=":8080", which tells Caddy to
+    #    serve HTTP on that port instead of fetching a certificate.)
+    ports: !override
+      - "127.0.0.1:8080:8080"
+
+  # 2. Optional, only with `--profile share` (scripts/demo.ps1 share):
+  #    a free Cloudflare "quick tunnel" that gives the demo a random
+  #    public https://<words>.trycloudflare.com address. It needs no
+  #    Cloudflare account and no router port-forwarding, and doesn't
+  #    reveal your home IP. The URL changes every time the tunnel
+  #    restarts, and anyone with it can reach the login page, so stop
+  #    sharing when a test session is over.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["share"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://caddy:8080
+    depends_on:
+      - caddy
+
+# 3. A demo-only database password file, so a demo never shares a
+#    secret with a real deployment's ./secrets/postgres_password.txt.
+secrets:
+  postgres_password:
+    file: ./secrets/demo_postgres_password.txt

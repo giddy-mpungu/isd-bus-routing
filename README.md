@@ -151,6 +151,13 @@ Migrations are **not** run automatically on container start (multiple
 replicas would race to migrate concurrently) — run them as a one-off:
 `docker compose run --rm api alembic upgrade head`.
 
+## Local demo / beta testing
+
+`scripts\demo.cmd up` runs the full production stack on your own
+computer with a fictional demo district and one login per role;
+`scripts\demo.cmd share` adds a free temporary HTTPS link for testers.
+See `docs/demo.md`.
+
 ## Production deployment
 
 `docker-compose.prod.yml` (PostgreSQL + Caddy for automatic HTTPS) is
