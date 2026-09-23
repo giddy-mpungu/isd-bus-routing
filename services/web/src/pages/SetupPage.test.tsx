@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
@@ -103,13 +104,21 @@ function mockLoad() {
   })
 }
 
-function renderAsRole(user: CurrentUser) {
+function renderAsRole(user: CurrentUser, initialEntry = '/setup') {
   vi.mocked(api.getCurrentUser).mockResolvedValue(user)
   return render(
-    <AuthProvider>
-      <SetupPage />
-    </AuthProvider>,
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <AuthProvider>
+        <SetupPage />
+      </AuthProvider>
+    </MemoryRouter>,
   )
+}
+
+// Every Setup section lives in a tab; only the active tab's panel is
+// visible (and so reachable by role queries), like it is for a real user.
+async function openTab(name: RegExp) {
+  await userEvent.setup().click(screen.getByRole('tab', { name }))
 }
 
 describe('SetupPage', () => {
@@ -124,6 +133,8 @@ describe('SetupPage', () => {
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
     expect(screen.getByRole('button', { name: 'Add school' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add student' })).toBeInTheDocument()
+    await openTab(/Fleet & drivers/)
     expect(screen.getByRole('button', { name: 'Add qualification' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add driver' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add vehicle' })).toBeInTheDocument()
@@ -135,6 +146,8 @@ describe('SetupPage', () => {
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
     expect(screen.queryByRole('button', { name: 'Add school' })).not.toBeInTheDocument()
+    await openTab(/Fleet & drivers/)
+    expect(screen.getByText('Jordan Driver', { exact: false })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Add driver' })).not.toBeInTheDocument()
   })
 
@@ -143,6 +156,7 @@ describe('SetupPage', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
+    await openTab(/District knowledge/)
     expect(screen.getByRole('button', { name: 'Add override' })).toBeInTheDocument()
   })
 
@@ -164,6 +178,7 @@ describe('SetupPage', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
+    await openTab(/District knowledge/)
 
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Override latitude'), '29.7')
@@ -205,6 +220,7 @@ describe('SetupPage', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
+    await openTab(/District knowledge/)
 
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Override latitude'), '29.7')
@@ -248,6 +264,7 @@ describe('SetupPage', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
+    await openTab(/District knowledge/)
 
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Override latitude'), '29.7')
@@ -291,6 +308,7 @@ describe('SetupPage', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
+    await openTab(/District knowledge/)
 
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Override latitude'), '29.71')
@@ -328,6 +346,7 @@ describe('SetupPage', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
+    await openTab(/Announcements/)
 
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Message'), 'Buses running 15 minutes late today.')
@@ -359,11 +378,13 @@ describe('SetupPage', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
+    await openTab(/Announcements/)
 
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Message'), 'Riverside dismissal moved up 15 minutes.')
     await user.selectOptions(screen.getByLabelText('Audience'), 'family')
-    await user.selectOptions(screen.getByLabelText(/School/), 'Riverside Elementary')
+    // Not just /School/: the "Schools & students" tab also labels its panel.
+    await user.selectOptions(screen.getByLabelText(/^School \(optional/), 'Riverside Elementary')
     await user.click(screen.getByRole('button', { name: 'Post announcement' }))
 
     await waitFor(() =>
@@ -378,6 +399,7 @@ describe('SetupPage', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
+    await openTab(/Fleet & drivers/)
     // CDL_B (license) is offered as a driver checkbox but not a vehicle one.
     expect(screen.getAllByText('CDL_B', { exact: false })).toHaveLength(2) // list item + checkbox label
     const vehicleFieldset = screen.getByRole('group', { name: 'Vehicle capability qualifications' })
@@ -420,6 +442,7 @@ describe('SetupPage', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
+    await openTab(/Fleet & drivers/)
 
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Full name'), 'Sam Substitute')
@@ -441,6 +464,7 @@ describe('SetupPage', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
+    await openTab(/Fleet & drivers/)
 
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Label'), 'Bus 202')
@@ -485,6 +509,7 @@ describe('SetupPage', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
+    await openTab(/Audit log/)
     expect(screen.getByRole('heading', { name: 'Audit log' })).toBeInTheDocument()
   })
 
@@ -493,6 +518,8 @@ describe('SetupPage', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
+    expect(screen.queryByRole('tab', { name: /Audit log/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: /SIS import/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Audit log' })).not.toBeInTheDocument()
   })
 
@@ -515,6 +542,7 @@ describe('SetupPage', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
+    await openTab(/Audit log/)
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Load audit log' }))
@@ -538,6 +566,7 @@ describe('SetupPage', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
+    await openTab(/Audit log/)
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Load audit log' }))
@@ -563,6 +592,7 @@ describe('SetupPage', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
+    await openTab(/Audit log/)
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Load audit log' }))
@@ -579,10 +609,99 @@ describe('SetupPage', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
     )
+    await openTab(/Audit log/)
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Load audit log' }))
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Not authorized'))
+  })
+
+  it('starts on the Schools & students tab and shows only that panel', async () => {
+    renderAsRole(adminUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+    expect(screen.getByRole('tab', { name: /Schools & students/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    expect(screen.getByRole('heading', { name: 'Schools' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Drivers' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('tabpanel')).toHaveLength(1)
+  })
+
+  it('opens the tab named in the ?tab= query parameter', async () => {
+    renderAsRole(adminUser, '/setup?tab=announcements')
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Post announcement' })).toBeInTheDocument(),
+    )
+    expect(screen.getByRole('tab', { name: /Announcements/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+  })
+
+  it('falls back to the first tab for an admin-only tab a dispatcher cannot see', async () => {
+    renderAsRole(dispatcherUser, '/setup?tab=audit-log')
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+    expect(screen.getByRole('tab', { name: /Schools & students/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    expect(screen.queryByRole('heading', { name: 'Audit log' })).not.toBeInTheDocument()
+  })
+
+  it('moves between tabs with the arrow, Home and End keys', async () => {
+    renderAsRole(adminUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+    const user = userEvent.setup()
+    const first = screen.getByRole('tab', { name: /Schools & students/ })
+    first.focus()
+
+    await user.keyboard('{ArrowRight}')
+    const fleet = screen.getByRole('tab', { name: /Fleet & drivers/ })
+    expect(fleet).toHaveAttribute('aria-selected', 'true')
+    expect(fleet).toHaveFocus()
+
+    await user.keyboard('{ArrowLeft}{ArrowLeft}') // wraps around to the last tab
+    expect(screen.getByRole('tab', { name: /Audit log/ })).toHaveAttribute('aria-selected', 'true')
+
+    await user.keyboard('{Home}')
+    expect(first).toHaveAttribute('aria-selected', 'true')
+    await user.keyboard('{End}')
+    expect(screen.getByRole('tab', { name: /Audit log/ })).toHaveFocus()
+  })
+
+  it('keeps a half-filled form when switching tabs and back', async () => {
+    renderAsRole(adminUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+    const user = userEvent.setup()
+    await openTab(/Fleet & drivers/)
+    await user.type(screen.getByLabelText('Label'), 'Bus 303')
+    await openTab(/Announcements/)
+    await openTab(/Fleet & drivers/)
+    expect(screen.getByLabelText('Label')).toHaveValue('Bus 303')
+  })
+
+  it('shows record totals, and a total jumps to the tab that manages it', async () => {
+    renderAsRole(adminUser)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '1 Active drivers' })).toBeInTheDocument(),
+    )
+    expect(screen.getByRole('button', { name: '1 Schools' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '0 Students' })).toBeInTheDocument()
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '1 Active vehicles' }))
+    expect(screen.getByRole('tab', { name: /Fleet & drivers/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
   })
 })

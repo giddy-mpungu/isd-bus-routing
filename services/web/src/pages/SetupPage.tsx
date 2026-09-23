@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type {
@@ -18,6 +19,7 @@ import type {
   Vehicle,
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import { TabList, TabPanel, type TabItem } from '../components/Tabs'
 import { DriversSection } from './DriversSection'
 import { OptimizationSettingsSection } from './OptimizationSettingsSection'
 import { QualificationsSection } from './QualificationsSection'
@@ -48,6 +50,21 @@ const ANNOUNCEMENT_CATEGORIES: AnnouncementCategory[] = [
   'route_change',
 ]
 const ANNOUNCEMENT_AUDIENCES: AnnouncementAudience[] = ['all', 'family', 'driver']
+
+type SetupTab =
+  | 'schools'
+  | 'fleet'
+  | 'district-knowledge'
+  | 'announcements'
+  | 'optimization'
+  | 'sis-import'
+  | 'audit-log'
+
+// SIS import and the audit log are transportation_admin-only sections
+// (see canCreate below), so their tabs only exist for that role.
+const ADMIN_ONLY_TABS: SetupTab[] = ['sis-import', 'audit-log']
+
+const TAB_PREFIX = 'setup'
 
 export function SetupPage() {
   const { user } = useAuth()
@@ -259,6 +276,45 @@ export function SetupPage() {
   const schoolsById = new Map(schools.map((s) => [s.id, s]))
   const stopsById = new Map(stops.map((s) => [s.id, s]))
 
+  // --- Tabs --- the active tab lives in the URL (?tab=fleet) so a
+  // section is deep-linkable and survives a reload. An unknown or
+  // role-inaccessible value falls back to the first tab rather than
+  // rendering an empty page.
+  const allTabs: (TabItem & { id: SetupTab })[] = [
+    { id: 'schools', label: 'Schools & students' },
+    { id: 'fleet', label: 'Fleet & drivers' },
+    { id: 'district-knowledge', label: 'District knowledge', count: geoOverrides.length },
+    { id: 'announcements', label: 'Announcements', count: announcements.length },
+    { id: 'optimization', label: 'Optimization' },
+    { id: 'sis-import', label: 'SIS import' },
+    { id: 'audit-log', label: 'Audit log' },
+  ]
+  const tabs = allTabs.filter((t) => canCreate || !ADMIN_ONLY_TABS.includes(t.id))
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab')
+  const activeTab: SetupTab = tabs.find((t) => t.id === requestedTab)?.id ?? 'schools'
+
+  function selectTab(id: string) {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.set('tab', id)
+        return next
+      },
+      { replace: true },
+    )
+  }
+
+  // At-a-glance totals across the page; each tile jumps to the tab that
+  // manages that record type.
+  const stats: { label: string; value: number; tab: SetupTab }[] = [
+    { label: 'Schools', value: schools.length, tab: 'schools' },
+    { label: 'Students', value: students.length, tab: 'schools' },
+    { label: 'Stops', value: stops.length, tab: 'schools' },
+    { label: 'Active drivers', value: drivers.filter((d) => d.is_active).length, tab: 'fleet' },
+    { label: 'Active vehicles', value: vehicles.filter((v) => v.is_active).length, tab: 'fleet' },
+  ]
+
   // --- Audit log (spec section 17/21) --- transportation_admin only,
   // loaded on demand rather than as part of loadAll(), since a
   // dispatcher visiting this page would otherwise trigger a pointless
@@ -296,429 +352,476 @@ export function SetupPage() {
 
   return (
     <main className="setup-page">
+      <h1>Setup</h1>
+      <p>
+        The district's master data and configuration — schools, fleet, drivers, stops, and the
+        knowledge and settings the scheduler plans with.
+      </p>
       {errorMessage && (
         <p role="alert" className="error">
           {errorMessage}
         </p>
       )}
 
-      <section>
-        <h2>Schools</h2>
-        <ul>
-          {schools.map((s) => (
-            <li key={s.id}>
-              {s.name} ({s.location_lat}, {s.location_lon})
-            </li>
-          ))}
-        </ul>
-        {canCreate && (
-          <form onSubmit={(event) => void handleCreateSchool(event)}>
-            <label htmlFor="school-name">Name</label>
-            <input
-              id="school-name"
-              value={schoolName}
-              onChange={(event) => setSchoolName(event.target.value)}
-              required
-            />
-            <label htmlFor="school-lat">Latitude</label>
-            <input
-              id="school-lat"
-              type="number"
-              step="any"
-              value={schoolLat}
-              onChange={(event) => setSchoolLat(event.target.value)}
-              required
-            />
-            <label htmlFor="school-lon">Longitude</label>
-            <input
-              id="school-lon"
-              type="number"
-              step="any"
-              value={schoolLon}
-              onChange={(event) => setSchoolLon(event.target.value)}
-              required
-            />
-            {schoolError && (
-              <p role="alert" className="error">
-                {schoolError}
-              </p>
-            )}
-            <button type="submit" disabled={isSavingSchool}>
-              {isSavingSchool ? 'Saving…' : 'Add school'}
-            </button>
-          </form>
-        )}
-      </section>
+      <div className="setup-stats">
+        {stats.map((s) => (
+          <button
+            key={s.label}
+            type="button"
+            className="setup-stat"
+            // The two spans stack visually with no text between them, so
+            // spell the name out rather than leave it as "1Schools".
+            aria-label={`${s.value} ${s.label}`}
+            onClick={() => selectTab(s.tab)}
+          >
+            <span className="setup-stat-value">{s.value}</span>
+            <span className="setup-stat-label">{s.label}</span>
+          </button>
+        ))}
+      </div>
 
-      <QualificationsSection
-        qualifications={qualifications}
-        canEdit={canCreate}
-        onChanged={loadAll}
+      <TabList
+        items={tabs}
+        activeId={activeTab}
+        onSelect={selectTab}
+        idPrefix={TAB_PREFIX}
+        label="Setup sections"
       />
 
-      <DriversSection
-        drivers={drivers}
-        qualifications={qualifications}
-        canEdit={canCreate}
-        onChanged={loadAll}
-      />
-
-      <VehiclesSection
-        vehicles={vehicles}
-        qualifications={qualifications}
-        canEdit={canCreate}
-        onChanged={loadAll}
-      />
-
-      <StopsSection stops={stops} students={students} canEdit={canCreate} onChanged={loadAll} />
-
-      <section>
-        <h2>District geographic knowledge</h2>
-        <ul>
-          {geoOverrides.map((o) => (
-            <li key={o.id}>
-              [{o.category.replace(/_/g, ' ')}] {o.note} ({o.location_lat}, {o.location_lon})
-              {o.window_start_minute != null &&
-                ` — ${o.window_start_minute}-${o.window_end_minute} min`}
-              {o.restricted_dimension != null &&
-                ` — max ${o.restricted_dimension.replace(/_/g, ' ')} ${o.max_allowed_value}`}
-              {o.school_id != null &&
-                ` — ${schoolsById.get(o.school_id)?.name ?? `School ${o.school_id}`}`}
-            </li>
-          ))}
-        </ul>
-        {canCreateDistrictKnowledge && (
-          <form onSubmit={(event) => void handleCreateGeoOverride(event)}>
-            <label htmlFor="geo-lat">Override latitude</label>
-            <input
-              id="geo-lat"
-              type="number"
-              step="any"
-              value={geoLat}
-              onChange={(event) => setGeoLat(event.target.value)}
-              required
-            />
-            <label htmlFor="geo-lon">Override longitude</label>
-            <input
-              id="geo-lon"
-              type="number"
-              step="any"
-              value={geoLon}
-              onChange={(event) => setGeoLon(event.target.value)}
-              required
-            />
-            <label htmlFor="geo-category">Category</label>
-            <select
-              id="geo-category"
-              value={geoCategory}
-              onChange={(event) =>
-                setGeoCategory(event.target.value as GeographicKnowledgeCategory)
-              }
-            >
-              {GEO_CATEGORIES.map((category) => (
-                <option key={category} value={category}>
-                  {category.replace(/_/g, ' ')}
-                </option>
-              ))}
-            </select>
-            {geoCategory === 'congestion_window' && (
-              <>
-                <label htmlFor="geo-window-start">Congestion window start (minute of day)</label>
-                <input
-                  id="geo-window-start"
-                  type="number"
-                  value={geoWindowStart}
-                  onChange={(event) => setGeoWindowStart(event.target.value)}
-                  required
-                />
-                <label htmlFor="geo-window-end">Congestion window end (minute of day)</label>
-                <input
-                  id="geo-window-end"
-                  type="number"
-                  value={geoWindowEnd}
-                  onChange={(event) => setGeoWindowEnd(event.target.value)}
-                  required
-                />
-              </>
-            )}
-            {geoCategory === 'vehicle_size_restricted' && (
-              <>
-                <label htmlFor="geo-restricted-dimension">Restricted dimension</label>
-                <select
-                  id="geo-restricted-dimension"
-                  value={geoRestrictedDimension}
-                  onChange={(event) =>
-                    setGeoRestrictedDimension(event.target.value as RestrictedVehicleDimension)
-                  }
-                >
-                  <option value="length_m">length</option>
-                  <option value="width_m">width</option>
-                  <option value="height_m">height</option>
-                  <option value="weight_kg">weight</option>
-                </select>
-                <label htmlFor="geo-max-allowed">Max allowed value</label>
-                <input
-                  id="geo-max-allowed"
-                  type="number"
-                  step="any"
-                  value={geoMaxAllowedValue}
-                  onChange={(event) => setGeoMaxAllowedValue(event.target.value)}
-                  required
-                />
-              </>
-            )}
-            {geoCategory === 'preferred_entrance' && (
-              <>
-                <label htmlFor="geo-school">School</label>
-                <select
-                  id="geo-school"
-                  value={geoSchoolId}
-                  onChange={(event) => setGeoSchoolId(event.target.value)}
-                  required
-                >
-                  <option value="">Select a school</option>
-                  {schools.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-            <label htmlFor="geo-note">Note</label>
-            <textarea
-              id="geo-note"
-              value={geoNote}
-              onChange={(event) => setGeoNote(event.target.value)}
-              required
-            />
-            {geoError && (
-              <p role="alert" className="error">
-                {geoError}
-              </p>
-            )}
-            <button type="submit" disabled={isSavingGeo}>
-              {isSavingGeo ? 'Saving…' : 'Add override'}
-            </button>
-          </form>
-        )}
-      </section>
-
-      <section>
-        <h2>Announcements</h2>
-        <ul>
-          {announcements.map((a) => (
-            <li key={a.id}>
-              [{a.category.replace(/_/g, ' ')} — {a.audience}
-              {a.school_id != null &&
-                ` — ${schoolsById.get(a.school_id)?.name ?? `School ${a.school_id}`}`}
-              ] {a.message}
-            </li>
-          ))}
-        </ul>
-        {canCreateAnnouncement && (
-          <form onSubmit={(event) => void handleCreateAnnouncement(event)}>
-            <label htmlFor="announcement-message">Message</label>
-            <textarea
-              id="announcement-message"
-              value={announcementMessage}
-              onChange={(event) => setAnnouncementMessage(event.target.value)}
-              required
-            />
-            <label htmlFor="announcement-category">Announcement category</label>
-            <select
-              id="announcement-category"
-              value={announcementCategory}
-              onChange={(event) =>
-                setAnnouncementCategory(event.target.value as AnnouncementCategory)
-              }
-            >
-              {ANNOUNCEMENT_CATEGORIES.map((category) => (
-                <option key={category} value={category}>
-                  {category.replace(/_/g, ' ')}
-                </option>
-              ))}
-            </select>
-            <label htmlFor="announcement-audience">Audience</label>
-            <select
-              id="announcement-audience"
-              value={announcementAudience}
-              onChange={(event) =>
-                setAnnouncementAudience(event.target.value as AnnouncementAudience)
-              }
-            >
-              {ANNOUNCEMENT_AUDIENCES.map((audience) => (
-                <option key={audience} value={audience}>
-                  {audience}
-                </option>
-              ))}
-            </select>
-            <label htmlFor="announcement-school">
-              School (optional — leave blank for district-wide)
-            </label>
-            <select
-              id="announcement-school"
-              value={announcementSchoolId}
-              onChange={(event) => setAnnouncementSchoolId(event.target.value)}
-            >
-              <option value="">District-wide</option>
-              {schools.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-            {announcementError && (
-              <p role="alert" className="error">
-                {announcementError}
-              </p>
-            )}
-            <button type="submit" disabled={isSavingAnnouncement}>
-              {isSavingAnnouncement ? 'Posting…' : 'Post announcement'}
-            </button>
-          </form>
-        )}
-      </section>
-
-      <section>
-        <h2>Students</h2>
-        <ul>
-          {students.map((s) => (
-            <li key={s.id}>
-              {s.full_name} — {schoolsById.get(s.school_id)?.name ?? `School ${s.school_id}`}
-              {s.stop_id != null && ` (${stopsById.get(s.stop_id)?.label ?? `Stop ${s.stop_id}`})`}
-              {' — default: '}
-              {s.default_ridership === 'rides' ? 'rides' : 'does not ride'}
-            </li>
-          ))}
-        </ul>
-        {canCreate && (
-          <form onSubmit={(event) => void handleCreateStudent(event)}>
-            <label htmlFor="student-name">Student name</label>
-            <input
-              id="student-name"
-              value={studentName}
-              onChange={(event) => setStudentName(event.target.value)}
-              required
-            />
-            <label htmlFor="student-school">School</label>
-            <select
-              id="student-school"
-              value={studentSchoolId}
-              onChange={(event) => setStudentSchoolId(event.target.value)}
-              required
-            >
-              <option value="">Select a school</option>
-              {schools.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-            <label htmlFor="student-stop">Stop (optional)</label>
-            <select
-              id="student-stop"
-              value={studentStopId}
-              onChange={(event) => setStudentStopId(event.target.value)}
-            >
-              <option value="">Not yet assigned</option>
-              {stops.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-            <label htmlFor="student-default-ridership">Default ridership</label>
-            <select
-              id="student-default-ridership"
-              value={studentDefaultRidership}
-              onChange={(event) =>
-                setStudentDefaultRidership(event.target.value as RidershipDefault)
-              }
-            >
-              <option value="rides">Rides every school day</option>
-              <option value="does_not_ride">Does not ride unless requested</option>
-            </select>
-            {studentError && (
-              <p role="alert" className="error">
-                {studentError}
-              </p>
-            )}
-            <button type="submit" disabled={isSavingStudent}>
-              {isSavingStudent ? 'Saving…' : 'Add student'}
-            </button>
-          </form>
-        )}
-      </section>
-
-      <OptimizationSettingsSection canEdit={canCreate} />
-
-      {canCreate && <SisImportSection schools={schools} onSchoolsChanged={loadAll} />}
-
-      {canCreate && (
+      <TabPanel id="schools" activeId={activeTab} idPrefix={TAB_PREFIX}>
         <section>
-          <h2>Audit log</h2>
-          <div className="audit-log-filters">
-            <label htmlFor="audit-entity-type">Entity type</label>
-            <select
-              id="audit-entity-type"
-              value={auditEntityTypeFilter}
-              onChange={(event) => setAuditEntityTypeFilter(event.target.value)}
-            >
-              <option value="">All</option>
-              {auditEntityTypes.map((t) => (
-                <option key={t} value={t}>
-                  {t.replace(/_/g, ' ')}
-                </option>
-              ))}
-            </select>
-            <label htmlFor="audit-entity-id">Entity ID (optional)</label>
-            <input
-              id="audit-entity-id"
-              type="number"
-              value={auditEntityIdFilter}
-              onChange={(event) => setAuditEntityIdFilter(event.target.value)}
-            />
-            <button type="button" disabled={isLoadingAudit} onClick={() => void loadAuditLog(0)}>
-              {isLoadingAudit ? 'Loading…' : hasLoadedAudit ? 'Refresh' : 'Load audit log'}
-            </button>
-          </div>
-          {auditError && (
-            <p role="alert" className="error">
-              {auditError}
-            </p>
-          )}
-          {hasLoadedAudit && auditEntries.length === 0 && !auditError && (
-            <p className="status">No matching audit log entries.</p>
-          )}
-          <ul className="audit-log-list">
-            {auditEntries.map((entry) => (
-              <li key={entry.id} className="audit-log-entry">
-                <div className="audit-log-entry-head">
-                  <span className="mono">{entry.created_at}</span>
-                  {' — '}
-                  <b>{entry.actor_full_name ?? 'system'}</b>
-                  {' — '}
-                  {entry.action} {entry.entity_type.replace(/_/g, ' ')} #{entry.entity_id}
-                </div>
-                {entry.after_state && (
-                  <pre className="audit-log-state">{JSON.stringify(entry.after_state)}</pre>
-                )}
+          <h2>Schools</h2>
+          <ul>
+            {schools.map((s) => (
+              <li key={s.id}>
+                {s.name} ({s.location_lat}, {s.location_lon})
               </li>
             ))}
           </ul>
-          {hasLoadedAudit &&
-            auditEntries.length > 0 &&
-            auditEntries.length % auditPageSize === 0 && (
-              <button
-                type="button"
-                disabled={isLoadingAudit}
-                onClick={() => void loadAuditLog(auditEntries.length)}
-              >
-                {isLoadingAudit ? 'Loading…' : 'Load more'}
+          {canCreate && (
+            <form onSubmit={(event) => void handleCreateSchool(event)}>
+              <label htmlFor="school-name">Name</label>
+              <input
+                id="school-name"
+                value={schoolName}
+                onChange={(event) => setSchoolName(event.target.value)}
+                required
+              />
+              <label htmlFor="school-lat">Latitude</label>
+              <input
+                id="school-lat"
+                type="number"
+                step="any"
+                value={schoolLat}
+                onChange={(event) => setSchoolLat(event.target.value)}
+                required
+              />
+              <label htmlFor="school-lon">Longitude</label>
+              <input
+                id="school-lon"
+                type="number"
+                step="any"
+                value={schoolLon}
+                onChange={(event) => setSchoolLon(event.target.value)}
+                required
+              />
+              {schoolError && (
+                <p role="alert" className="error">
+                  {schoolError}
+                </p>
+              )}
+              <button type="submit" disabled={isSavingSchool}>
+                {isSavingSchool ? 'Saving…' : 'Add school'}
               </button>
-            )}
+            </form>
+          )}
         </section>
+
+        <StopsSection stops={stops} students={students} canEdit={canCreate} onChanged={loadAll} />
+
+        <section>
+          <h2>Students</h2>
+          <ul>
+            {students.map((s) => (
+              <li key={s.id}>
+                {s.full_name} — {schoolsById.get(s.school_id)?.name ?? `School ${s.school_id}`}
+                {s.stop_id != null &&
+                  ` (${stopsById.get(s.stop_id)?.label ?? `Stop ${s.stop_id}`})`}
+                {' — default: '}
+                {s.default_ridership === 'rides' ? 'rides' : 'does not ride'}
+              </li>
+            ))}
+          </ul>
+          {canCreate && (
+            <form onSubmit={(event) => void handleCreateStudent(event)}>
+              <label htmlFor="student-name">Student name</label>
+              <input
+                id="student-name"
+                value={studentName}
+                onChange={(event) => setStudentName(event.target.value)}
+                required
+              />
+              <label htmlFor="student-school">School</label>
+              <select
+                id="student-school"
+                value={studentSchoolId}
+                onChange={(event) => setStudentSchoolId(event.target.value)}
+                required
+              >
+                <option value="">Select a school</option>
+                {schools.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="student-stop">Stop (optional)</label>
+              <select
+                id="student-stop"
+                value={studentStopId}
+                onChange={(event) => setStudentStopId(event.target.value)}
+              >
+                <option value="">Not yet assigned</option>
+                {stops.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="student-default-ridership">Default ridership</label>
+              <select
+                id="student-default-ridership"
+                value={studentDefaultRidership}
+                onChange={(event) =>
+                  setStudentDefaultRidership(event.target.value as RidershipDefault)
+                }
+              >
+                <option value="rides">Rides every school day</option>
+                <option value="does_not_ride">Does not ride unless requested</option>
+              </select>
+              {studentError && (
+                <p role="alert" className="error">
+                  {studentError}
+                </p>
+              )}
+              <button type="submit" disabled={isSavingStudent}>
+                {isSavingStudent ? 'Saving…' : 'Add student'}
+              </button>
+            </form>
+          )}
+        </section>
+      </TabPanel>
+
+      <TabPanel id="fleet" activeId={activeTab} idPrefix={TAB_PREFIX}>
+        <QualificationsSection
+          qualifications={qualifications}
+          canEdit={canCreate}
+          onChanged={loadAll}
+        />
+
+        <DriversSection
+          drivers={drivers}
+          qualifications={qualifications}
+          canEdit={canCreate}
+          onChanged={loadAll}
+        />
+
+        <VehiclesSection
+          vehicles={vehicles}
+          qualifications={qualifications}
+          canEdit={canCreate}
+          onChanged={loadAll}
+        />
+      </TabPanel>
+
+      <TabPanel id="district-knowledge" activeId={activeTab} idPrefix={TAB_PREFIX}>
+        <section>
+          <h2>District geographic knowledge</h2>
+          <ul>
+            {geoOverrides.map((o) => (
+              <li key={o.id}>
+                [{o.category.replace(/_/g, ' ')}] {o.note} ({o.location_lat}, {o.location_lon})
+                {o.window_start_minute != null &&
+                  ` — ${o.window_start_minute}-${o.window_end_minute} min`}
+                {o.restricted_dimension != null &&
+                  ` — max ${o.restricted_dimension.replace(/_/g, ' ')} ${o.max_allowed_value}`}
+                {o.school_id != null &&
+                  ` — ${schoolsById.get(o.school_id)?.name ?? `School ${o.school_id}`}`}
+              </li>
+            ))}
+          </ul>
+          {canCreateDistrictKnowledge && (
+            <form onSubmit={(event) => void handleCreateGeoOverride(event)}>
+              <label htmlFor="geo-lat">Override latitude</label>
+              <input
+                id="geo-lat"
+                type="number"
+                step="any"
+                value={geoLat}
+                onChange={(event) => setGeoLat(event.target.value)}
+                required
+              />
+              <label htmlFor="geo-lon">Override longitude</label>
+              <input
+                id="geo-lon"
+                type="number"
+                step="any"
+                value={geoLon}
+                onChange={(event) => setGeoLon(event.target.value)}
+                required
+              />
+              <label htmlFor="geo-category">Category</label>
+              <select
+                id="geo-category"
+                value={geoCategory}
+                onChange={(event) =>
+                  setGeoCategory(event.target.value as GeographicKnowledgeCategory)
+                }
+              >
+                {GEO_CATEGORIES.map((category) => (
+                  <option key={category} value={category}>
+                    {category.replace(/_/g, ' ')}
+                  </option>
+                ))}
+              </select>
+              {geoCategory === 'congestion_window' && (
+                <>
+                  <label htmlFor="geo-window-start">Congestion window start (minute of day)</label>
+                  <input
+                    id="geo-window-start"
+                    type="number"
+                    value={geoWindowStart}
+                    onChange={(event) => setGeoWindowStart(event.target.value)}
+                    required
+                  />
+                  <label htmlFor="geo-window-end">Congestion window end (minute of day)</label>
+                  <input
+                    id="geo-window-end"
+                    type="number"
+                    value={geoWindowEnd}
+                    onChange={(event) => setGeoWindowEnd(event.target.value)}
+                    required
+                  />
+                </>
+              )}
+              {geoCategory === 'vehicle_size_restricted' && (
+                <>
+                  <label htmlFor="geo-restricted-dimension">Restricted dimension</label>
+                  <select
+                    id="geo-restricted-dimension"
+                    value={geoRestrictedDimension}
+                    onChange={(event) =>
+                      setGeoRestrictedDimension(event.target.value as RestrictedVehicleDimension)
+                    }
+                  >
+                    <option value="length_m">length</option>
+                    <option value="width_m">width</option>
+                    <option value="height_m">height</option>
+                    <option value="weight_kg">weight</option>
+                  </select>
+                  <label htmlFor="geo-max-allowed">Max allowed value</label>
+                  <input
+                    id="geo-max-allowed"
+                    type="number"
+                    step="any"
+                    value={geoMaxAllowedValue}
+                    onChange={(event) => setGeoMaxAllowedValue(event.target.value)}
+                    required
+                  />
+                </>
+              )}
+              {geoCategory === 'preferred_entrance' && (
+                <>
+                  <label htmlFor="geo-school">School</label>
+                  <select
+                    id="geo-school"
+                    value={geoSchoolId}
+                    onChange={(event) => setGeoSchoolId(event.target.value)}
+                    required
+                  >
+                    <option value="">Select a school</option>
+                    {schools.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+              <label htmlFor="geo-note">Note</label>
+              <textarea
+                id="geo-note"
+                value={geoNote}
+                onChange={(event) => setGeoNote(event.target.value)}
+                required
+              />
+              {geoError && (
+                <p role="alert" className="error">
+                  {geoError}
+                </p>
+              )}
+              <button type="submit" disabled={isSavingGeo}>
+                {isSavingGeo ? 'Saving…' : 'Add override'}
+              </button>
+            </form>
+          )}
+        </section>
+      </TabPanel>
+
+      <TabPanel id="announcements" activeId={activeTab} idPrefix={TAB_PREFIX}>
+        <section>
+          <h2>Announcements</h2>
+          <ul>
+            {announcements.map((a) => (
+              <li key={a.id}>
+                [{a.category.replace(/_/g, ' ')} — {a.audience}
+                {a.school_id != null &&
+                  ` — ${schoolsById.get(a.school_id)?.name ?? `School ${a.school_id}`}`}
+                ] {a.message}
+              </li>
+            ))}
+          </ul>
+          {canCreateAnnouncement && (
+            <form onSubmit={(event) => void handleCreateAnnouncement(event)}>
+              <label htmlFor="announcement-message">Message</label>
+              <textarea
+                id="announcement-message"
+                value={announcementMessage}
+                onChange={(event) => setAnnouncementMessage(event.target.value)}
+                required
+              />
+              <label htmlFor="announcement-category">Announcement category</label>
+              <select
+                id="announcement-category"
+                value={announcementCategory}
+                onChange={(event) =>
+                  setAnnouncementCategory(event.target.value as AnnouncementCategory)
+                }
+              >
+                {ANNOUNCEMENT_CATEGORIES.map((category) => (
+                  <option key={category} value={category}>
+                    {category.replace(/_/g, ' ')}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="announcement-audience">Audience</label>
+              <select
+                id="announcement-audience"
+                value={announcementAudience}
+                onChange={(event) =>
+                  setAnnouncementAudience(event.target.value as AnnouncementAudience)
+                }
+              >
+                {ANNOUNCEMENT_AUDIENCES.map((audience) => (
+                  <option key={audience} value={audience}>
+                    {audience}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="announcement-school">
+                School (optional — leave blank for district-wide)
+              </label>
+              <select
+                id="announcement-school"
+                value={announcementSchoolId}
+                onChange={(event) => setAnnouncementSchoolId(event.target.value)}
+              >
+                <option value="">District-wide</option>
+                {schools.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              {announcementError && (
+                <p role="alert" className="error">
+                  {announcementError}
+                </p>
+              )}
+              <button type="submit" disabled={isSavingAnnouncement}>
+                {isSavingAnnouncement ? 'Posting…' : 'Post announcement'}
+              </button>
+            </form>
+          )}
+        </section>
+      </TabPanel>
+
+      <TabPanel id="optimization" activeId={activeTab} idPrefix={TAB_PREFIX}>
+        <OptimizationSettingsSection canEdit={canCreate} />
+      </TabPanel>
+
+      {canCreate && (
+        <TabPanel id="sis-import" activeId={activeTab} idPrefix={TAB_PREFIX}>
+          <SisImportSection schools={schools} onSchoolsChanged={loadAll} />
+        </TabPanel>
+      )}
+
+      {canCreate && (
+        <TabPanel id="audit-log" activeId={activeTab} idPrefix={TAB_PREFIX}>
+          <section>
+            <h2>Audit log</h2>
+            <div className="audit-log-filters">
+              <label htmlFor="audit-entity-type">Entity type</label>
+              <select
+                id="audit-entity-type"
+                value={auditEntityTypeFilter}
+                onChange={(event) => setAuditEntityTypeFilter(event.target.value)}
+              >
+                <option value="">All</option>
+                {auditEntityTypes.map((t) => (
+                  <option key={t} value={t}>
+                    {t.replace(/_/g, ' ')}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="audit-entity-id">Entity ID (optional)</label>
+              <input
+                id="audit-entity-id"
+                type="number"
+                value={auditEntityIdFilter}
+                onChange={(event) => setAuditEntityIdFilter(event.target.value)}
+              />
+              <button type="button" disabled={isLoadingAudit} onClick={() => void loadAuditLog(0)}>
+                {isLoadingAudit ? 'Loading…' : hasLoadedAudit ? 'Refresh' : 'Load audit log'}
+              </button>
+            </div>
+            {auditError && (
+              <p role="alert" className="error">
+                {auditError}
+              </p>
+            )}
+            {hasLoadedAudit && auditEntries.length === 0 && !auditError && (
+              <p className="status">No matching audit log entries.</p>
+            )}
+            <ul className="audit-log-list">
+              {auditEntries.map((entry) => (
+                <li key={entry.id} className="audit-log-entry">
+                  <div className="audit-log-entry-head">
+                    <span className="mono">{entry.created_at}</span>
+                    {' — '}
+                    <b>{entry.actor_full_name ?? 'system'}</b>
+                    {' — '}
+                    {entry.action} {entry.entity_type.replace(/_/g, ' ')} #{entry.entity_id}
+                  </div>
+                  {entry.after_state && (
+                    <pre className="audit-log-state">{JSON.stringify(entry.after_state)}</pre>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {hasLoadedAudit &&
+              auditEntries.length > 0 &&
+              auditEntries.length % auditPageSize === 0 && (
+                <button
+                  type="button"
+                  disabled={isLoadingAudit}
+                  onClick={() => void loadAuditLog(auditEntries.length)}
+                >
+                  {isLoadingAudit ? 'Loading…' : 'Load more'}
+                </button>
+              )}
+          </section>
+        </TabPanel>
       )}
     </main>
   )
