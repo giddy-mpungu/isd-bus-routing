@@ -196,7 +196,15 @@ Monorepo, 3 services, each separately installed:
     out of every commit reachable from the PR, which for an
     already-multi-commit PR means squash-merging (`gh pr merge --squash`,
     a deliberate one-off exception to this project's usual `--merge`)
-    rather than another commit. Separately, GitHub Actions can have a
+    rather than another commit. **Better, when the PR is still one
+    commit (PR #44):** fix it, `git commit --amend`, then
+    `git push --force-with-lease` on the feature branch. GitGuardian
+    re-scans and goes green *before* merge, and the normal `--merge`
+    convention still applies. What it flags: a variable literally named
+    like `$pgPassword = <anything>`, and `scheme://user:$var@host`
+    strings, even when the value is generated at run time. Name such
+    variables `*Secret` and assemble credential URLs by concatenation.
+    Separately, GitHub Actions can have a
     genuine multi-minute delay picking up a push to an already-open
     PR (confirmed empirically: two consecutive pushes, including a
     forced empty commit, produced no new run for several minutes
