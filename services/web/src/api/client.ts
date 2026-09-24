@@ -10,14 +10,6 @@
 // full session-cookie reasoning.
 
 import type {
-  SisImportResult,
-  OptimizationSettings,
-  OptimizationSettingsUpdate,
-  RidershipRules,
-  RidershipRulesUpdate,
-  GenerateFromTemplatesResult,
-  RouteTemplate,
-  RouteTemplateCreate,
   Absence,
   AbsenceCreate,
   AffectedAssignmentSubstitutes,
@@ -34,17 +26,14 @@ import type {
   CrewTemplate,
   CrewTemplateCreate,
   CurrentUser,
-  User,
-  UserCreate,
-  UserUpdate,
   DestinationProfile,
   DestinationProfileCreate,
   Driver,
   DriverAssignment,
   DriverCreate,
-  DriverUpdate,
   DriverReport,
   DriverReportCreate,
+  DriverUpdate,
   ExpectedRiders,
   FamilyMember,
   FieldTrip,
@@ -52,31 +41,45 @@ import type {
   FieldTripCreate,
   FieldTripObservedDuration,
   FieldTripUpdate,
+  GenerateFromTemplatesResult,
   GeographicKnowledgeOverride,
   GeographicKnowledgeOverrideCreate,
+  Guardian,
   ObservedRunDuration,
+  OptimizationSettings,
+  OptimizationSettingsUpdate,
   PositionUpdate,
   Qualification,
   QualificationCreate,
   QualificationUpdate,
   RideDirection,
   RidershipOverrideUpdate,
+  RidershipRules,
+  RidershipRulesUpdate,
+  RouteTemplate,
+  RouteTemplateCreate,
   Run,
   RunCreate,
   RunUpdate,
+  ScheduleResult,
   School,
   SchoolAssignment,
   SchoolCreate,
-  ScheduleResult,
+  SchoolUpdate,
+  SisImportResult,
   Stop,
   StopCreate,
   StopUpdate,
   Student,
   StudentCreate,
+  StudentUpdate,
+  User,
+  UserCreate,
+  UserUpdate,
   Vehicle,
   VehicleCreate,
-  VehicleUpdate,
   VehiclePosition,
+  VehicleUpdate,
 } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
@@ -295,8 +298,24 @@ export async function createStudent(payload: StudentCreate): Promise<Student> {
   return request<Student>('/students', jsonInit('POST', payload))
 }
 
+export async function updateStudent(id: number, payload: StudentUpdate): Promise<Student> {
+  return request<Student>(`/students/${id}`, jsonInit('PATCH', payload))
+}
+
+export async function getGuardians(studentId: number): Promise<Guardian[]> {
+  return request<Guardian[]>(`/students/${studentId}/guardians`)
+}
+
 export async function linkGuardian(studentId: number, userId: number): Promise<void> {
   await request<void>(`/students/${studentId}/guardians`, jsonInit('POST', { user_id: userId }))
+}
+
+export async function unlinkGuardian(studentId: number, userId: number): Promise<void> {
+  await request<void>(`/students/${studentId}/guardians/${userId}`, { method: 'DELETE' })
+}
+
+export async function updateSchool(id: number, payload: SchoolUpdate): Promise<School> {
+  return request<School>(`/schools/${id}`, jsonInit('PATCH', payload))
 }
 
 export async function getMyFamily(serviceDate: string): Promise<FamilyMember[]> {

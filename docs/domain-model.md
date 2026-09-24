@@ -729,6 +729,32 @@ families are rounded to 3 decimal places (about 100 m,
 tracker. Staff-facing views (dispatcher fleet list, school admin, driver app)
 keep names.
 
+## Admin editing of students, guardians and schools (spec sections 17, 18, 21)
+
+- **Students** (`PATCH /students/{id}`, transportation_admin): name,
+  school, stop and default ridership. Only the fields sent change;
+  `stop_id: null` clears the stop. Every real change is audited
+  (before/after). For a student imported from the SIS (`external_id` set),
+  name and school are **owned by the SIS** (ADR 0007) and a local change is
+  refused (409, "change them in the SIS and re-import"). Stop and ridership
+  are local transportation data and stay editable. Unknown school/stop →
+  400.
+- **Guardians**: `GET /students/{id}/guardians`, `POST` (link),
+  `DELETE /students/{id}/guardians/{user_id}` (unlink). A guardian link is
+  what grants a parent access to a child's data (spec §18), so linking and
+  unlinking are audited (`guardian_linked` / `guardian_unlinked`), and
+  unlinking really revokes access: my-family, ridership and bus position
+  all stop working for that parent. Before PR #48 there was **no UI for
+  linking at all** (the client's `linkGuardian()` had never been called, despite
+  docs/architecture.md claiming "manual guardian linking"), no unlink, no
+  listing, and no audit.
+- **Schools** (`PATCH /schools/{id}`): name and location join the SIS id;
+  only fields sent change, and an explicit `external_id: null` still clears
+  the mapping. Audited.
+- UI: Setup → Schools & students, now `SchoolsSection` / `StudentsSection`
+  components (extracted from SetupPage like the other sections), with Edit
+  and a per-student Guardians panel.
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)

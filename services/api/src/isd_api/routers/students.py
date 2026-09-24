@@ -13,6 +13,7 @@ from datetime import UTC, date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from isd_api.audit import record as record_audit
 from isd_api.db import get_db
 from isd_api.models import (
     Assignment,
@@ -20,6 +21,8 @@ from isd_api.models import (
     RidershipOverride,
     Role,
     Run,
+    School,
+    Stop,
     Student,
     User,
     VehiclePosition,
@@ -30,6 +33,7 @@ from isd_api.schemas import (
     BusPositionRead,
     FamilyMemberRead,
     GuardianLink,
+    GuardianRead,
     RidershipOverrideUpdate,
     StudentCreate,
     StudentRead,
@@ -74,18 +78,89 @@ def update_student(
     student_id: int,
     payload: StudentUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
 ) -> Student:
+    """Spec section 21 "reassign students": name, school, stop, default
+    ridership. Audited, since a school or stop change changes which bus a
+    child is expected on."""
     student = db.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
-    if payload.stop_id is not None:
+    sent = payload.model_fields_set
+
+    sis_owned = {"full_name", "school_id"} & sent
+    if student.external_id is not None and sis_owned:
+        changed = [
+            f
+            for f in sorted(sis_owned)
+            if getattr(payload, f) is not None and getattr(payload, f) != getattr(student, f)
+        ]
+        if changed:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"{', '.join(changed)} for this student come from the SIS roster import; "
+                    "change them in the SIS and re-import."
+                ),
+            )
+    if "school_id" in sent and (
+        payload.school_id is None or db.get(School, payload.school_id) is None
+    ):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown school_id")
+    if "stop_id" in sent and payload.stop_id is not None and db.get(Stop, payload.stop_id) is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown stop_id")
+    if "full_name" in sent and payload.full_name is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="full_name is required")
+
+    fields = ("full_name", "school_id", "stop_id", "default_ridership")
+    before = {f: _plain(getattr(student, f)) for f in fields}
+    if "full_name" in sent and payload.full_name is not None:
+        student.full_name = payload.full_name
+    if "school_id" in sent and payload.school_id is not None:
+        student.school_id = payload.school_id
+    if "stop_id" in sent:
         student.stop_id = payload.stop_id
-    if payload.default_ridership is not None:
+    if "default_ridership" in sent and payload.default_ridership is not None:
         student.default_ridership = payload.default_ridership
+    db.flush()
+    after = {f: _plain(getattr(student, f)) for f in fields}
+    if after != before:
+        record_audit(
+            db,
+            entity_type="student",
+            entity_id=student.id,
+            action="updated",
+            actor=current_user,
+            before_state=before,
+            after_state=after,
+        )
     db.commit()
     db.refresh(student)
     return student
+
+
+def _plain(value: object) -> object:
+    return value.value if hasattr(value, "value") else value
+
+
+def _student_or_404(db: Session, student_id: int) -> Student:
+    student = db.get(Student, student_id)
+    if student is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
+    return student
+
+
+@router.get("/{student_id}/guardians", response_model=list[GuardianRead])
+def list_guardians(
+    student_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+) -> list[GuardianRead]:
+    student = _student_or_404(db, student_id)
+    return [
+        GuardianRead(user_id=g.id, full_name=g.full_name, email=g.email)
+        for g in sorted(student.guardians, key=lambda g: g.full_name)
+    ]
 
 
 @router.post("/{student_id}/guardians", status_code=status.HTTP_204_NO_CONTENT)
@@ -93,11 +168,11 @@ def link_guardian(
     student_id: int,
     payload: GuardianLink,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
 ) -> None:
-    student = db.get(Student, student_id)
-    if student is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
+    """A guardian link is what grants a parent access to a child's data
+    (spec section 18), so every link and unlink is audited."""
+    student = _student_or_404(db, student_id)
     guardian = db.get(User, payload.user_id)
     if guardian is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -108,7 +183,43 @@ def link_guardian(
         )
     if guardian not in student.guardians:
         student.guardians.append(guardian)
+        db.flush()
+        record_audit(
+            db,
+            entity_type="student",
+            entity_id=student.id,
+            action="guardian_linked",
+            actor=current_user,
+            after_state={"guardian_user_id": guardian.id},
+        )
         db.commit()
+
+
+@router.delete("/{student_id}/guardians/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def unlink_guardian(
+    student_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+) -> None:
+    student = _student_or_404(db, student_id)
+    guardian = next((g for g in student.guardians if g.id == user_id), None)
+    if guardian is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="That user is not a guardian of this student",
+        )
+    student.guardians.remove(guardian)
+    db.flush()
+    record_audit(
+        db,
+        entity_type="student",
+        entity_id=student.id,
+        action="guardian_unlinked",
+        actor=current_user,
+        before_state={"guardian_user_id": guardian.id},
+    )
+    db.commit()
 
 
 def _linked_students(db: Session, current_user: User) -> list[Student]:
