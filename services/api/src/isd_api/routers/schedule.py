@@ -60,7 +60,10 @@ from isd_api.models import (
 from isd_api.models import Crew as DBCrew
 from isd_api.models import Run as DBRun
 from isd_api.routers.announcements import _maybe_create_substitution_announcement
-from isd_api.routers.optimization_settings import load_objective_weights
+from isd_api.routers.optimization_settings import (
+    load_minimum_buffer_minutes,
+    load_objective_weights,
+)
 from isd_api.routers.runs import _resolve_riding_students
 from isd_api.schemas import (
     AssignmentRead,
@@ -308,6 +311,7 @@ def _hard_constraint_violation(
         return f"Crew {crew.id} is unavailable then: {unavailable}"
 
     others = db.query(Assignment).filter(Assignment.crew_id == crew.id)
+    gap = load_minimum_buffer_minutes(db)
     for other in others:
         if other.id == exclude_assignment_id:
             continue
@@ -315,6 +319,14 @@ def _hard_constraint_violation(
             return (
                 f"Crew {crew.id} already has overlapping assignment {other.id} "
                 f"({other.start_minute}-{other.end_minute})"
+            )
+        # Spec section 16's minimum buffer. Travel time isn't known on
+        # this manual path, so this is the floor, not the full check.
+        if start_minute < other.end_minute + gap and other.start_minute < end_minute + gap:
+            return (
+                f"Crew {crew.id}'s assignment {other.id} ({other.start_minute}-"
+                f"{other.end_minute}) would leave less than the district's minimum "
+                f"buffer of {gap} minutes between runs"
             )
 
     return None
@@ -424,12 +436,23 @@ def run_schedule(
         )
     else:
         estimator = fallback_estimator
+    minimum_buffer = load_minimum_buffer_minutes(db)
     result = solve_multi_school_schedule(
-        unlocked_jobs, solvable_crews, estimator, weights=load_objective_weights(db)
+        unlocked_jobs,
+        solvable_crews,
+        estimator,
+        weights=load_objective_weights(db),
+        minimum_buffer_minutes=minimum_buffer,
     )
 
     if isinstance(result, InfeasibleResult):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=result.reason)
+        reason = result.reason
+        if minimum_buffer > 0:
+            reason += (
+                f" (the district's minimum buffer of {minimum_buffer} minutes between "
+                "consecutive runs applies; see Setup, Optimization)"
+            )
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=reason)
 
     assert isinstance(result, SchedulingResult)
 

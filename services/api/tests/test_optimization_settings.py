@@ -74,6 +74,7 @@ def test_defaults_are_reported_when_nothing_is_saved(client, admin_headers):
         "crews_used_weight": 1,
         "deadhead_minutes_weight": 0,
         "arrival_buffer_weight": 0,
+        "minimum_buffer_minutes": 0,
         "is_default": True,
     }
 
@@ -85,6 +86,7 @@ def test_settings_round_trip_and_are_audited(client, admin_headers, db_session):
         "crews_used_weight": 100,
         "deadhead_minutes_weight": 3,
         "arrival_buffer_weight": 2,
+        "minimum_buffer_minutes": 0,
         "is_default": False,
     }
     assert (

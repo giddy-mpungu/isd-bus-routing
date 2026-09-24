@@ -681,6 +681,54 @@ found by the 2026-09-24 spec re-review and reproduced by a scripted
 probe; `tests/test_availability.py` pins every case above, and each of
 its tests fails on the pre-fix code.
 
+## Minimum operational buffer (spec section 16)
+
+`OptimizationSettings.minimum_buffer_minutes` (Setup → Rules & optimization,
+transportation_admin only, 0-120, default 0 = off) is a **hard constraint**,
+not a weight: the solver keeps at least that many spare minutes between
+consecutive jobs on one crew *after* deadhead travel (the same quantity each
+explanation reports as "N minutes of operational buffer remain"). A day that
+can't meet it is rejected (422, with the minimum named in the reason) rather
+than built tight, the spec's "rejected or flagged". Manual reassignment
+(`PATCH /schedule/assignments/{id}`) checks the same floor, without travel
+time, since the manual path has no deadhead estimate. Default 0 because the
+right number is district policy; the system doesn't invent one.
+
+## Ridership reporting rules (spec sections 4.4, 4.5)
+
+`RidershipRules` (singleton, `GET`/`PUT /ridership-rules`,
+`isd_api/ridership_rules.py`): the district's IANA time zone (default
+`America/Chicago`) and optional AM/PM cutoff minute-of-day.
+
+- Families (student/parent) can't change a **past day** or **today after that
+  leg's cutoff** (409 with the reason). A transportation_admin still can: a
+  phone-in, spec §21's human override. `GET /students/my-family` returns
+  `am_changes_closed`/`pm_changes_closed` so the family app disables those
+  buttons and says why.
+- A **request to ride a full bus** is refused for everyone (409): the
+  unambiguous run's resolved riders already fill the assigned vehicle's
+  allowable capacity. Not checked when several runs serve the leg (can't
+  attribute the rider to one bus, the same "don't guess" rule as
+  expected-riders). Saying you *won't* ride is never blocked.
+- Not done yet, pending Phase 3's student profile and routes: §4.5's
+  "remains transportation-eligible" and "stop can be included without
+  violating operational constraints", and §4.4's route-lock period and
+  stop-sequence rules.
+- The clock is `ridership_rules.utc_now()`. `tests/conftest.py` pins it to
+  2026-08-01, before every fixed test date, so those tests don't start
+  failing as real time passes; rule tests pin their own instant.
+
+## Family-facing privacy (spec section 18)
+
+Family endpoints never carry driver identity: `BusPositionRead` has no driver
+field, and the auto-generated substitution notice names the bus ("Look for
+Bus 12"), not the substitute driver. Before PR #47 both named the driver, and
+a test *asserted* the name was in the family notice. Bus coordinates for
+families are rounded to 3 decimal places (about 100 m,
+`students.APPROXIMATE_POSITION_DECIMALS`): an approximate location, not a
+tracker. Staff-facing views (dispatcher fleet list, school admin, driver app)
+keep names.
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)

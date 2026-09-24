@@ -14,6 +14,7 @@ vi.mock('../api/client', async (importOriginal) => {
     ...actual,
     getCurrentUser: vi.fn(),
     getOptimizationSettings: vi.fn(),
+    getRidershipRules: vi.fn(),
     getSchools: vi.fn(),
     getQualifications: vi.fn(),
     getDrivers: vi.fn(),
@@ -100,6 +101,13 @@ function mockLoad() {
     crews_used_weight: 1,
     deadhead_minutes_weight: 0,
     arrival_buffer_weight: 0,
+    minimum_buffer_minutes: 0,
+    is_default: true,
+  })
+  vi.mocked(api.getRidershipRules).mockResolvedValue({
+    timezone: 'America/Chicago',
+    am_cutoff_minute: null,
+    pm_cutoff_minute: null,
     is_default: true,
   })
 }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
@@ -452,10 +453,37 @@ class ScheduleRequest(BaseModel):
     )
 
 
+class RidershipRulesBase(BaseModel):
+    timezone: str = Field(min_length=1, max_length=64)
+    am_cutoff_minute: int | None = Field(default=None, ge=0, lt=1440)
+    pm_cutoff_minute: int | None = Field(default=None, ge=0, lt=1440)
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_zone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"unknown time zone {value!r}; use an IANA name") from exc
+        return value
+
+
+class RidershipRulesUpdate(RidershipRulesBase):
+    pass
+
+
+class RidershipRulesRead(RidershipRulesBase):
+    is_default: bool
+
+
 class OptimizationSettingsBase(BaseModel):
     crews_used_weight: int = Field(ge=0, le=1000)
     deadhead_minutes_weight: int = Field(ge=0, le=1000)
     arrival_buffer_weight: int = Field(ge=0, le=1000)
+    # Spec section 16: minimum spare minutes between consecutive runs on
+    # one crew, after travel. A hard constraint, not a weight: a schedule
+    # that can't meet it is rejected rather than built tight.
+    minimum_buffer_minutes: int = Field(default=0, ge=0, le=120)
 
     @model_validator(mode="after")
     def _at_least_one_positive(self) -> OptimizationSettingsBase:
@@ -567,6 +595,10 @@ class FamilyMemberRead(BaseModel):
     service_date: date
     riding_am: bool
     riding_pm: bool
+    # Spec section 4.4: set when the family can no longer change that leg
+    # (a past day, or today after the district's cutoff), with the reason.
+    am_changes_closed: str | None = None
+    pm_changes_closed: str | None = None
 
 
 class AbsenceCreate(BaseModel):
@@ -677,14 +709,16 @@ class BusPositionRead(BaseModel):
     reported), and `ambiguous=True` -- the same multi-run-per-leg gap
     PR #23 named -- means this system can't yet tell which of several
     runs serves this child, so it deliberately shows nothing rather
-    than guessing."""
+    than guessing.
+
+    Deliberately carries no driver identity (spec section 18), and the
+    coordinates are rounded to roughly 100 m ("approximate")."""
 
     available: bool
     ambiguous: bool
     location_lat: float | None = None
     location_lon: float | None = None
     recorded_at: datetime | None = None
-    driver_full_name: str | None = None
     vehicle_label: str | None = None
 
 

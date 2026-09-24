@@ -81,6 +81,7 @@ export function FamilyPage() {
 
   function renderLeg(member: FamilyMember, direction: RideDirection, isRiding: boolean) {
     const legKey = `${member.student_id}-${direction}`
+    const closed = direction === 'am' ? member.am_changes_closed : member.pm_changes_closed
     const position = busPositions[legKey]
     const positionError = busPositionErrors[legKey]
     return (
@@ -90,7 +91,8 @@ export function FamilyPage() {
         </span>
         <button
           type="button"
-          disabled={busyKey === legKey}
+          disabled={busyKey === legKey || closed != null}
+          title={closed ?? undefined}
           onClick={() => void handleSetRiding(member.student_id, direction, !isRiding)}
         >
           {isRiding
@@ -104,6 +106,7 @@ export function FamilyPage() {
         >
           {locatingKey === legKey ? 'Locating…' : 'Locate bus'}
         </button>
+        {closed && <p className="status family-leg-closed">{closed}</p>}
         {positionError && (
           <p role="alert" className="error">
             {positionError}
@@ -115,7 +118,11 @@ export function FamilyPage() {
               "Can't show a single bus — more than one run serves this school/leg today."}
             {!position.ambiguous && !position.available && 'No live position yet.'}
             {position.available &&
-              `${position.driver_full_name}, ${position.vehicle_label} — ${position.location_lat?.toFixed(5)}, ${position.location_lon?.toFixed(5)}`}
+              `${position.vehicle_label} was near ${position.location_lat?.toFixed(3)}, ${position.location_lon?.toFixed(3)}${
+                position.recorded_at
+                  ? ` at ${new Date(position.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                  : ''
+              }`}
           </p>
         )}
       </div>

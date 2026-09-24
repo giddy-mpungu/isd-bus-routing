@@ -43,6 +43,7 @@ export function OptimizationSettingsSection({ canEdit }: { canEdit: boolean }) {
         crews_used_weight: String(settings.crews_used_weight),
         deadhead_minutes_weight: String(settings.deadhead_minutes_weight),
         arrival_buffer_weight: String(settings.arrival_buffer_weight),
+        minimum_buffer_minutes: String(settings.minimum_buffer_minutes),
       })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load optimization settings.')
@@ -63,9 +64,10 @@ export function OptimizationSettingsSection({ canEdit }: { canEdit: boolean }) {
         crews_used_weight: Number(values.crews_used_weight),
         deadhead_minutes_weight: Number(values.deadhead_minutes_weight),
         arrival_buffer_weight: Number(values.arrival_buffer_weight),
+        minimum_buffer_minutes: Number(values.minimum_buffer_minutes),
       })
       setSaved(updated)
-      setMessage('Optimization weights saved. They apply the next time a schedule is solved.')
+      setMessage('Settings saved. They apply the next time a schedule is solved.')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to save optimization settings.')
     } finally {
@@ -110,9 +112,32 @@ export function OptimizationSettingsSection({ canEdit }: { canEdit: boolean }) {
               <small>{field.help}</small>
             </div>
           ))}
+          <div>
+            <label htmlFor="opt-minimum_buffer_minutes">
+              Minimum buffer between runs (minutes)
+            </label>
+            <input
+              id="opt-minimum_buffer_minutes"
+              type="number"
+              min="0"
+              max="120"
+              step="1"
+              value={values.minimum_buffer_minutes ?? ''}
+              onChange={(event) =>
+                setValues((prev) => ({ ...prev, minimum_buffer_minutes: event.target.value }))
+              }
+              disabled={!canEdit}
+              required
+            />
+            <small>
+              A hard rule, not a weight: every bus keeps at least this many spare minutes between
+              one run and the next, after driving between them. A day that can&apos;t meet it is
+              reported as unschedulable instead of being built too tight. 0 turns it off.
+            </small>
+          </div>
           {canEdit ? (
             <button type="submit" disabled={isSaving}>
-              {isSaving ? 'Saving…' : 'Save weights'}
+              {isSaving ? 'Saving…' : 'Save settings'}
             </button>
           ) : (
             <p>Only a transportation administrator can change these.</p>

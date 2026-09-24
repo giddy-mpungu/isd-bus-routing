@@ -30,6 +30,9 @@ dependencies = [
     "bcrypt>=4.1",
     "email-validator>=2.0",
     "python-multipart>=0.0.9",
+    # IANA time zones for the district's local clock (ridership cutoffs).
+    # Windows and slim containers have no system zone database.
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]
