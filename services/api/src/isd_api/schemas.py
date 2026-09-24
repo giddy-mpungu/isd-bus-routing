@@ -319,6 +319,9 @@ class GenerateFromTemplatesRead(BaseModel):
     # template's window that day (spec section 13; substitutes are the
     # absences workflow's job, not generation's).
     crews_skipped_absent_driver_ids: list[int]
+    # Crew template ids skipped because the template's vehicle is out of
+    # service or its driver is deactivated (spec section 2.1).
+    crews_skipped_out_of_service_template_ids: list[int]
 
 
 class ExpectedRidersRead(BaseModel):
@@ -348,6 +351,10 @@ class AssignmentRead(BaseModel):
     end_minute: int
     explanation_text: str
     locked: bool
+    # Set when the crew became unavailable after this assignment was made
+    # (driver absent or deactivated, vehicle out of service), e.g. a locked
+    # assignment a re-solve deliberately left in place. None when fine.
+    availability_issue: str | None = None
 
 
 class AssignmentUpdate(BaseModel):

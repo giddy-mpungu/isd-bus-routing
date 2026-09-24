@@ -7,11 +7,11 @@ export interface TabItem {
   count?: number
 }
 
-export function tabId(idPrefix: string, id: string): string {
+function tabId(idPrefix: string, id: string): string {
   return `${idPrefix}-tab-${id}`
 }
 
-export function tabPanelId(idPrefix: string, id: string): string {
+function tabPanelId(idPrefix: string, id: string): string {
   return `${idPrefix}-panel-${id}`
 }
 

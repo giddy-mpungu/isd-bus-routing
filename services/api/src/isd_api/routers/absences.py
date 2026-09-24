@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from isd_api.audit import record as record_audit
+from isd_api.availability import driver_conflict_for_window
 from isd_api.db import get_db
 from isd_api.models import Assignment, Crew, Driver, DriverAbsence, Role, Run, User
 from isd_api.schemas import (
@@ -147,6 +148,9 @@ def _rank_substitute_candidates(db: Session, assignment: Assignment) -> list[Sub
 
     candidates: list[SubstituteCandidate] = []
     for driver in db.query(Driver).filter(Driver.id != absent_driver_id).order_by(Driver.id):
+        # Hard exclude: deactivated, or absent themselves during this run.
+        if driver_conflict_for_window(db, driver, service_date, start, end) is not None:
+            continue
         same_day = (
             db.query(Assignment)
             .join(Crew, Assignment.crew_id == Crew.id)

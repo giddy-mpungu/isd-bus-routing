@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from isd_api.audit import record as record_audit
+from isd_api.availability import resource_unavailable_reason
 from isd_api.db import get_db
 from isd_api.models import (
     Crew,
@@ -253,6 +254,7 @@ def generate_from_templates(
     """
     runs_created = runs_existing = crews_created = crews_existing = 0
     absent_driver_ids: list[int] = []
+    out_of_service_template_ids: list[int] = []
 
     for rt in db.query(RouteTemplate).order_by(RouteTemplate.id).all():
         if not _applies_on(rt, service_date):
@@ -305,6 +307,9 @@ def generate_from_templates(
         if clash is not None:
             crews_existing += 1
             continue
+        if resource_unavailable_reason(ct.driver, ct.vehicle) is not None:
+            out_of_service_template_ids.append(ct.id)
+            continue
         fully_absent = (
             db.query(DriverAbsence)
             .filter(
@@ -347,4 +352,5 @@ def generate_from_templates(
         crews_created=crews_created,
         crews_already_existing=crews_existing,
         crews_skipped_absent_driver_ids=absent_driver_ids,
+        crews_skipped_out_of_service_template_ids=out_of_service_template_ids,
     )

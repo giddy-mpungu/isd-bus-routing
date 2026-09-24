@@ -128,6 +128,7 @@ const assignment: Assignment = {
   end_minute: 410,
   explanation_text: 'Crew 20 was assigned job 10 because qualifications are satisfied.',
   locked: false,
+  availability_issue: null,
 }
 
 const vehicleQual: Qualification = {
@@ -222,6 +223,7 @@ describe('SchedulePage', () => {
       crews_created: 3,
       crews_already_existing: 0,
       crews_skipped_absent_driver_ids: [driverRecord.id],
+      crews_skipped_out_of_service_template_ids: [7],
     })
     const user = userEvent.setup()
     render(<SchedulePage />)
@@ -233,9 +235,32 @@ describe('SchedulePage', () => {
     const status = await screen.findByText(/Generated 2 run\(s\) and 3 crew\(s\)/)
     expect(status).toHaveTextContent('1 already existed and were left unchanged')
     expect(status).toHaveTextContent('skipped crew for absent driver(s): Jordan Driver')
+    expect(status).toHaveTextContent(
+      'skipped 1 crew template(s) whose bus is out of service or driver is deactivated',
+    )
     expect(status).toHaveTextContent('then run the schedule')
     // Generation never solves on its own.
     expect(api.runSchedule).not.toHaveBeenCalled()
+  })
+
+  it('flags an assignment whose crew became unavailable after it was made', async () => {
+    vi.mocked(api.getAssignments).mockResolvedValue([
+      {
+        ...assignment,
+        locked: true,
+        availability_issue: 'driver absent (sick leave, 00:00-23:59)',
+      },
+    ])
+    render(<SchedulePage />)
+
+    expect(await screen.findByText('Needs cover')).toBeInTheDocument()
+    expect(screen.getByText(/driver absent \(sick leave, 00:00-23:59\)/)).toBeInTheDocument()
+  })
+
+  it('shows no availability warning for a healthy assignment', async () => {
+    render(<SchedulePage />)
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
+    expect(screen.queryByText('Needs cover')).not.toBeInTheDocument()
   })
 
   it('shows an error when generating from templates fails', async () => {
