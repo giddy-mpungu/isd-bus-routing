@@ -438,6 +438,39 @@ legend {
   flex: none;
 }
 
+/* Students: edit + guardians (who may see this child in the family app). */
+.students-section-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin-left: 0.4rem;
+}
+
+.guardians-panel-body {
+  margin: 0.5rem 0 0.25rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  background: var(--gray-50);
+}
+
+.guardians-panel-body ul {
+  margin: 0 0 0.5rem;
+  padding-left: 1.1rem;
+}
+
+.guardians-panel-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.guardians-panel-link label {
+  margin-top: 0;
+}
+
 /* Field-trip delay management (spec 12.2). */
 .field-trip-delay {
   display: flex;

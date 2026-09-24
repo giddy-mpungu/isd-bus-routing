@@ -98,10 +98,13 @@ class SchoolCreate(BaseModel):
 
 
 class SchoolUpdate(BaseModel):
-    """Only the SIS mapping is editable after creation. An explicit null
-    clears it."""
+    """Every field optional; only fields actually sent are changed. An
+    explicit null for external_id clears the SIS mapping (as before)."""
 
-    external_id: str | None = Field(min_length=1, max_length=64)
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    location_lat: float | None = Field(default=None, ge=-90, le=90)
+    location_lon: float | None = Field(default=None, ge=-180, le=180)
+    external_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class SchoolRead(BaseModel):
@@ -561,14 +564,25 @@ class StudentRead(BaseModel):
 
 
 class StudentUpdate(BaseModel):
-    """Partial update — only fields provided are changed."""
+    """Every field optional; only fields actually sent are changed, and an
+    explicit null for stop_id clears the stop. full_name and school_id are
+    refused for a student imported from the SIS (external_id set): the SIS
+    is the authoritative source for those (ADR 0007)."""
 
+    full_name: str | None = Field(default=None, min_length=1, max_length=255)
+    school_id: int | None = None
     stop_id: int | None = None
     default_ridership: RidershipDefault | None = None
 
 
 class GuardianLink(BaseModel):
     user_id: int
+
+
+class GuardianRead(BaseModel):
+    user_id: int
+    full_name: str
+    email: str
 
 
 class RidershipOverrideUpdate(BaseModel):

@@ -187,6 +187,13 @@ export interface SchoolAssignment {
   locked: boolean
 }
 
+export interface SchoolUpdate {
+  name?: string
+  location_lat?: number
+  location_lon?: number
+  external_id?: string | null
+}
+
 export interface SchoolCreate {
   name: string
   location_lat: number
@@ -305,6 +312,23 @@ export interface Student {
   school_id: number
   stop_id: number | null
   default_ridership: RidershipDefault
+  // Set for students imported from the SIS: their name and school are
+  // owned by the SIS and can't be edited here.
+  external_id?: string | null
+}
+
+// Only the fields sent are changed; stop_id: null clears the stop.
+export interface StudentUpdate {
+  full_name?: string
+  school_id?: number
+  stop_id?: number | null
+  default_ridership?: RidershipDefault
+}
+
+export interface Guardian {
+  user_id: number
+  full_name: string
+  email: string
 }
 
 export interface StudentCreate {

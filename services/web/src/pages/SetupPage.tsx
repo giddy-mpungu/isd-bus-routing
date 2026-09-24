@@ -12,7 +12,6 @@ import type {
   GeographicKnowledgeOverride,
   Qualification,
   RestrictedVehicleDimension,
-  RidershipDefault,
   School,
   Stop,
   Student,
@@ -24,8 +23,10 @@ import { DriversSection } from './DriversSection'
 import { OptimizationSettingsSection } from './OptimizationSettingsSection'
 import { QualificationsSection } from './QualificationsSection'
 import { RidershipRulesSection } from './RidershipRulesSection'
+import { SchoolsSection } from './SchoolsSection'
 import { SisImportSection } from './SisImportSection'
 import { StopsSection } from './StopsSection'
+import { StudentsSection } from './StudentsSection'
 import { VehiclesSection } from './VehiclesSection'
 
 // Creating a school/qualification/driver/vehicle is transportation_admin
@@ -131,34 +132,6 @@ export function SetupPage() {
     void loadAll()
   }, [loadAll])
 
-  // --- Schools ---
-  const [schoolName, setSchoolName] = useState('')
-  const [schoolLat, setSchoolLat] = useState('')
-  const [schoolLon, setSchoolLon] = useState('')
-  const [schoolError, setSchoolError] = useState<string | null>(null)
-  const [isSavingSchool, setIsSavingSchool] = useState(false)
-
-  async function handleCreateSchool(event: FormEvent) {
-    event.preventDefault()
-    setSchoolError(null)
-    setIsSavingSchool(true)
-    try {
-      await api.createSchool({
-        name: schoolName,
-        location_lat: Number(schoolLat),
-        location_lon: Number(schoolLon),
-      })
-      setSchoolName('')
-      setSchoolLat('')
-      setSchoolLon('')
-      await loadAll()
-    } catch (err) {
-      setSchoolError(err instanceof ApiError ? err.message : 'Failed to create school.')
-    } finally {
-      setIsSavingSchool(false)
-    }
-  }
-
   // --- District geographic knowledge (spec section 8) ---
   const [geoLat, setGeoLat] = useState('')
   const [geoLon, setGeoLon] = useState('')
@@ -243,39 +216,7 @@ export function SetupPage() {
     }
   }
 
-  // --- Students ---
-  const [studentName, setStudentName] = useState('')
-  const [studentSchoolId, setStudentSchoolId] = useState('')
-  const [studentStopId, setStudentStopId] = useState('')
-  const [studentDefaultRidership, setStudentDefaultRidership] = useState<RidershipDefault>('rides')
-  const [studentError, setStudentError] = useState<string | null>(null)
-  const [isSavingStudent, setIsSavingStudent] = useState(false)
-
-  async function handleCreateStudent(event: FormEvent) {
-    event.preventDefault()
-    setStudentError(null)
-    setIsSavingStudent(true)
-    try {
-      await api.createStudent({
-        full_name: studentName,
-        school_id: Number(studentSchoolId),
-        stop_id: studentStopId ? Number(studentStopId) : undefined,
-        default_ridership: studentDefaultRidership,
-      })
-      setStudentName('')
-      setStudentSchoolId('')
-      setStudentStopId('')
-      setStudentDefaultRidership('rides')
-      await loadAll()
-    } catch (err) {
-      setStudentError(err instanceof ApiError ? err.message : 'Failed to create student.')
-    } finally {
-      setIsSavingStudent(false)
-    }
-  }
-
   const schoolsById = new Map(schools.map((s) => [s.id, s]))
-  const stopsById = new Map(stops.map((s) => [s.id, s]))
 
   // --- Tabs --- the active tab lives in the URL (?tab=fleet) so a
   // section is deep-linkable and survives a reload. An unknown or
@@ -390,127 +331,17 @@ export function SetupPage() {
       />
 
       <TabPanel id="schools" activeId={activeTab} idPrefix={TAB_PREFIX}>
-        <section>
-          <h2>Schools</h2>
-          <ul>
-            {schools.map((s) => (
-              <li key={s.id}>
-                {s.name} ({s.location_lat}, {s.location_lon})
-              </li>
-            ))}
-          </ul>
-          {canCreate && (
-            <form onSubmit={(event) => void handleCreateSchool(event)}>
-              <label htmlFor="school-name">Name</label>
-              <input
-                id="school-name"
-                value={schoolName}
-                onChange={(event) => setSchoolName(event.target.value)}
-                required
-              />
-              <label htmlFor="school-lat">Latitude</label>
-              <input
-                id="school-lat"
-                type="number"
-                step="any"
-                value={schoolLat}
-                onChange={(event) => setSchoolLat(event.target.value)}
-                required
-              />
-              <label htmlFor="school-lon">Longitude</label>
-              <input
-                id="school-lon"
-                type="number"
-                step="any"
-                value={schoolLon}
-                onChange={(event) => setSchoolLon(event.target.value)}
-                required
-              />
-              {schoolError && (
-                <p role="alert" className="error">
-                  {schoolError}
-                </p>
-              )}
-              <button type="submit" disabled={isSavingSchool}>
-                {isSavingSchool ? 'Saving…' : 'Add school'}
-              </button>
-            </form>
-          )}
-        </section>
+        <SchoolsSection schools={schools} canEdit={canCreate} onChanged={loadAll} />
 
         <StopsSection stops={stops} students={students} canEdit={canCreate} onChanged={loadAll} />
 
-        <section>
-          <h2>Students</h2>
-          <ul>
-            {students.map((s) => (
-              <li key={s.id}>
-                {s.full_name} — {schoolsById.get(s.school_id)?.name ?? `School ${s.school_id}`}
-                {s.stop_id != null &&
-                  ` (${stopsById.get(s.stop_id)?.label ?? `Stop ${s.stop_id}`})`}
-                {' — default: '}
-                {s.default_ridership === 'rides' ? 'rides' : 'does not ride'}
-              </li>
-            ))}
-          </ul>
-          {canCreate && (
-            <form onSubmit={(event) => void handleCreateStudent(event)}>
-              <label htmlFor="student-name">Student name</label>
-              <input
-                id="student-name"
-                value={studentName}
-                onChange={(event) => setStudentName(event.target.value)}
-                required
-              />
-              <label htmlFor="student-school">School</label>
-              <select
-                id="student-school"
-                value={studentSchoolId}
-                onChange={(event) => setStudentSchoolId(event.target.value)}
-                required
-              >
-                <option value="">Select a school</option>
-                {schools.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-              <label htmlFor="student-stop">Stop (optional)</label>
-              <select
-                id="student-stop"
-                value={studentStopId}
-                onChange={(event) => setStudentStopId(event.target.value)}
-              >
-                <option value="">Not yet assigned</option>
-                {stops.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-              <label htmlFor="student-default-ridership">Default ridership</label>
-              <select
-                id="student-default-ridership"
-                value={studentDefaultRidership}
-                onChange={(event) =>
-                  setStudentDefaultRidership(event.target.value as RidershipDefault)
-                }
-              >
-                <option value="rides">Rides every school day</option>
-                <option value="does_not_ride">Does not ride unless requested</option>
-              </select>
-              {studentError && (
-                <p role="alert" className="error">
-                  {studentError}
-                </p>
-              )}
-              <button type="submit" disabled={isSavingStudent}>
-                {isSavingStudent ? 'Saving…' : 'Add student'}
-              </button>
-            </form>
-          )}
-        </section>
+        <StudentsSection
+          students={students}
+          schools={schools}
+          stops={stops}
+          canEdit={canCreate}
+          onChanged={loadAll}
+        />
       </TabPanel>
 
       <TabPanel id="fleet" activeId={activeTab} idPrefix={TAB_PREFIX}>
