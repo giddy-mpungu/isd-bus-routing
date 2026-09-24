@@ -438,6 +438,14 @@ legend {
   flex: none;
 }
 
+/* An assignment whose crew became unavailable after it was made. */
+.availability-issue {
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--danger-700);
+  max-width: 260px;
+}
+
 /* ==========================================================================
    Tabs — components/Tabs.tsx. A segmented-control tab bar; on a narrow
    screen it wraps onto a second row so every tab stays visible (a

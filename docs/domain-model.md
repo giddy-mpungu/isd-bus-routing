@@ -632,6 +632,42 @@ status only -- nothing about which stops or which students.
   list with an explicit "not a route order" note, a no-riders message,
   or the ambiguous note -- whichever applies.
 
+## Availability as a scheduling constraint (spec sections 2.1, 5, 13)
+
+`services/api/src/isd_api/availability.py` is the single rule for whether
+a crew can take work at a given time. Everything that gives a crew work
+uses it, so they can't disagree: the solver (`POST /schedule`), manual
+reassignment (`PATCH /schedule/assignments/{id}`), crew creation and
+repointing (`POST`/`PATCH /crews`), template generation, and substitute
+ranking.
+
+- **Out of service / deactivated**: a crew whose `Vehicle.is_active` or
+  `Driver.is_active` is false takes no new work. New crews can't be
+  created on such resources (400). Template generation skips those
+  templates and reports them in `crews_skipped_out_of_service_template_ids`.
+- **Absences**: a `DriverAbsence` covering the crew's whole available
+  window makes the crew unavailable for the day. A partial-day absence
+  becomes a solver busy interval (the same mechanism locked assignments
+  use), so the driver keeps work outside it.
+- **Locked assignments are flagged, not silently kept.** A lock is a human
+  override (spec §21), so a re-solve never moves a locked assignment, even
+  when its crew has since become unavailable. Instead,
+  `AssignmentRead.availability_issue` explains why (e.g. `driver absent
+  (sick leave, 00:00-23:59)`), and the Schedule page shows it as a
+  "Needs cover" badge. Manually reassigning onto an unavailable crew is
+  rejected (422) with the same reason.
+- **Substitutes**: ranking leaves out drivers who are deactivated or absent
+  during the affected assignment, and repointing a crew to such a driver
+  is rejected (409).
+
+Before PR #45 none of this held. The solver used every crew on the date,
+and absences only suppressed template generation when they covered the
+whole window. So an absence entered after crews existed, any partial-day
+absence, and any out-of-service bus were all silently scheduled. That was
+found by the 2026-09-24 spec re-review and reproduced by a scripted
+probe; `tests/test_availability.py` pins every case above, and each of
+its tests fails on the pre-fix code.
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)

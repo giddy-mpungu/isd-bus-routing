@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from isd_api.availability import driver_conflict_for_window, resource_unavailable_reason
 from isd_api.db import get_db
 from isd_api.models import Crew, Driver, Role, User, Vehicle
 from isd_api.routers.announcements import _maybe_create_substitution_announcement
@@ -29,10 +30,19 @@ def create_crew(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="available_window_earliest must be <= available_window_latest",
         )
-    if db.get(Driver, payload.driver_id) is None:
+    driver = db.get(Driver, payload.driver_id)
+    if driver is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown driver_id")
-    if db.get(Vehicle, payload.vehicle_id) is None:
+    vehicle = db.get(Vehicle, payload.vehicle_id)
+    if vehicle is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown vehicle_id")
+    # Spec section 2.1: never pair an out-of-service vehicle or a
+    # deactivated driver into a crew in the first place.
+    unavailable = resource_unavailable_reason(driver, vehicle)
+    if unavailable is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot create crew: {unavailable}"
+        )
 
     crew = Crew(
         service_date=payload.service_date,
@@ -88,8 +98,24 @@ def update_crew_driver(
     crew = db.get(Crew, crew_id)
     if crew is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Crew not found")
-    if db.get(Driver, payload.driver_id) is None:
+    new_driver = db.get(Driver, payload.driver_id)
+    if new_driver is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown driver_id")
+    # The substitute must actually be free for every assignment the crew
+    # carries (spec section 13: availability is a scheduling constraint).
+    for assignment in crew.assignments:
+        conflict = driver_conflict_for_window(
+            db,
+            new_driver,
+            crew.service_date,
+            assignment.start_minute,
+            assignment.end_minute,
+        )
+        if conflict is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cannot assign {new_driver.full_name} to this crew: {conflict}",
+            )
 
     driver_changed = payload.driver_id != crew.driver_id
     crew.driver_id = payload.driver_id

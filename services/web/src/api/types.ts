@@ -108,6 +108,9 @@ export interface Assignment {
   end_minute: number
   explanation_text: string
   locked: boolean
+  // Set when the crew became unavailable after this assignment was made
+  // (driver absent or deactivated, vehicle out of service).
+  availability_issue: string | null
 }
 
 export interface ScheduleResult {
@@ -633,6 +636,7 @@ export interface GenerateFromTemplatesResult {
   crews_created: number
   crews_already_existing: number
   crews_skipped_absent_driver_ids: number[]
+  crews_skipped_out_of_service_template_ids: number[]
 }
 
 export type SisImportAction =

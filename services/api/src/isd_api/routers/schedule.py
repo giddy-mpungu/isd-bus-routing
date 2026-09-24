@@ -43,6 +43,11 @@ from isd_solver import (
 from sqlalchemy.orm import Session
 
 from isd_api.audit import record as record_audit
+from isd_api.availability import (
+    assignment_availability_issue,
+    conflict_for_window,
+    crew_availability,
+)
 from isd_api.config import settings
 from isd_api.db import get_db
 from isd_api.models import (
@@ -298,6 +303,10 @@ def _hard_constraint_violation(
             f"window [{crew.available_window_earliest}, {crew.available_window_latest}]"
         )
 
+    unavailable = conflict_for_window(db, crew, start_minute, end_minute)
+    if unavailable is not None:
+        return f"Crew {crew.id} is unavailable then: {unavailable}"
+
     others = db.query(Assignment).filter(Assignment.crew_id == crew.id)
     for other in others:
         if other.id == exclude_assignment_id:
@@ -348,15 +357,35 @@ def run_schedule(
         locked_by_crew_id.setdefault(a.crew_id, []).append(a)
 
     unlocked_jobs = [j for j in jobs if int(j.id) not in locked_run_ids]
+
+    # Availability (spec sections 2.1, 13): a crew whose bus is out of
+    # service, whose driver is deactivated, or whose driver is absent for
+    # the whole window takes no new work; a partial-day absence becomes
+    # busy time alongside the locked assignments. A *locked* assignment on
+    # such a crew is left in place (the lock is a human override) but is
+    # flagged via AssignmentRead.availability_issue, never silently kept.
+    availability = {c.id: crew_availability(db, c) for c in db_crews}
+    unavailable = {
+        crew_id: a.unavailable_reason
+        for crew_id, a in availability.items()
+        if a.unavailable_reason is not None
+    }
     solvable_crews = [
         replace(
             c,
             busy_intervals=tuple(
-                SolverTimeWindow(earliest=a.start_minute, latest=a.end_minute)
-                for a in locked_by_crew_id.get(int(c.id), [])
+                [
+                    SolverTimeWindow(earliest=a.start_minute, latest=a.end_minute)
+                    for a in locked_by_crew_id.get(int(c.id), [])
+                ]
+                + [
+                    SolverTimeWindow(earliest=w.start_minute, latest=w.end_minute)
+                    for w in availability[int(c.id)].busy_windows
+                ]
             ),
         )
         for c in crews
+        if int(c.id) not in unavailable
     ]
 
     if not unlocked_jobs:
@@ -364,7 +393,14 @@ def run_schedule(
         # solve; return the existing schedule unchanged, not an error.
         return ScheduleResult(
             crews_used=len({a.crew_id for a in locked_assignments}),
-            assignments=[AssignmentRead.model_validate(a) for a in locked_assignments],
+            assignments=[_assignment_read(db, a) for a in locked_assignments],
+        )
+
+    if not solvable_crews:
+        reasons = "; ".join(f"crew {cid}: {why}" for cid, why in sorted(unavailable.items()))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"No available crews for service_date={payload.service_date} ({reasons})",
         )
 
     fallback_estimator = straight_line_deadhead_estimator(
@@ -454,7 +490,7 @@ def run_schedule(
     all_assignments = locked_assignments + created
     return ScheduleResult(
         crews_used=len({a.crew_id for a in all_assignments}),
-        assignments=[AssignmentRead.model_validate(a) for a in all_assignments],
+        assignments=[_assignment_read(db, a) for a in all_assignments],
         total_deadhead_minutes=result.total_deadhead_minutes,
         total_arrival_buffer_minutes=result.total_arrival_buffer_minutes,
     )
@@ -601,7 +637,7 @@ def list_assignments(
     service_date: date,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[Assignment]:
+) -> list[AssignmentRead]:
     """spec section 17 access scoping: admin/dispatcher see everything;
     school_admin sees only assignments for runs at their school; driver
     sees only assignments for their own crew; student/parent have no
@@ -636,7 +672,13 @@ def list_assignments(
             detail=f"Role '{current_user.role.value}' cannot list assignments directly",
         )
 
-    return list(query.order_by(Assignment.id).all())
+    return [_assignment_read(db, a) for a in query.order_by(Assignment.id).all()]
+
+
+def _assignment_read(db: Session, assignment: Assignment) -> AssignmentRead:
+    read = AssignmentRead.model_validate(assignment)
+    read.availability_issue = assignment_availability_issue(db, assignment)
+    return read
 
 
 def _stop_roster_for(db: Session, run: DBRun) -> tuple[bool, list[AssignmentStopRoster]]:

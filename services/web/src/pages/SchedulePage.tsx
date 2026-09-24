@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
+import { Badge } from '../components/Badge'
 import type {
   Absence,
   AbsenceReason,
@@ -176,6 +177,12 @@ export function SchedulePage() {
           (id) => driversById.get(id)?.full_name ?? `Driver #${id}`,
         )
         parts.push(`skipped crew for absent driver(s): ${names.join(', ')}`)
+      }
+      const outOfService = r.crews_skipped_out_of_service_template_ids.length
+      if (outOfService > 0) {
+        parts.push(
+          `skipped ${outOfService} crew template(s) whose bus is out of service or driver is deactivated`,
+        )
       }
       setStatusMessage(`${parts.join('; ')}. Review the day, then run the schedule.`)
       await loadAll(serviceDate)
@@ -553,6 +560,11 @@ export function SchedulePage() {
                       )
                     })}
                   </select>
+                  {assignment.availability_issue && (
+                    <div className="availability-issue">
+                      <Badge tone="danger">Needs cover</Badge> {assignment.availability_issue}
+                    </div>
+                  )}
                 </td>
                 <td>
                   {formatMinuteOfDay(assignment.start_minute)}
