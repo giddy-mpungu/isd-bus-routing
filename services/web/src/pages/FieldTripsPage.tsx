@@ -283,6 +283,39 @@ export function FieldTripsPage() {
     }
   }
 
+  // --- Delay management (spec section 12.2) ---
+  const [returnDraft, setReturnDraft] = useState<Record<number, string>>({})
+  const [delayImpact, setDelayImpact] = useState<Record<number, string[]>>({})
+  const [delayErrors, setDelayErrors] = useState<Record<number, string>>({})
+  const [updatingReturnTripId, setUpdatingReturnTripId] = useState<number | null>(null)
+
+  async function handleUpdateReturn(trip: FieldTrip) {
+    const draft = returnDraft[trip.id]
+    if (!draft || draft === trip.expected_return_at.slice(0, 16)) return
+    setUpdatingReturnTripId(trip.id)
+    setDelayErrors((prev) => ({ ...prev, [trip.id]: '' }))
+    try {
+      await api.updateFieldTrip(trip.id, { expected_return_at: draft })
+      // Re-evaluate straight away: which regular routes does the new
+      // return time take this driver or bus away from?
+      const check = await api.getFieldTripConflicts(trip.id)
+      setDelayImpact((prev) => ({ ...prev, [trip.id]: check.routes_needing_cover }))
+      setReturnDraft((prev) => {
+        const next = { ...prev }
+        delete next[trip.id]
+        return next
+      })
+      await loadAll(departureDate)
+    } catch (err) {
+      setDelayErrors((prev) => ({
+        ...prev,
+        [trip.id]: err instanceof ApiError ? err.message : 'Failed to update the return time.',
+      }))
+    } finally {
+      setUpdatingReturnTripId(null)
+    }
+  }
+
   async function handleSetStatus(trip: FieldTrip, status: TripStatus) {
     setStatusUpdatingTripId(trip.id)
     try {
@@ -354,6 +387,51 @@ export function FieldTripsPage() {
                   ? (vehiclesById.get(trip.assigned_vehicle_id)?.label ?? 'Unknown')
                   : 'Unassigned'}
               </div>
+              {(trip.assigned_driver_id != null || trip.assigned_vehicle_id != null) && (
+                <div className="field-trip-delay">
+                  <label htmlFor={`field-trip-return-${trip.id}`}>Revised return time</label>
+                  <input
+                    id={`field-trip-return-${trip.id}`}
+                    type="datetime-local"
+                    value={returnDraft[trip.id] ?? trip.expected_return_at.slice(0, 16)}
+                    onChange={(event) =>
+                      setReturnDraft((prev) => ({ ...prev, [trip.id]: event.target.value }))
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleUpdateReturn(trip)}
+                    disabled={
+                      !returnDraft[trip.id] ||
+                      returnDraft[trip.id] === trip.expected_return_at.slice(0, 16) ||
+                      updatingReturnTripId === trip.id
+                    }
+                  >
+                    {updatingReturnTripId === trip.id ? 'Updating…' : 'Update return time'}
+                  </button>
+                  {delayErrors[trip.id] && (
+                    <p role="alert" className="error">
+                      {delayErrors[trip.id]}
+                    </p>
+                  )}
+                  {delayImpact[trip.id] && delayImpact[trip.id].length === 0 && (
+                    <p className="status">No regular routes are affected.</p>
+                  )}
+                  {delayImpact[trip.id] && delayImpact[trip.id].length > 0 && (
+                    <div role="alert" className="field-trip-delay-impact">
+                      <p>
+                        These routes now need cover. They&apos;re flagged on the Schedule page for
+                        that day:
+                      </p>
+                      <ul>
+                        {delayImpact[trip.id].map((route, i) => (
+                          <li key={i}>{route}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="field-trip-assign-form">
                 <label htmlFor={`field-trip-driver-${trip.id}`}>Candidate driver</label>
                 <select

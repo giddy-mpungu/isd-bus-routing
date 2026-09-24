@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
@@ -179,6 +179,8 @@ describe('FieldTripsPage', () => {
   it('checking conflicts shows the returned list and disables Assign', async () => {
     vi.mocked(api.getFieldTripConflicts).mockResolvedValue({
       conflicts: ['Regular route at Riverside Elementary (360-410) overlaps this trip'],
+      routes_needing_cover: [],
+      turnaround_minutes: 15,
     })
     render(<FieldTripsPage />)
     await waitFor(() => expect(screen.getByText(/Science Department/)).toBeInTheDocument())
@@ -253,5 +255,61 @@ describe('FieldTripsPage', () => {
         'departure_at must be before expected_return_at',
       ),
     )
+  })
+
+  it('offers no return-time control for a trip that has no driver or bus yet', async () => {
+    render(<FieldTripsPage />)
+    await waitFor(() => expect(screen.getByText(/Science Department/)).toBeInTheDocument())
+    expect(screen.queryByLabelText('Revised return time')).not.toBeInTheDocument()
+  })
+
+  it('delaying an assigned trip saves the new return time and lists routes that now need cover', async () => {
+    vi.mocked(api.getFieldTrips).mockResolvedValue([
+      { ...trip, status: 'assigned', assigned_driver_id: driverRecord.id },
+    ])
+    const route =
+      'Regular route at Riverside Elementary on 2026-10-08 (14:15-14:45) overlaps this trip'
+    vi.mocked(api.updateFieldTrip).mockResolvedValue({ ...trip, status: 'assigned' })
+    vi.mocked(api.getFieldTripConflicts).mockResolvedValue({
+      conflicts: [route],
+      routes_needing_cover: [route],
+      turnaround_minutes: 15,
+    })
+    render(<FieldTripsPage />)
+    const input = await screen.findByLabelText('Revised return time')
+    const user = userEvent.setup()
+
+    // Unchanged, there's nothing to save.
+    expect(screen.getByRole('button', { name: 'Update return time' })).toBeDisabled()
+    fireEvent.change(input, { target: { value: `${today()}T17:30` } })
+    await user.click(screen.getByRole('button', { name: 'Update return time' }))
+
+    await waitFor(() =>
+      expect(api.updateFieldTrip).toHaveBeenCalledWith(trip.id, {
+        expected_return_at: `${today()}T17:30`,
+      }),
+    )
+    expect(api.getFieldTripConflicts).toHaveBeenCalledWith(trip.id)
+    expect(await screen.findByText(/These routes now need cover/)).toBeInTheDocument()
+    expect(screen.getByText(route)).toBeInTheDocument()
+  })
+
+  it('says so when a delay affects no regular routes', async () => {
+    vi.mocked(api.getFieldTrips).mockResolvedValue([
+      { ...trip, status: 'assigned', assigned_vehicle_id: vehicle.id },
+    ])
+    vi.mocked(api.updateFieldTrip).mockResolvedValue({ ...trip, status: 'assigned' })
+    vi.mocked(api.getFieldTripConflicts).mockResolvedValue({
+      conflicts: [],
+      routes_needing_cover: [],
+      turnaround_minutes: 15,
+    })
+    render(<FieldTripsPage />)
+    const input = await screen.findByLabelText('Revised return time')
+    const user = userEvent.setup()
+    fireEvent.change(input, { target: { value: `${today()}T16:45` } })
+    await user.click(screen.getByRole('button', { name: 'Update return time' }))
+
+    expect(await screen.findByText('No regular routes are affected.')).toBeInTheDocument()
   })
 })
