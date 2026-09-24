@@ -438,6 +438,40 @@ legend {
   flex: none;
 }
 
+/* Field-trip delay management (spec 12.2). */
+.field-trip-delay {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0.6rem 0;
+}
+
+.field-trip-delay label {
+  margin-top: 0;
+}
+
+.field-trip-delay-impact {
+  flex-basis: 100%;
+  background: var(--warning-50);
+  border: 1px solid var(--warning-500);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.85rem;
+  color: var(--warning-700);
+  font-size: 0.88rem;
+}
+
+.field-trip-delay-impact p {
+  margin: 0 0 0.25rem;
+  color: inherit;
+  font-weight: 600;
+}
+
+.field-trip-delay-impact ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
 /* An assignment whose crew became unavailable after it was made. */
 .availability-issue {
   margin-top: 0.4rem;

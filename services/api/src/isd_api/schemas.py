@@ -767,6 +767,12 @@ class FieldTripUpdate(BaseModel):
 
 class FieldTripConflictCheck(BaseModel):
     conflicts: list[str]
+    # The subset of `conflicts` that are regular routes the trip takes the
+    # driver or bus away from. They don't block assignment; each is
+    # flagged "needs cover" on the schedule instead (spec section 12.2).
+    routes_needing_cover: list[str] = []
+    # Minutes held before departure and after return (pre/post-trip).
+    turnaround_minutes: int = 0
 
 
 class FieldTripObservedDurationRead(BaseModel):

@@ -550,6 +550,11 @@ export interface FieldTripUpdate {
 
 export interface FieldTripConflictCheck {
   conflicts: string[]
+  // Regular routes the trip takes the driver or bus away from. They don't
+  // block assignment; each is flagged "Needs cover" on the schedule.
+  routes_needing_cover: string[]
+  // Minutes held before departure and after return (pre/post-trip).
+  turnaround_minutes: number
 }
 
 export interface FieldTripObservedDuration {

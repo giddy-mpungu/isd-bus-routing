@@ -1,33 +1,28 @@
-"""spec section 12: field trips and special assignments, scheduled
-through the same system as regular routes but NOT run through the
-CP-SAT solver -- assigning a driver/vehicle here is a manual
-dispatcher decision (spec section 21), the same shape as Phase 6's
-substitute-coverage ranking.
+"""spec section 12: field trips and special assignments.
 
-Deliberately scoped:
-- **Overnight (multi-day) trips are supported** by splitting a trip's
-  `[departure_at, expected_return_at)` span into one (date,
-  start_minute, end_minute) window per calendar day it touches (see
-  `_daily_windows`) -- a middle day spans the whole day (0-1439), the
-  first/last days start/end at the actual departure/return
-  minute-of-day. Conflict-checking (below) compares these window lists
-  directly, rather than requiring same-day trips as the very first
-  slice did.
-- **Conflict detection (spec section 12.1) only checks what this
-  system actually models**: overlapping regular-route `Assignment`s
-  and overlapping other `FieldTrip`s, for the proposed driver and/or
-  vehicle. Training, maintenance, and required-break conflicts are
-  named in the spec but have no corresponding entity in this schema
-  (no Training or Maintenance model exists) -- checking them would be
-  fabricating a signal this system doesn't have, the same reasoning
-  PR #16 used to skip a driver-license-vs-vehicle-type check.
-- **Spec section 12.2's "delay management" is not a separate
-  mechanism.** `GET /field-trips/{id}/conflicts` is the reevaluation:
-  call it again after `PATCH`ing `expected_return_at` (a delay) to see
-  whether the trip's assigned driver/vehicle now conflicts with a
-  regular route -- there's no new "flag as needing substitute" state;
-  the dispatcher acts on what the conflict list shows, using the
-  existing `GET /drivers/{id}/substitute-candidates` flow if needed.
+Assigning a driver and vehicle to a trip is a manual dispatcher decision
+(spec section 21), but once assigned, a trip is a job in the same
+scheduling engine as regular routes: `isd_api.availability` treats it as
+busy time for that driver and that bus, padded by
+FIELD_TRIP_TURNAROUND_MINUTES on each side. So the solver, manual
+reassignment, crew repointing and substitute ranking all respect it. A
+trip whose actual return has been recorded uses that; otherwise its
+expected return.
+
+- **Overnight (multi-day) trips** are split into one (date, start_minute,
+  end_minute) window per calendar day (`availability.daily_windows`).
+- **Conflicts (section 12.1)**: out-of-service bus, deactivated or absent
+  driver, another field trip, and regular routes. The first four refuse
+  the assignment (409). A regular-route clash doesn't: the dispatcher may
+  prioritise the trip, and that route is then flagged "needs cover".
+  Training, maintenance and required-break conflicts have no entity in
+  this schema yet, so they aren't checked.
+- **Delay management (section 12.2)**: a changed return time is always
+  accepted, since it reports reality. Any regular route it now overlaps
+  immediately shows `availability_issue` ("on field trip #N ...") on the
+  schedule. `GET /field-trips/{id}/conflicts` lists those routes in
+  `routes_needing_cover`, and a re-solve moves unlocked ones to another
+  crew.
 """
 
 from __future__ import annotations
@@ -39,6 +34,13 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from isd_api.audit import record as record_audit
+from isd_api.availability import (
+    FIELD_TRIP_TURNAROUND_MINUTES,
+    daily_windows,
+    driver_absences,
+    trip_return,
+    trip_windows,
+)
 from isd_api.db import get_db
 from isd_api.models import (
     Assignment,
@@ -47,7 +49,6 @@ from isd_api.models import (
     Driver,
     FieldTrip,
     Role,
-    Run,
     TripStatus,
     User,
     Vehicle,
@@ -76,26 +77,6 @@ def _naive(dt: datetime) -> datetime:
     read back from SQLite, which round-trips as naive regardless of
     what was stored."""
     return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
-
-
-def _minute_of_day(dt: datetime) -> int:
-    return dt.hour * 60 + dt.minute
-
-
-def _daily_windows(start: datetime, end: datetime) -> list[tuple[date, int, int]]:
-    """Splits `[start, end)` into one (date, start_minute, end_minute)
-    window per calendar day it touches -- a same-day trip produces
-    exactly one window (identical to the pre-overnight-support
-    behavior); a multi-day trip produces one window per day, with any
-    day strictly between the first and last spanning the whole day."""
-    windows: list[tuple[date, int, int]] = []
-    current_date = start.date()
-    while current_date <= end.date():
-        day_start = _minute_of_day(start) if current_date == start.date() else 0
-        day_end = _minute_of_day(end) if current_date == end.date() else 1439
-        windows.append((current_date, day_start, day_end))
-        current_date += timedelta(days=1)
-    return windows
 
 
 def _windows_overlap(a: list[tuple[date, int, int]], b: list[tuple[date, int, int]]) -> bool:
@@ -268,6 +249,34 @@ def update_field_trip(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown destination_profile_id"
         )
 
+    # Spec section 12.1: assigning a driver or bus that can't do the trip
+    # (out of service, deactivated, absent, or already on another trip) is
+    # refused. A clash with a regular route is not: that route gets flagged
+    # as needing cover instead. A changed return time is always accepted
+    # (it reports reality); what it now clashes with is surfaced by the
+    # conflicts check and the schedule's "needs cover" flags (section 12.2).
+    # Checked against the prospective values, before anything is changed.
+    if payload.assigned_driver_id is not None or payload.assigned_vehicle_id is not None:
+        returns_at = payload.actual_return_at or trip.actual_return_at
+        returns_at = returns_at or payload.expected_return_at or trip.expected_return_at
+        pad = timedelta(minutes=FIELD_TRIP_TURNAROUND_MINUTES)
+        blocking, _ = _trip_conflicts(
+            db,
+            trip,
+            payload.assigned_driver_id
+            if payload.assigned_driver_id is not None
+            else trip.assigned_driver_id,
+            payload.assigned_vehicle_id
+            if payload.assigned_vehicle_id is not None
+            else trip.assigned_vehicle_id,
+            windows=daily_windows(trip.departure_at - pad, returns_at + pad),
+        )
+        if blocking:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot assign this trip: " + "; ".join(blocking),
+            )
+
     before_state = {
         "status": trip.status.value,
         "assigned_driver_id": trip.assigned_driver_id,
@@ -315,6 +324,97 @@ def update_field_trip(
     return trip
 
 
+def _hhmm(minute: int) -> str:
+    return f"{minute // 60:02d}:{minute % 60:02d}"
+
+
+def _trip_conflicts(
+    db: Session,
+    trip: FieldTrip,
+    driver_id: int | None,
+    vehicle_id: int | None,
+    *,
+    windows: list[tuple[date, int, int]] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Spec section 12.1 for a proposed driver and/or vehicle.
+
+    Returns (blocking, route_overlaps). Blocking conflicts make the
+    assignment invalid: an out-of-service bus, a deactivated or absent
+    driver, or another field trip. Route overlaps are regular assignments
+    the trip would take the driver or bus away from; they don't block,
+    because the dispatcher may prioritise the trip, but each such route
+    is then flagged "needs cover" on the schedule (section 12.2).
+    Both use the trip's window padded by FIELD_TRIP_TURNAROUND_MINUTES."""
+    windows = windows if windows is not None else trip_windows(trip)
+    blocking: list[str] = []
+    route_overlaps: list[str] = []
+
+    driver = db.get(Driver, driver_id) if driver_id is not None else None
+    vehicle = db.get(Vehicle, vehicle_id) if vehicle_id is not None else None
+    if vehicle is not None and not vehicle.is_active:
+        blocking.append(f"Vehicle {vehicle.label} is out of service")
+    if driver is not None:
+        if not driver.is_active:
+            blocking.append(f"Driver {driver.full_name} is deactivated")
+        for day, start, end in windows:
+            for absence in driver_absences(db, driver.id, day):
+                if start < absence.end_minute and absence.start_minute < end:
+                    blocking.append(
+                        f"Driver {driver.full_name} is absent on {day} "
+                        f"({absence.reason.value.replace('_', ' ')}, "
+                        f"{_hhmm(absence.start_minute)}-{_hhmm(absence.end_minute)})"
+                    )
+
+    trip_dates = {d for d, _, _ in windows}
+    resource_filters = []
+    if driver_id is not None:
+        resource_filters.append(Crew.driver_id == driver_id)
+    if vehicle_id is not None:
+        resource_filters.append(Crew.vehicle_id == vehicle_id)
+    if resource_filters:
+        assignments = (
+            db.query(Assignment)
+            .join(Crew, Assignment.crew_id == Crew.id)
+            .filter(Crew.service_date.in_(trip_dates), or_(*resource_filters))
+            .order_by(Crew.service_date, Assignment.start_minute)
+            .all()
+        )
+        for assignment in assignments:
+            window = [
+                (assignment.crew.service_date, assignment.start_minute, assignment.end_minute)
+            ]
+            if _windows_overlap(windows, window):
+                route_overlaps.append(
+                    f"Regular route at {assignment.run.school.name} on "
+                    f"{assignment.crew.service_date} ({_hhmm(assignment.start_minute)}-"
+                    f"{_hhmm(assignment.end_minute)}) overlaps this trip"
+                )
+
+    trip_filters = []
+    if driver_id is not None:
+        trip_filters.append(FieldTrip.assigned_driver_id == driver_id)
+    if vehicle_id is not None:
+        trip_filters.append(FieldTrip.assigned_vehicle_id == vehicle_id)
+    if trip_filters:
+        others = (
+            db.query(FieldTrip)
+            .filter(
+                FieldTrip.id != trip.id,
+                FieldTrip.status != TripStatus.COMPLETED,
+                or_(*trip_filters),
+            )
+            .order_by(FieldTrip.departure_at)
+        )
+        for other in others:
+            if _windows_overlap(windows, trip_windows(other)):
+                blocking.append(
+                    f"Field trip #{other.id} to {other.destination} "
+                    f"({other.departure_at.strftime('%Y-%m-%d %H:%M')}-"
+                    f"{trip_return(other).strftime('%Y-%m-%d %H:%M')}) overlaps this trip"
+                )
+    return blocking, route_overlaps
+
+
 @router.get("/{trip_id}/conflicts", response_model=FieldTripConflictCheck)
 def check_field_trip_conflicts(
     trip_id: int,
@@ -326,70 +426,15 @@ def check_field_trip_conflicts(
     """spec section 12.1, checked BEFORE assigning (per driver_id/
     vehicle_id query params, which need not match the trip's current
     assignment yet) -- and re-checkable after any PATCH as section
-    12.2's delay-management reevaluation. See module docstring for
-    what this deliberately does and doesn't check."""
+    12.2's delay-management reevaluation."""
     trip = db.get(FieldTrip, trip_id)
     if trip is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field trip not found")
     driver_id = driver_id if driver_id is not None else trip.assigned_driver_id
     vehicle_id = vehicle_id if vehicle_id is not None else trip.assigned_vehicle_id
-    if driver_id is None and vehicle_id is None:
-        return FieldTripConflictCheck(conflicts=[])
-
-    trip_windows = _daily_windows(trip.departure_at, trip.expected_return_at)
-    trip_dates = {d for d, _, _ in trip_windows}
-    conflicts: list[str] = []
-
-    crew_query = db.query(Crew).filter(Crew.service_date.in_(trip_dates))
-    if driver_id is not None and vehicle_id is not None:
-        crew_query = crew_query.filter(
-            or_(Crew.driver_id == driver_id, Crew.vehicle_id == vehicle_id)
-        )
-    elif driver_id is not None:
-        crew_query = crew_query.filter(Crew.driver_id == driver_id)
-    else:
-        crew_query = crew_query.filter(Crew.vehicle_id == vehicle_id)
-    crew_ids = [c.id for c in crew_query.all()]
-    if crew_ids:
-        overlapping = (
-            db.query(Assignment)
-            .join(Run, Assignment.run_id == Run.id)
-            .filter(Assignment.crew_id.in_(crew_ids))
-            .all()
-        )
-        for assignment in overlapping:
-            assignment_window = [
-                (assignment.crew.service_date, assignment.start_minute, assignment.end_minute)
-            ]
-            if _windows_overlap(trip_windows, assignment_window):
-                conflicts.append(
-                    f"Regular route at {assignment.run.school.name} on "
-                    f"{assignment.crew.service_date} ({assignment.start_minute}-"
-                    f"{assignment.end_minute}) overlaps this trip"
-                )
-
-    other_trips_query = db.query(FieldTrip).filter(
-        FieldTrip.id != trip_id,
-        FieldTrip.status != TripStatus.COMPLETED,
+    blocking, route_overlaps = _trip_conflicts(db, trip, driver_id, vehicle_id)
+    return FieldTripConflictCheck(
+        conflicts=blocking + route_overlaps,
+        routes_needing_cover=route_overlaps,
+        turnaround_minutes=FIELD_TRIP_TURNAROUND_MINUTES,
     )
-    if driver_id is not None and vehicle_id is not None:
-        other_trips_query = other_trips_query.filter(
-            or_(
-                FieldTrip.assigned_driver_id == driver_id,
-                FieldTrip.assigned_vehicle_id == vehicle_id,
-            )
-        )
-    elif driver_id is not None:
-        other_trips_query = other_trips_query.filter(FieldTrip.assigned_driver_id == driver_id)
-    else:
-        other_trips_query = other_trips_query.filter(FieldTrip.assigned_vehicle_id == vehicle_id)
-    for other in other_trips_query.all():
-        other_windows = _daily_windows(other.departure_at, other.expected_return_at)
-        if _windows_overlap(trip_windows, other_windows):
-            conflicts.append(
-                f"Field trip #{other.id} to {other.destination} "
-                f"({other.departure_at.strftime('%Y-%m-%d %H:%M')}-"
-                f"{other.expected_return_at.strftime('%Y-%m-%d %H:%M')}) overlaps this trip"
-            )
-
-    return FieldTripConflictCheck(conflicts=conflicts)

@@ -659,6 +659,19 @@ ranking.
 - **Substitutes**: ranking leaves out drivers who are deactivated or absent
   during the affected assignment, and repointing a crew to such a driver
   is rejected (409).
+- **Field trips (PR #46)**: a trip's assigned driver *and* assigned bus are
+  busy from `departure_at - 15 min` to `return + 15 min`
+  (`FIELD_TRIP_TURNAROUND_MINUTES`, for pre/post-trip and yard travel; the
+  recorded actual return is used once known). Trips therefore block the
+  solver and every other assignment path exactly like absences. Assigning a
+  trip to an out-of-service bus, a deactivated or absent driver, or a
+  driver/bus already on an overlapping trip is refused (409). A clash with
+  a *regular route* is allowed, and that route is flagged instead; this is
+  spec §12.2's delay management. Delaying a trip's return (Field Trips page
+  → "Revised return time") immediately flags each route it now overlaps
+  ("Needs cover · on field trip #N …"). `GET /field-trips/{id}/conflicts`
+  lists them in `routes_needing_cover`, and a re-solve moves the unlocked
+  ones.
 
 Before PR #45 none of this held. The solver used every crew on the date,
 and absences only suppressed template generation when they covered the
