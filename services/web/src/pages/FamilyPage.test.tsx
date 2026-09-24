@@ -29,6 +29,8 @@ const child: FamilyMember = {
   service_date: today(),
   riding_am: true,
   riding_pm: true,
+  am_changes_closed: null,
+  pm_changes_closed: null,
 }
 
 describe('FamilyPage', () => {
@@ -107,15 +109,14 @@ describe('FamilyPage', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('your own family'))
   })
 
-  it('locating the AM bus shows driver/vehicle/coordinates when available', async () => {
+  it('locating the AM bus shows the bus and its approximate position, never the driver', async () => {
     vi.mocked(api.getMyFamily).mockResolvedValue([child])
     const position: BusPosition = {
       available: true,
       ambiguous: false,
-      location_lat: 29.71,
-      location_lon: -95.41,
+      location_lat: 29.712,
+      location_lon: -95.419,
       recorded_at: '2026-09-01T12:00:00Z',
-      driver_full_name: 'Jordan Driver',
       vehicle_label: 'Bus 101',
     }
     vi.mocked(api.getBusPosition).mockResolvedValue(position)
@@ -126,7 +127,10 @@ describe('FamilyPage', () => {
     await user.click(screen.getAllByRole('button', { name: 'Locate bus' })[0])
 
     expect(api.getBusPosition).toHaveBeenCalledWith(10, today(), 'am')
-    await waitFor(() => expect(screen.getByText(/Jordan Driver, Bus 101/)).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByText(/Bus 101 was near 29\.712, -95\.419 at /)).toBeInTheDocument(),
+    )
+    expect(screen.queryByText(/Jordan/)).not.toBeInTheDocument()
   })
 
   it('locating the bus shows an ambiguous notice when multiple runs share the leg', async () => {
@@ -137,7 +141,6 @@ describe('FamilyPage', () => {
       location_lat: null,
       location_lon: null,
       recorded_at: null,
-      driver_full_name: null,
       vehicle_label: null,
     })
     render(<FamilyPage />)
@@ -151,5 +154,20 @@ describe('FamilyPage', () => {
         screen.getByText(/more than one run serves this school\/leg today/),
       ).toBeInTheDocument(),
     )
+  })
+
+  it('a leg past the cutoff cannot be changed and says why', async () => {
+    vi.mocked(api.getMyFamily).mockResolvedValue([
+      {
+        ...child,
+        am_changes_closed:
+          "Changes to today's AM ride closed at 06:00. Please contact the transportation office.",
+      },
+    ])
+    render(<FamilyPage />)
+
+    expect(await screen.findByText(/AM ride closed at 06:00/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mark not riding AM' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Mark not riding PM' })).toBeEnabled()
   })
 })

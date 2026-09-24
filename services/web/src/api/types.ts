@@ -124,6 +124,20 @@ export interface OptimizationSettingsUpdate {
   crews_used_weight: number
   deadhead_minutes_weight: number
   arrival_buffer_weight: number
+  // Spec section 16: a hard floor on spare minutes between consecutive
+  // runs on one crew, after travel. 0 = none.
+  minimum_buffer_minutes: number
+}
+
+// Spec section 4.4: district ridership reporting rules.
+export interface RidershipRulesUpdate {
+  timezone: string
+  am_cutoff_minute: number | null
+  pm_cutoff_minute: number | null
+}
+
+export interface RidershipRules extends RidershipRulesUpdate {
+  is_default: boolean
 }
 
 export interface OptimizationSettings extends OptimizationSettingsUpdate {
@@ -316,6 +330,10 @@ export interface FamilyMember {
   service_date: string
   riding_am: boolean
   riding_pm: boolean
+  // Set when the family can no longer change that leg (a past day, or
+  // today after the district's cutoff), with the reason to show.
+  am_changes_closed: string | null
+  pm_changes_closed: string | null
 }
 
 export type AbsenceReason =
@@ -475,7 +493,8 @@ export interface BusPosition {
   location_lat: number | null
   location_lon: number | null
   recorded_at: string | null
-  driver_full_name: string | null
+  // No driver identity here, by design (spec section 18); the coordinates
+  // are rounded server-side to roughly 100 m.
   vehicle_label: string | null
 }
 

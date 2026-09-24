@@ -23,6 +23,7 @@ import { TabList, TabPanel, type TabItem } from '../components/Tabs'
 import { DriversSection } from './DriversSection'
 import { OptimizationSettingsSection } from './OptimizationSettingsSection'
 import { QualificationsSection } from './QualificationsSection'
+import { RidershipRulesSection } from './RidershipRulesSection'
 import { SisImportSection } from './SisImportSection'
 import { StopsSection } from './StopsSection'
 import { VehiclesSection } from './VehiclesSection'
@@ -285,7 +286,7 @@ export function SetupPage() {
     { id: 'fleet', label: 'Fleet & drivers' },
     { id: 'district-knowledge', label: 'District knowledge', count: geoOverrides.length },
     { id: 'announcements', label: 'Announcements', count: announcements.length },
-    { id: 'optimization', label: 'Optimization' },
+    { id: 'optimization', label: 'Rules & optimization' },
     { id: 'sis-import', label: 'SIS import' },
     { id: 'audit-log', label: 'Audit log' },
   ]
@@ -747,6 +748,7 @@ export function SetupPage() {
       </TabPanel>
 
       <TabPanel id="optimization" activeId={activeTab} idPrefix={TAB_PREFIX}>
+        <RidershipRulesSection canEdit={canCreate} />
         <OptimizationSettingsSection canEdit={canCreate} />
       </TabPanel>
 

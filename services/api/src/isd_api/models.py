@@ -814,6 +814,28 @@ class Announcement(Base):
     school: Mapped[School | None] = relationship()
 
 
+class RidershipRules(Base):
+    """District ridership-reporting rules (spec section 4.4). A singleton:
+    at most one row, id fixed at 1; absent = the defaults (the timezone
+    below, and no cutoffs)."""
+
+    __tablename__ = "ridership_rules"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # IANA zone for "today" and cutoff times, e.g. America/Chicago.
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="America/Chicago")
+    # Minute of day after which families can no longer change that day's
+    # AM / PM ridership. None = no cutoff for that leg.
+    am_cutoff_minute: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pm_cutoff_minute: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
 class OptimizationSettings(Base):
     """Administrator-configured soft-objective weights (spec section
     2.2). A singleton: at most one row, id fixed at 1, absent = the
@@ -826,6 +848,11 @@ class OptimizationSettings(Base):
     crews_used_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     deadhead_minutes_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     arrival_buffer_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Spec section 16: a hard floor on spare time between consecutive runs
+    # on one crew, after travel. 0 = no floor beyond each run's own buffer.
+    minimum_buffer_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )

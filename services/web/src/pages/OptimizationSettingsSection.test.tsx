@@ -18,6 +18,7 @@ const defaults = {
   crews_used_weight: 1,
   deadhead_minutes_weight: 0,
   arrival_buffer_weight: 0,
+  minimum_buffer_minutes: 0,
   is_default: true,
 }
 
@@ -41,6 +42,7 @@ describe('OptimizationSettingsSection', () => {
       crews_used_weight: 100,
       deadhead_minutes_weight: 2,
       arrival_buffer_weight: 0,
+      minimum_buffer_minutes: 10,
       is_default: false,
     })
     const user = userEvent.setup()
@@ -51,13 +53,17 @@ describe('OptimizationSettingsSection', () => {
     await user.type(crews, '100')
     await user.clear(screen.getByLabelText('Deadhead travel'))
     await user.type(screen.getByLabelText('Deadhead travel'), '2')
-    await user.click(screen.getByRole('button', { name: 'Save weights' }))
+    const buffer = screen.getByLabelText('Minimum buffer between runs (minutes)')
+    await user.clear(buffer)
+    await user.type(buffer, '10')
+    await user.click(screen.getByRole('button', { name: 'Save settings' }))
 
     await waitFor(() =>
       expect(api.updateOptimizationSettings).toHaveBeenCalledWith({
         crews_used_weight: 100,
         deadhead_minutes_weight: 2,
         arrival_buffer_weight: 0,
+        minimum_buffer_minutes: 10,
       }),
     )
     expect(await screen.findByText(/apply the next time a schedule is solved/)).toBeInTheDocument()
@@ -72,7 +78,7 @@ describe('OptimizationSettingsSection', () => {
     render(<OptimizationSettingsSection canEdit />)
     await screen.findByLabelText('Crews used')
 
-    await user.click(screen.getByRole('button', { name: 'Save weights' }))
+    await user.click(screen.getByRole('button', { name: 'Save settings' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('at least one objective weight')
   })
@@ -81,7 +87,7 @@ describe('OptimizationSettingsSection', () => {
     render(<OptimizationSettingsSection canEdit={false} />)
 
     expect(await screen.findByLabelText('Crews used')).toBeDisabled()
-    expect(screen.queryByRole('button', { name: 'Save weights' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save settings' })).not.toBeInTheDocument()
     expect(screen.getByText(/Only a transportation administrator/)).toBeInTheDocument()
   })
 

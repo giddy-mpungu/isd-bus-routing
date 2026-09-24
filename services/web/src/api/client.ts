@@ -13,6 +13,8 @@ import type {
   SisImportResult,
   OptimizationSettings,
   OptimizationSettingsUpdate,
+  RidershipRules,
+  RidershipRulesUpdate,
   GenerateFromTemplatesResult,
   RouteTemplate,
   RouteTemplateCreate,
@@ -506,6 +508,14 @@ export async function updateOptimizationSettings(
   payload: OptimizationSettingsUpdate,
 ): Promise<OptimizationSettings> {
   return request<OptimizationSettings>('/optimization-settings', jsonInit('PUT', payload))
+}
+
+export async function getRidershipRules(): Promise<RidershipRules> {
+  return request<RidershipRules>('/ridership-rules')
+}
+
+export async function updateRidershipRules(payload: RidershipRulesUpdate): Promise<RidershipRules> {
+  return request<RidershipRules>('/ridership-rules', jsonInit('PUT', payload))
 }
 
 export async function updateSchoolExternalId(

@@ -34,12 +34,19 @@ def load_objective_weights(db: Session) -> ObjectiveWeights:
     )
 
 
+def load_minimum_buffer_minutes(db: Session) -> int:
+    """Spec section 16's minimum buffer between consecutive runs (0 = none)."""
+    row = db.get(OptimizationSettings, _SETTINGS_ID)
+    return 0 if row is None else row.minimum_buffer_minutes
+
+
 def _read(db: Session) -> OptimizationSettingsRead:
     weights = load_objective_weights(db)
     return OptimizationSettingsRead(
         crews_used_weight=weights.crews_used,
         deadhead_minutes_weight=weights.deadhead_minutes,
         arrival_buffer_weight=weights.arrival_buffer,
+        minimum_buffer_minutes=load_minimum_buffer_minutes(db),
         is_default=db.get(OptimizationSettings, _SETTINGS_ID) is None,
     )
 
@@ -66,6 +73,7 @@ def update_optimization_settings(
     row.crews_used_weight = payload.crews_used_weight
     row.deadhead_minutes_weight = payload.deadhead_minutes_weight
     row.arrival_buffer_weight = payload.arrival_buffer_weight
+    row.minimum_buffer_minutes = payload.minimum_buffer_minutes
     db.flush()
     record_audit(
         db,

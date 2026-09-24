@@ -198,8 +198,8 @@ def test_bus_position_available_after_driver_reports(client, admin_headers, db_s
         headers=driver_headers,
         json={
             "service_date": "2026-09-01",
-            "location_lat": 29.71,
-            "location_lon": -95.41,
+            "location_lat": 29.712345,
+            "location_lon": -95.418765,
             "recorded_at": "2026-09-01T12:00:00Z",
         },
     )
@@ -221,9 +221,11 @@ def test_bus_position_available_after_driver_reports(client, admin_headers, db_s
     body = response.json()
     assert body["available"] is True
     assert body["ambiguous"] is False
-    assert body["location_lat"] == 29.71
-    assert body["location_lon"] == -95.41
-    assert body["driver_full_name"] == "Jordan Driver"
+    # Spec section 18: approximate (about 100 m) and no driver identity.
+    assert body["location_lat"] == 29.712
+    assert body["location_lon"] == -95.419
+    assert "driver_full_name" not in body
+    assert "Jordan" not in response.text
     assert body["vehicle_label"] == vehicle["label"]
 
 

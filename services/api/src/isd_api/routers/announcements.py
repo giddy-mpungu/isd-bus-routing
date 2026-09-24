@@ -168,10 +168,11 @@ def _maybe_create_substitution_announcement(db: Session, crew: Crew, actor: User
         if other_runs > 0:
             continue
 
+        # Family-facing, so no driver identity (spec section 18: never
+        # reveal driver personal information). The bus is what they need.
         message = (
-            f"{run.school.name}: the driver/vehicle for the {run.direction.value.upper()} "
-            f"run on {run.service_date} has changed to {crew.driver.full_name}, "
-            f"{crew.vehicle.label}."
+            f"{run.school.name}: the {run.direction.value.upper()} run on "
+            f"{run.service_date} will be covered by a substitute. Look for {crew.vehicle.label}."
         )
         announcement = Announcement(
             message=message,

@@ -24,6 +24,8 @@ from isd_api.models import (
     User,
     VehiclePosition,
 )
+from isd_api.ridership_rules import change_closed_reason, load_rules
+from isd_api.routers.runs import _resolve_riding_students
 from isd_api.schemas import (
     BusPositionRead,
     FamilyMemberRead,
@@ -36,6 +38,9 @@ from isd_api.schemas import (
 from isd_api.security import get_current_user, require_role
 
 router = APIRouter(prefix="/students", tags=["students"])
+
+# Family-facing bus positions are rounded to this many decimal places (~100 m).
+APPROXIMATE_POSITION_DECIMALS = 3
 
 
 @router.post("", response_model=StudentRead, status_code=status.HTTP_201_CREATED)
@@ -144,6 +149,9 @@ def get_my_family(
         .all()
     }
     default_riding = {s.id: s.default_ridership.value == "rides" for s in students}
+    rules = load_rules(db)
+    am_closed = change_closed_reason(rules, service_date, RideDirection.AM)
+    pm_closed = change_closed_reason(rules, service_date, RideDirection.PM)
     return [
         FamilyMemberRead(
             student_id=s.id,
@@ -153,6 +161,8 @@ def get_my_family(
             service_date=service_date,
             riding_am=overrides.get((s.id, RideDirection.AM), default_riding[s.id]),
             riding_pm=overrides.get((s.id, RideDirection.PM), default_riding[s.id]),
+            am_changes_closed=am_closed,
+            pm_changes_closed=pm_closed,
         )
         for s in students
     ]
@@ -207,14 +217,46 @@ def get_bus_position(
     if position is None:
         return BusPositionRead(available=False, ambiguous=False)
 
+    # Spec section 18: an *approximate* location and no driver identity.
+    # Three decimal places is roughly 100 m, enough to see where the bus
+    # is without making the family app a precise tracker.
     return BusPositionRead(
         available=True,
         ambiguous=False,
-        location_lat=position.location_lat,
-        location_lon=position.location_lon,
+        location_lat=round(position.location_lat, APPROXIMATE_POSITION_DECIMALS),
+        location_lon=round(position.location_lon, APPROXIMATE_POSITION_DECIMALS),
         recorded_at=position.recorded_at,
-        driver_full_name=position.crew.driver.full_name,
         vehicle_label=position.crew.vehicle.label,
+    )
+
+
+def _bus_full_reason(
+    db: Session, student: Student, service_date: date, direction: RideDirection
+) -> str | None:
+    """Spec section 4.5: a request to ride needs room on the bus. Checked
+    only when exactly one run serves this school, date and leg and it has
+    a bus assigned; with several runs the rider can't be attributed to one
+    bus (the same "don't guess" rule as the expected-riders count)."""
+    runs = (
+        db.query(Run)
+        .filter(
+            Run.school_id == student.school_id,
+            Run.service_date == service_date,
+            Run.direction == direction,
+        )
+        .all()
+    )
+    if len(runs) != 1 or runs[0].assignment is None:
+        return None
+    riders, ambiguous = _resolve_riding_students(db, runs[0])
+    if ambiguous or student in riders:
+        return None
+    capacity = runs[0].assignment.crew.vehicle.allowable_capacity()
+    if capacity is None or len(riders) < capacity:
+        return None
+    return (
+        f"The {direction.value.upper()} bus for {student.school.name} on {service_date} is full "
+        f"({len(riders)} of {capacity} seats). Please contact the transportation office."
     )
 
 
@@ -243,6 +285,17 @@ def update_ridership(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only declare ridership for your own family",
         )
+
+    # Spec section 4.4: families can't change a past day, or today after the
+    # district's cutoff for that leg. Staff can (a phone-in, spec section 21).
+    if not is_admin:
+        closed = change_closed_reason(load_rules(db), payload.service_date, payload.direction)
+        if closed is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=closed)
+    if payload.is_riding:
+        full = _bus_full_reason(db, student, payload.service_date, payload.direction)
+        if full is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=full)
 
     existing = (
         db.query(RidershipOverride)

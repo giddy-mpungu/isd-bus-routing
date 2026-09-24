@@ -158,8 +158,14 @@ def solve_multi_school_schedule(
     time_limit_seconds: float = 10.0,
     num_search_workers: int = 8,
     weights: ObjectiveWeights | None = None,
+    minimum_buffer_minutes: int = 0,
 ) -> SchedulingResult | InfeasibleResult:
     """Solve the multi-school crew scheduling problem (spec section 5).
+
+    minimum_buffer_minutes (spec section 16) is a hard floor on the spare
+    time between consecutive jobs on the same crew, after deadhead travel:
+    the same quantity each Explanation reports as buffer_minutes_to_next_job.
+    0 (the default) means no floor beyond the jobs' own buffer_minutes.
 
     num_search_workers controls CP-SAT's internal parallel search
     threads. 8 is a reasonable default for real problem sizes; for
@@ -167,6 +173,8 @@ def solve_multi_school_schedule(
     thread-pool startup overhead dominating the runtime.
     """
     weights = weights or ObjectiveWeights()
+    if minimum_buffer_minutes < 0:
+        raise ValueError(f"minimum_buffer_minutes must be >= 0, got {minimum_buffer_minutes}")
     logger.info("Solving multi-school schedule: %d job(s), %d crew(s)", len(jobs), len(crews))
     if not jobs:
         logger.info("No jobs supplied — nothing to schedule.")
@@ -288,12 +296,13 @@ def solve_multi_school_schedule(
                 deadhead_ab = deadhead_estimator(job_a.location, job_b.location, vehicle)
                 deadhead_ba = deadhead_estimator(job_b.location, job_a.location, vehicle)
                 both = [x[job_a.id][crew_id], x[job_b.id][crew_id]]
-                model.Add(end_vars[job_a.id] + deadhead_ab <= start_vars[job_b.id]).OnlyEnforceIf(
-                    both + [order]
-                )
-                model.Add(end_vars[job_b.id] + deadhead_ba <= start_vars[job_a.id]).OnlyEnforceIf(
-                    both + [order.Not()]
-                )
+                gap = minimum_buffer_minutes
+                model.Add(
+                    end_vars[job_a.id] + deadhead_ab + gap <= start_vars[job_b.id]
+                ).OnlyEnforceIf(both + [order])
+                model.Add(
+                    end_vars[job_b.id] + deadhead_ba + gap <= start_vars[job_a.id]
+                ).OnlyEnforceIf(both + [order.Not()])
                 if weights.deadhead_minutes > 0:
                     # Only ever forced true, never false: the objective
                     # is minimized and costs are non-negative, so an
@@ -420,6 +429,11 @@ def solve_multi_school_schedule(
             )
         if crew_by_id[crew_id].busy_intervals:
             checks.append("it does not overlap this crew's other committed (locked) assignments")
+        if minimum_buffer_minutes > 0:
+            checks.append(
+                f"at least {minimum_buffer_minutes} minutes of operational buffer remain "
+                "before this crew's next job"
+            )
         buffer_to_next = None
         if next_job is not None:
             deadhead = deadhead_estimator(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -89,6 +90,17 @@ def admin_token(client, db_session) -> str:
 @pytest.fixture()
 def admin_headers(admin_token) -> dict:
     return auth_headers(admin_token)
+
+
+# Tests use fixed service dates. Pin the ridership rules' clock well before
+# them, so "past day" and "after the cutoff" checks don't start failing as
+# real time moves on. Tests of those rules set their own time.
+PINNED_NOW = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def _pin_ridership_clock(monkeypatch):
+    monkeypatch.setattr("isd_api.ridership_rules.utc_now", lambda: PINNED_NOW)
 
 
 @pytest.fixture(autouse=True)

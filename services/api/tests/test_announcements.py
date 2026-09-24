@@ -436,7 +436,7 @@ def test_crew_driver_change_on_solved_unambiguous_run_creates_family_substitutio
     parent_headers = _link_parent(
         client, admin_headers, db_session, student_id=student["id"], email="parent_d@example.org"
     )
-    _driver, _vehicle, crew, _run = _seed_driver_crew_and_run(
+    _driver, vehicle, crew, _run = _seed_driver_crew_and_run(
         client, admin_headers, label="A", school_id=school["id"]
     )
     schedule = client.post("/schedule", headers=admin_headers, json={"service_date": SERVICE_DATE})
@@ -455,7 +455,11 @@ def test_crew_driver_change_on_solved_unambiguous_run_creates_family_substitutio
     assert announcements[0]["category"] == "substitution"
     assert announcements[0]["audience"] == "family"
     assert announcements[0]["school_id"] == school["id"]
-    assert "Substitute Driver" in announcements[0]["message"]
+    # Family-facing: the bus to look for, never the driver's identity
+    # (spec section 18).
+    assert "Substitute Driver" not in announcements[0]["message"]
+    assert vehicle["label"] in announcements[0]["message"]
+    assert "substitute" in announcements[0]["message"]
 
     entries = (
         db_session.query(AuditLogEntry).filter(AuditLogEntry.entity_type == "announcement").all()
