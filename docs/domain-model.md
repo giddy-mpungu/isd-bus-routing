@@ -790,6 +790,34 @@ A driver may drive any vehicle whose required class is at or below their own.
   existing assignments are flagged until an admin records a class
   (Setup → Fleet & drivers shows "no license on record").
 
+## Assignment lifecycle (spec section 14)
+
+`AssignmentStatus`, rules in `isd_api/assignment_states.py`:
+**Sent → Received → Acknowledged → En Route → Arrived → In Progress →
+Completed**, plus **No-show** (terminal, from any unfinished state).
+Migration `b4e8d2a6c913` turned the old `scheduled` into `sent`.
+
+- **Received** is set when the driver's tablet loads the day:
+  `POST /schedule/{date}/my-assignments/receipt` (explicit, not a side effect
+  of a GET; idempotent; only Sent rows move; audited).
+- **Drivers only move forward** (`PATCH /schedule/assignments/{id}/status`).
+  Skipping ahead is allowed. Going back, re-sending, or touching a finished
+  assignment is refused (409 with the reason). Repeating the current state
+  is a no-op that writes no audit entry.
+- **Dispatch can set any state** (`PATCH /schedule/assignments/{id}` with
+  `status`), to correct a mistake; audited with before/after.
+- **A new driver has to receive and acknowledge**: moving an assignment to a
+  crew with a different driver, or repointing a crew to a new driver, resets
+  unfinished, not-yet-underway assignments to Sent. En route / arrived / in
+  progress keep their state (a mid-route hand-over shouldn't pretend the run
+  hasn't started).
+- The driver app shows one large next-step button per run (Acknowledge →
+  I'm en route → Arrived → Start run → Complete run) plus No-show. GPS
+  reporting runs while en route, arrived or in progress. `AssignmentRead`
+  carries `status`, and the Schedule page shows it per assignment.
+- The observed-duration signal (`GET /runs/observed-duration`) still reads
+  the in_progress → completed audit timestamps, so it's unaffected.
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)

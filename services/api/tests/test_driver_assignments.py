@@ -71,7 +71,7 @@ def test_driver_my_assignments_returns_resolved_school_and_vehicle_names(
     assert body[0]["run_id"] == run["id"]
     assert body[0]["school_name"] == school["name"]
     assert body[0]["vehicle_label"] == vehicle["label"]
-    assert body[0]["status"] == "scheduled"
+    assert body[0]["status"] == "sent"
     assert body[0]["service_date"] == "2026-09-01"
 
 
@@ -146,7 +146,7 @@ def test_driver_can_update_own_assignment_status_and_it_is_audited(
         .all()
     )
     assert len(entries) == 2
-    assert entries[0].before_state["status"] == "scheduled"
+    assert entries[0].before_state["status"] == "sent"
     assert entries[0].after_state["status"] == "in_progress"
     assert entries[1].before_state["status"] == "in_progress"
     assert entries[1].after_state["status"] == "completed"

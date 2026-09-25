@@ -260,6 +260,14 @@ export async function getMyAssignments(serviceDate: string): Promise<DriverAssig
   return request<DriverAssignment[]>(`/schedule/${serviceDate}/my-assignments`)
 }
 
+// Spec section 14 "Received": the tablet has the day's assignments.
+export async function markAssignmentsReceived(serviceDate: string): Promise<DriverAssignment[]> {
+  return request<DriverAssignment[]>(
+    `/schedule/${serviceDate}/my-assignments/receipt`,
+    jsonInit('POST', {}),
+  )
+}
+
 export async function getSchoolAssignments(serviceDate: string): Promise<SchoolAssignment[]> {
   return request<SchoolAssignment[]>(`/schedule/${serviceDate}/school-assignments`)
 }

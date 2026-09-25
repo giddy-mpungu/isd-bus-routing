@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
+import { STATUS_LABELS, STATUS_TONES } from '../assignmentStatus'
 import { Badge } from '../components/Badge'
 import type {
   Absence,
@@ -526,6 +527,7 @@ export function SchedulePage() {
             <th>Window</th>
             <th>Crew</th>
             <th>Assigned</th>
+            <th>Status</th>
             <th>Locked</th>
             <th>Explanation</th>
             <th aria-label="Actions" />
@@ -574,6 +576,11 @@ export function SchedulePage() {
                   {formatMinuteOfDay(assignment.start_minute)}
                   {'–'}
                   {formatMinuteOfDay(assignment.end_minute)}
+                </td>
+                <td>
+                  <Badge tone={STATUS_TONES[assignment.status]}>
+                    {STATUS_LABELS[assignment.status]}
+                  </Badge>
                 </td>
                 <td>
                   <button

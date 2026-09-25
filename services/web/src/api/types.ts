@@ -115,6 +115,7 @@ export interface Assignment {
   end_minute: number
   explanation_text: string
   locked: boolean
+  status: AssignmentStatus
   // Set when the crew became unavailable after this assignment was made
   // (driver absent or deactivated, vehicle out of service).
   availability_issue: string | null
@@ -158,7 +159,17 @@ export interface AssignmentPatch {
   locked?: boolean
 }
 
-export type AssignmentStatus = 'scheduled' | 'in_progress' | 'completed' | 'no_show'
+// Spec section 14: Sent -> Received -> Acknowledged -> En Route -> Arrived
+// -> In Progress -> Completed, plus No-show.
+export type AssignmentStatus =
+  | 'sent'
+  | 'received'
+  | 'acknowledged'
+  | 'en_route'
+  | 'arrived'
+  | 'in_progress'
+  | 'completed'
+  | 'no_show'
 
 export interface AssignmentStopRoster {
   stop_label: string | null

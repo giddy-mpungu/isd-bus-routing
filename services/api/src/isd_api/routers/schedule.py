@@ -42,6 +42,7 @@ from isd_solver import (
 )
 from sqlalchemy.orm import Session
 
+from isd_api.assignment_states import driver_transition_problem, resets_on_new_driver
 from isd_api.audit import record as record_audit
 from isd_api.availability import (
     assignment_availability_issue,
@@ -52,6 +53,7 @@ from isd_api.config import settings
 from isd_api.db import get_db
 from isd_api.models import (
     Assignment,
+    AssignmentStatus,
     GeographicKnowledgeCategory,
     GeographicKnowledgeOverride,
     Role,
@@ -542,7 +544,9 @@ def update_assignment(
         "start_minute": assignment.start_minute,
         "end_minute": assignment.end_minute,
         "locked": assignment.locked,
+        "status": assignment.status.value,
     }
+    old_driver_id = assignment.crew.driver_id
 
     new_crew_id = payload.crew_id if payload.crew_id is not None else assignment.crew_id
     new_start = (
@@ -601,6 +605,18 @@ def update_assignment(
     if payload.locked is not None:
         assignment.locked = payload.locked
 
+    # Spec section 14: a different driver has to receive and acknowledge it.
+    if (
+        crew is not None
+        and crew.driver_id != old_driver_id
+        and resets_on_new_driver(assignment.status)
+    ):
+        assignment.status = AssignmentStatus.SENT
+        assignment.status_updated_at = datetime.now(UTC)
+    if payload.status is not None and payload.status != assignment.status:
+        assignment.status = payload.status
+        assignment.status_updated_at = datetime.now(UTC)
+
     db.flush()
     record_audit(
         db,
@@ -615,6 +631,7 @@ def update_assignment(
             "start_minute": assignment.start_minute,
             "end_minute": assignment.end_minute,
             "locked": assignment.locked,
+            "status": assignment.status.value,
         },
     )
     if crew_changed:
@@ -835,7 +852,12 @@ def update_assignment_status(
             detail="You can only update your own assignments",
         )
 
+    problem = driver_transition_problem(assignment.status, payload.status)
+    if problem is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=problem)
     before_status = assignment.status
+    if payload.status == before_status:
+        return _driver_assignment_read(db, assignment)
     assignment.status = payload.status
     assignment.status_updated_at = datetime.now(UTC)
     db.flush()
@@ -850,6 +872,10 @@ def update_assignment_status(
     )
     db.commit()
     db.refresh(assignment)
+    return _driver_assignment_read(db, assignment)
+
+
+def _driver_assignment_read(db: Session, assignment: Assignment) -> DriverAssignmentRead:
     ambiguous, stops = _stop_roster_for(db, assignment.run)
     return DriverAssignmentRead(
         id=assignment.id,
@@ -864,3 +890,42 @@ def update_assignment_status(
         roster_ambiguous=ambiguous,
         stops=stops,
     )
+
+
+@router.post("/{service_date}/my-assignments/receipt", response_model=list[DriverAssignmentRead])
+def acknowledge_receipt(
+    service_date: date,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DRIVER)),
+) -> list[DriverAssignmentRead]:
+    """Spec section 14's "Received": the driver's tablet has the day's
+    assignments. The driver app calls this once after loading. Only Sent
+    assignments move, so it's idempotent; each move is audited."""
+    if current_user.driver_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This driver account is not linked to a Driver record",
+        )
+    mine = (
+        db.query(Assignment)
+        .join(DBCrew, Assignment.crew_id == DBCrew.id)
+        .filter(DBCrew.driver_id == current_user.driver_id, DBCrew.service_date == service_date)
+        .order_by(Assignment.start_minute)
+        .all()
+    )
+    for assignment in mine:
+        if assignment.status == AssignmentStatus.SENT:
+            assignment.status = AssignmentStatus.RECEIVED
+            assignment.status_updated_at = datetime.now(UTC)
+            db.flush()
+            record_audit(
+                db,
+                entity_type="assignment",
+                entity_id=assignment.id,
+                action="status_changed",
+                actor=current_user,
+                before_state={"status": AssignmentStatus.SENT.value},
+                after_state={"status": AssignmentStatus.RECEIVED.value},
+            )
+    db.commit()
+    return [_driver_assignment_read(db, a) for a in mine]

@@ -6,10 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from isd_api.assignment_states import resets_on_new_driver
 from isd_api.availability import driver_conflict_for_window, pairing_problem
 from isd_api.db import get_db
 from isd_api.licensing import license_violation
-from isd_api.models import Crew, Driver, Role, User, Vehicle
+from isd_api.models import AssignmentStatus, Crew, Driver, Role, User, Vehicle
 from isd_api.routers.announcements import _maybe_create_substitution_announcement
 from isd_api.schemas import CrewCreate, CrewDriverUpdate, CrewRead
 from isd_api.security import require_role
@@ -126,6 +127,10 @@ def update_crew_driver(
 
     driver_changed = payload.driver_id != crew.driver_id
     crew.driver_id = payload.driver_id
+    if driver_changed:
+        for assignment in crew.assignments:
+            if resets_on_new_driver(assignment.status):
+                assignment.status = AssignmentStatus.SENT
     try:
         db.flush()
     except IntegrityError as exc:

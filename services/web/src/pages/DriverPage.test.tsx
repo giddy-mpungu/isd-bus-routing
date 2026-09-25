@@ -13,6 +13,7 @@ vi.mock('../api/client', async (importOriginal) => {
     ...actual,
     getCurrentUser: vi.fn(),
     getMyAssignments: vi.fn(),
+    markAssignmentsReceived: vi.fn(),
     updateAssignmentStatus: vi.fn(),
     createAbsence: vi.fn(),
     reportPosition: vi.fn(),
@@ -44,7 +45,7 @@ const assignment: DriverAssignment = {
   vehicle_label: 'Bus 101',
   start_minute: 360,
   end_minute: 410,
-  status: 'scheduled',
+  status: 'received',
   locked: false,
   roster_ambiguous: false,
   stops: [],
@@ -63,6 +64,9 @@ describe('DriverPage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.mocked(api.getMyAnnouncements).mockResolvedValue([])
+    vi.mocked(api.markAssignmentsReceived).mockImplementation(async () => [
+      { ...assignment, status: 'received' },
+    ])
   })
 
   it('renders messages from dispatch when there are announcements for drivers', async () => {
@@ -91,7 +95,7 @@ describe('DriverPage', () => {
     await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
     expect(screen.getByText('Vehicle: Bus 101')).toBeInTheDocument()
     expect(screen.getByText('06:00 – 06:50')).toBeInTheDocument()
-    expect(screen.getByText('Not started')).toBeInTheDocument()
+    expect(screen.getByText('Received')).toBeInTheDocument()
   })
 
   it('shows expected riders grouped by stop, and notes it is not a route order', async () => {
@@ -139,32 +143,52 @@ describe('DriverPage', () => {
     )
   })
 
-  it('tapping Start calls the status PATCH and refreshes the card', async () => {
+  it('marks newly sent work as received when the tablet loads it', async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([{ ...assignment, status: 'sent' }])
+    renderPage()
+    await waitFor(() => expect(api.markAssignmentsReceived).toHaveBeenCalledWith(today()))
+    expect(await screen.findByText('Received')).toBeInTheDocument()
+  })
+
+  it('does not call receipt when nothing new was sent', async () => {
     vi.mocked(api.getMyAssignments).mockResolvedValue([assignment])
-    vi.mocked(api.updateAssignmentStatus).mockResolvedValue({
-      ...assignment,
-      status: 'in_progress',
-    })
     renderPage()
     await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
+    expect(api.markAssignmentsReceived).not.toHaveBeenCalled()
+  })
 
+  it.each([
+    ['received', 'Acknowledge', 'acknowledged'],
+    ['acknowledged', "I'm en route", 'en_route'],
+    ['en_route', 'Arrived', 'arrived'],
+    ['arrived', 'Start run', 'in_progress'],
+    ['in_progress', 'Complete run', 'completed'],
+  ] as const)('from %s, the one next step is "%s"', async (from, label, to) => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([{ ...assignment, status: from }])
+    vi.mocked(api.updateAssignmentStatus).mockResolvedValue({ ...assignment, status: to })
+    renderPage()
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: 'Start' }))
+    await user.click(await screen.findByRole('button', { name: label }))
 
-    await waitFor(() => expect(api.updateAssignmentStatus).toHaveBeenCalledWith(100, 'in_progress'))
+    await waitFor(() => expect(api.updateAssignmentStatus).toHaveBeenCalledWith(100, to))
     expect(api.getMyAssignments).toHaveBeenCalledTimes(2) // initial load + reload after PATCH
   })
 
-  it('tapping Complete calls the status PATCH with completed', async () => {
-    vi.mocked(api.getMyAssignments).mockResolvedValue([assignment])
-    vi.mocked(api.updateAssignmentStatus).mockResolvedValue({ ...assignment, status: 'completed' })
+  it('offers no further step or no-show once a run is finished', async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([{ ...assignment, status: 'completed' }])
     renderPage()
-    await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Completed')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'No-show' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Complete run' })).not.toBeInTheDocument()
+  })
 
+  it('no-show is available until the run is finished', async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([{ ...assignment, status: 'acknowledged' }])
+    vi.mocked(api.updateAssignmentStatus).mockResolvedValue({ ...assignment, status: 'no_show' })
+    renderPage()
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: 'Complete' }))
-
-    await waitFor(() => expect(api.updateAssignmentStatus).toHaveBeenCalledWith(100, 'completed'))
+    await user.click(await screen.findByRole('button', { name: 'No-show' }))
+    await waitFor(() => expect(api.updateAssignmentStatus).toHaveBeenCalledWith(100, 'no_show'))
   })
 
   it('shows an error message when the status update fails', async () => {
@@ -174,7 +198,7 @@ describe('DriverPage', () => {
     await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
 
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: 'Start' }))
+    await user.click(screen.getByRole('button', { name: 'Acknowledge' }))
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Not your run'))
   })
@@ -205,8 +229,8 @@ describe('DriverPage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('does not report position when no run is in progress', async () => {
-    vi.mocked(api.getMyAssignments).mockResolvedValue([assignment]) // status: 'scheduled'
+  it('does not report position before the bus is under way', async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([{ ...assignment, status: 'acknowledged' }])
     const getCurrentPosition = vi.fn()
     vi.stubGlobal('navigator', { ...navigator, geolocation: { getCurrentPosition } })
 
