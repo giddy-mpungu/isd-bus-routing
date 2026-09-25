@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from isd_api.audit import record as record_audit
 from isd_api.db import get_db
+from isd_api.licensing import infer_required_class
 from isd_api.models import Qualification, Role, User, Vehicle
 from isd_api.schemas import VehicleCreate, VehicleRead, VehicleUpdate
 from isd_api.security import require_role
@@ -41,6 +42,8 @@ def create_vehicle(
         height_m=payload.height_m,
         weight_kg=payload.weight_kg,
         qualifications=_resolve_qualifications(db, payload.qualification_codes),
+        required_license_class=payload.required_license_class
+        or infer_required_class(payload.nominal_capacity, payload.effective_capacity),
     )
     db.add(vehicle)
     db.commit()
@@ -86,6 +89,7 @@ def update_vehicle(
         "weight_kg": vehicle.weight_kg,
         "is_active": vehicle.is_active,
         "qualification_codes": sorted(q.code for q in vehicle.qualifications),
+        "required_license_class": vehicle.required_license_class.value,
     }
 
     if payload.label is not None:
@@ -104,6 +108,8 @@ def update_vehicle(
         vehicle.weight_kg = payload.weight_kg
     if payload.is_active is not None:
         vehicle.is_active = payload.is_active
+    if payload.required_license_class is not None:
+        vehicle.required_license_class = payload.required_license_class
     if payload.qualification_codes is not None:
         vehicle.qualifications = _resolve_qualifications(db, payload.qualification_codes)
 
@@ -125,6 +131,7 @@ def update_vehicle(
             "weight_kg": vehicle.weight_kg,
             "is_active": vehicle.is_active,
             "qualification_codes": sorted(q.code for q in vehicle.qualifications),
+            "required_license_class": vehicle.required_license_class.value,
         },
     )
     db.commit()

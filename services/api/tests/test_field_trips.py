@@ -16,7 +16,9 @@ def _seed_regular_route(client, admin_headers, *, service_date="2026-09-01"):
         json={"name": "Riverside Elementary", "location_lat": 29.70, "location_lon": -95.40},
     ).json()
     driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Jordan Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Jordan Driver"},
     ).json()
     vehicle = client.post(
         "/vehicles",
@@ -133,7 +135,9 @@ def test_list_field_trips_filters_by_departure_date(client, admin_headers):
 def test_update_field_trip_assigns_driver_and_audits(client, admin_headers, db_session):
     trip = client.post("/field-trips", headers=admin_headers, json=_trip_payload()).json()
     driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Sam Substitute"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Sam Substitute"},
     ).json()
     vehicle = client.post("/vehicles", headers=admin_headers, json={"label": "Bus 202"}).json()
 
@@ -269,7 +273,9 @@ def test_conflicts_detects_overlapping_regular_route(client, admin_headers):
 
 def test_conflicts_detects_overlapping_other_field_trip(client, admin_headers):
     driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Jordan Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Jordan Driver"},
     ).json()
     first = client.post("/field-trips", headers=admin_headers, json=_trip_payload()).json()
     client.patch(
@@ -301,7 +307,9 @@ def test_conflicts_detects_overlapping_other_field_trip(client, admin_headers):
 
 def test_conflicts_ignores_a_completed_field_trip(client, admin_headers):
     driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Jordan Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Jordan Driver"},
     ).json()
     first = client.post("/field-trips", headers=admin_headers, json=_trip_payload()).json()
     client.patch(
@@ -370,7 +378,9 @@ def test_conflicts_detects_overlap_on_the_return_day_of_an_overnight_trip(client
 
 def test_conflicts_detects_overlap_between_two_overnight_field_trips(client, admin_headers):
     driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Jordan Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Jordan Driver"},
     ).json()
     first = client.post(
         "/field-trips",

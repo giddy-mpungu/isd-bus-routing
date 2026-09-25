@@ -18,7 +18,9 @@ def _school(client, h):
 
 
 def _crew(client, h, label, *, day=DAY, earliest=360, latest=1000):
-    driver = client.post("/drivers", headers=h, json={"full_name": f"Driver {label}"}).json()
+    driver = client.post(
+        "/drivers", headers=h, json={"license_class": "cdl_a", "full_name": f"Driver {label}"}
+    ).json()
     vehicle = client.post("/vehicles", headers=h, json={"label": f"Bus {label}"}).json()
     crew = client.post(
         "/crews",
@@ -199,7 +201,9 @@ def test_manual_reassignment_onto_an_absent_driver_is_rejected(client, admin_hea
 
 
 def test_crews_cannot_be_created_on_out_of_service_or_deactivated_resources(client, admin_headers):
-    driver = client.post("/drivers", headers=admin_headers, json={"full_name": "D"}).json()
+    driver = client.post(
+        "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": "D"}
+    ).json()
     vehicle = client.post("/vehicles", headers=admin_headers, json={"label": "Bus"}).json()
     body = {
         "service_date": DAY,
@@ -226,7 +230,9 @@ def test_repointing_a_crew_to_a_substitute_who_is_also_absent_is_rejected(client
     driver, _, crew = _crew(client, admin_headers, "A")
     _run(client, admin_headers, school, 420, 480)
     _solve(client, admin_headers)
-    substitute = client.post("/drivers", headers=admin_headers, json={"full_name": "Sub"}).json()
+    substitute = client.post(
+        "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": "Sub"}
+    ).json()
     _absent(client, admin_headers, substitute, 400, 500)
 
     response = client.patch(
@@ -246,7 +252,9 @@ def test_substitute_ranking_leaves_out_absent_and_deactivated_drivers(client, ad
     _solve(client, admin_headers)
 
     def driver_named(name):
-        return client.post("/drivers", headers=admin_headers, json={"full_name": name}).json()
+        return client.post(
+            "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": name}
+        ).json()
 
     free = driver_named("Free Sub")
     busy = driver_named("Absent Sub")
@@ -266,7 +274,9 @@ def test_substitute_ranking_leaves_out_absent_and_deactivated_drivers(client, ad
 
 
 def test_template_generation_skips_out_of_service_vehicles_and_reports_them(client, admin_headers):
-    driver = client.post("/drivers", headers=admin_headers, json={"full_name": "D"}).json()
+    driver = client.post(
+        "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": "D"}
+    ).json()
     vehicle = client.post("/vehicles", headers=admin_headers, json={"label": "Bus"}).json()
     template = client.post(
         "/crew-templates",

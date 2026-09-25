@@ -12,6 +12,7 @@ from isd_api.models import (
     AssignmentStatus,
     DriverReportType,
     GeographicKnowledgeCategory,
+    LicenseClass,
     QualificationKind,
     RestrictedVehicleDimension,
     RideDirection,
@@ -125,6 +126,8 @@ class VehicleCreate(BaseModel):
     height_m: float | None = Field(default=None, gt=0)
     weight_kg: float | None = Field(default=None, gt=0)
     qualification_codes: list[str] = Field(default_factory=list)
+    # None = infer from capacity (15+ passengers needs CDL B).
+    required_license_class: LicenseClass | None = None
 
 
 class VehicleRead(BaseModel):
@@ -137,6 +140,7 @@ class VehicleRead(BaseModel):
     width_m: float | None
     height_m: float | None
     weight_kg: float | None
+    required_license_class: LicenseClass
     is_active: bool = True
     qualifications: list[QualificationRead]
 
@@ -154,6 +158,7 @@ class VehicleUpdate(BaseModel):
     width_m: float | None = Field(default=None, gt=0)
     height_m: float | None = Field(default=None, gt=0)
     weight_kg: float | None = Field(default=None, gt=0)
+    required_license_class: LicenseClass | None = None
     qualification_codes: list[str] | None = None
     is_active: bool | None = None
 
@@ -162,6 +167,9 @@ class DriverCreate(BaseModel):
     full_name: str
     max_continuous_minutes: int | None = Field(default=None, gt=0)
     qualification_codes: list[str] = Field(default_factory=list)
+    # None = take it from a license code in qualification_codes (e.g.
+    # "CDL_B"), else not on record, which qualifies for no vehicle.
+    license_class: LicenseClass | None = None
 
 
 class DriverRead(BaseModel):
@@ -169,6 +177,7 @@ class DriverRead(BaseModel):
     id: int
     full_name: str
     max_continuous_minutes: int | None
+    license_class: LicenseClass | None = None
     is_active: bool = True
     qualifications: list[QualificationRead]
 
@@ -178,6 +187,8 @@ class DriverUpdate(BaseModel):
     max_continuous_minutes: int | None = Field(default=None, gt=0)
     qualification_codes: list[str] | None = None
     is_active: bool | None = None
+    # Sent as null, clears the class (the driver then qualifies for nothing).
+    license_class: LicenseClass | None = None
 
 
 class CrewCreate(BaseModel):
@@ -326,6 +337,9 @@ class GenerateFromTemplatesRead(BaseModel):
     # Crew template ids skipped because the template's vehicle is out of
     # service or its driver is deactivated (spec section 2.1).
     crews_skipped_out_of_service_template_ids: list[int]
+    # Crew template ids skipped because the driver isn't licensed for the
+    # template's vehicle (spec section 15).
+    crews_skipped_unlicensed_template_ids: list[int]
 
 
 class ExpectedRidersRead(BaseModel):

@@ -27,6 +27,7 @@ const vehicle: Vehicle = {
   width_m: 2.5,
   height_m: 3,
   weight_kg: 8000,
+  required_license_class: 'cdl_b',
   is_active: true,
   qualifications: [lift],
 }
@@ -104,6 +105,7 @@ describe('VehiclesSection', () => {
         width_m: 2.5,
         height_m: 3,
         weight_kg: 8000,
+        required_license_class: 'cdl_b',
         qualification_codes: [],
       }),
     )
@@ -177,5 +179,48 @@ describe('VehiclesSection', () => {
     )
     expect(screen.getByRole('checkbox', { name: /lift/ })).toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: /wheelchair/ })).not.toBeInTheDocument()
+  })
+
+  it('lets the required license default to automatic, or be chosen', async () => {
+    vi.mocked(api.createVehicle).mockResolvedValue({ ...vehicle, id: 3 })
+    const user = userEvent.setup()
+    render(<VehiclesSection vehicles={[]} qualifications={[]} canEdit onChanged={onChanged} />)
+
+    await user.type(screen.getByLabelText('Label'), 'Van 9')
+    await user.click(screen.getByRole('button', { name: 'Add vehicle' }))
+    await waitFor(() =>
+      expect(api.createVehicle).toHaveBeenCalledWith(
+        expect.objectContaining({ label: 'Van 9', required_license_class: undefined }),
+      ),
+    )
+
+    await user.type(screen.getByLabelText('Label'), 'Tractor')
+    await user.selectOptions(screen.getByLabelText('Required license'), 'cdl_a')
+    await user.click(screen.getByRole('button', { name: 'Add vehicle' }))
+    await waitFor(() =>
+      expect(api.createVehicle).toHaveBeenLastCalledWith(
+        expect.objectContaining({ label: 'Tractor', required_license_class: 'cdl_a' }),
+      ),
+    )
+  })
+
+  it('shows and edits the license a vehicle needs', async () => {
+    vi.mocked(api.updateVehicle).mockResolvedValue(vehicle)
+    const user = userEvent.setup()
+    render(
+      <VehiclesSection vehicles={[vehicle]} qualifications={[]} canEdit onChanged={onChanged} />,
+    )
+    expect(screen.getByText(/needs CDL B/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const editForm = screen.getByRole('button', { name: 'Save' }).closest('form') as HTMLElement
+    await user.selectOptions(within(editForm).getByLabelText('Required license'), 'class_c')
+    await user.click(within(editForm).getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(api.updateVehicle).toHaveBeenCalledWith(
+        vehicle.id,
+        expect.objectContaining({ required_license_class: 'class_c' }),
+      ),
+    )
   })
 })

@@ -74,7 +74,9 @@ def test_relinking_driver_school_student_validates_existence(client, admin_heade
 
 
 def test_relinking_to_an_already_linked_driver_conflicts(client, admin_headers):
-    driver = client.post("/drivers", headers=admin_headers, json={"full_name": "Driver A"}).json()
+    driver = client.post(
+        "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": "Driver A"}
+    ).json()
     first = _create_user(
         client, admin_headers, email="first@example.org", role="driver", driver_id=driver["id"]
     )

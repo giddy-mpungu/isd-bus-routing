@@ -6,8 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from isd_api.availability import driver_conflict_for_window, resource_unavailable_reason
+from isd_api.availability import driver_conflict_for_window, pairing_problem
 from isd_api.db import get_db
+from isd_api.licensing import license_violation
 from isd_api.models import Crew, Driver, Role, User, Vehicle
 from isd_api.routers.announcements import _maybe_create_substitution_announcement
 from isd_api.schemas import CrewCreate, CrewDriverUpdate, CrewRead
@@ -38,7 +39,7 @@ def create_crew(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown vehicle_id")
     # Spec section 2.1: never pair an out-of-service vehicle or a
     # deactivated driver into a crew in the first place.
-    unavailable = resource_unavailable_reason(driver, vehicle)
+    unavailable = pairing_problem(driver, vehicle)
     if unavailable is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot create crew: {unavailable}"
@@ -101,6 +102,12 @@ def update_crew_driver(
     new_driver = db.get(Driver, payload.driver_id)
     if new_driver is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown driver_id")
+    unlicensed = license_violation(new_driver, crew.vehicle)
+    if unlicensed is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot assign {new_driver.full_name} to this crew: {unlicensed}",
+        )
     # The substitute must actually be free for every assignment the crew
     # carries (spec section 13: availability is a scheduling constraint).
     for assignment in crew.assignments:

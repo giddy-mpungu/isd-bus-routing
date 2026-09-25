@@ -17,7 +17,9 @@ def _school(client, h):
 
 
 def _driver(client, h, name):
-    return client.post("/drivers", headers=h, json={"full_name": name}).json()
+    return client.post(
+        "/drivers", headers=h, json={"license_class": "cdl_a", "full_name": name}
+    ).json()
 
 
 def _vehicle(client, h, label):

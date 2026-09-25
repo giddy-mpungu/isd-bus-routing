@@ -59,6 +59,7 @@ const driverRecord: Driver = {
   id: 2,
   full_name: 'Jordan Driver',
   max_continuous_minutes: null,
+  license_class: 'cdl_b',
   is_active: true,
   qualifications: [],
 }
@@ -71,6 +72,7 @@ const vehicle: Vehicle = {
   width_m: null,
   height_m: null,
   weight_kg: null,
+  required_license_class: 'cdl_b',
   is_active: true,
   qualifications: [],
 }
@@ -97,6 +99,7 @@ const otherDriver: Driver = {
   id: 4,
   full_name: 'Sam Substitute',
   max_continuous_minutes: null,
+  license_class: 'cdl_b',
   is_active: true,
   qualifications: [],
 }
@@ -109,6 +112,7 @@ const otherVehicle: Vehicle = {
   width_m: null,
   height_m: null,
   weight_kg: null,
+  required_license_class: 'cdl_b',
   is_active: true,
   qualifications: [],
 }
@@ -143,6 +147,7 @@ const thirdDriver: Driver = {
   id: 6,
   full_name: 'Casey NoCrew',
   max_continuous_minutes: null,
+  license_class: 'cdl_b',
   is_active: true,
   qualifications: [],
 }
@@ -224,6 +229,7 @@ describe('SchedulePage', () => {
       crews_already_existing: 0,
       crews_skipped_absent_driver_ids: [driverRecord.id],
       crews_skipped_out_of_service_template_ids: [7],
+      crews_skipped_unlicensed_template_ids: [],
     })
     const user = userEvent.setup()
     render(<SchedulePage />)

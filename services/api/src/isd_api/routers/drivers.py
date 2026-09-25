@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from isd_api.audit import record as record_audit
 from isd_api.db import get_db
+from isd_api.licensing import license_class_from_codes
 from isd_api.models import Driver, Role, User
 from isd_api.routers.vehicles import _resolve_qualifications
 from isd_api.schemas import DriverCreate, DriverRead, DriverUpdate
@@ -23,6 +24,8 @@ def create_driver(
         full_name=payload.full_name,
         max_continuous_minutes=payload.max_continuous_minutes,
         qualifications=_resolve_qualifications(db, payload.qualification_codes),
+        license_class=payload.license_class
+        or license_class_from_codes(payload.qualification_codes),
     )
     db.add(driver)
     db.commit()
@@ -60,8 +63,10 @@ def update_driver(
         "max_continuous_minutes": driver.max_continuous_minutes,
         "is_active": driver.is_active,
         "qualification_codes": sorted(q.code for q in driver.qualifications),
+        "license_class": driver.license_class.value if driver.license_class else None,
     }
-
+    if "license_class" in payload.model_fields_set:
+        driver.license_class = payload.license_class
     if payload.full_name is not None:
         driver.full_name = payload.full_name
     if payload.max_continuous_minutes is not None:
@@ -84,6 +89,7 @@ def update_driver(
             "max_continuous_minutes": driver.max_continuous_minutes,
             "is_active": driver.is_active,
             "qualification_codes": sorted(q.code for q in driver.qualifications),
+            "license_class": driver.license_class.value if driver.license_class else None,
         },
     )
     db.commit()

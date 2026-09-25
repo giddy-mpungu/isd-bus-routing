@@ -39,7 +39,11 @@ def _seed_driver_crew_and_run(
     driver = client.post(
         "/drivers",
         headers=admin_headers,
-        json={"full_name": f"Driver {label}", "max_continuous_minutes": max_continuous_minutes},
+        json={
+            "license_class": "cdl_a",
+            "full_name": f"Driver {label}",
+            "max_continuous_minutes": max_continuous_minutes,
+        },
     ).json()
     vehicle_payload = {"label": f"Bus {label}"}
     if qualification_code:
@@ -200,7 +204,9 @@ def test_listing_absences_requires_admin_or_dispatcher_role(client, admin_header
 
 def test_substitute_candidates_empty_when_no_crew_that_date(client, admin_headers):
     driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Unscheduled Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Unscheduled Driver"},
     ).json()
     response = client.get(
         f"/drivers/{driver['id']}/substitute-candidates",
@@ -323,9 +329,13 @@ def test_substitute_candidates_ranks_school_familiarity_higher(client, admin_hea
     # assignment) but no crew/run today at all; driver D has neither —
     # nothing for today's solve to entangle, isolating the comparison
     # to familiarity alone.
-    driver_c = client.post("/drivers", headers=admin_headers, json={"full_name": "Driver C"}).json()
+    driver_c = client.post(
+        "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": "Driver C"}
+    ).json()
     vehicle_c = client.post("/vehicles", headers=admin_headers, json={"label": "Bus C"}).json()
-    driver_d = client.post("/drivers", headers=admin_headers, json={"full_name": "Driver D"}).json()
+    driver_d = client.post(
+        "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": "Driver D"}
+    ).json()
 
     earlier_date = "2026-08-25"
     client.post(
@@ -387,7 +397,9 @@ def test_substitute_candidates_ranks_lower_same_day_workload_higher(client, admi
         window_latest=650,
         qualification_code="qual-e",
     )
-    driver_f = client.post("/drivers", headers=admin_headers, json={"full_name": "Driver F"}).json()
+    driver_f = client.post(
+        "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": "Driver F"}
+    ).json()
 
     schedule = client.post("/schedule", headers=admin_headers, json={"service_date": SERVICE_DATE})
     assert schedule.status_code == 200, schedule.text
@@ -445,7 +457,9 @@ def test_update_crew_driver_repoints_it(client, admin_headers):
         client, admin_headers, label="A"
     )
     substitute = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Substitute Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Substitute Driver"},
     ).json()
 
     response = client.patch(
