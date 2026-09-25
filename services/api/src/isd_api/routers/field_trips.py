@@ -42,6 +42,7 @@ from isd_api.availability import (
     trip_windows,
 )
 from isd_api.db import get_db
+from isd_api.licensing import license_violation
 from isd_api.models import (
     Assignment,
     Crew,
@@ -364,6 +365,11 @@ def _trip_conflicts(
                         f"({absence.reason.value.replace('_', ' ')}, "
                         f"{_hhmm(absence.start_minute)}-{_hhmm(absence.end_minute)})"
                     )
+
+    if driver is not None and vehicle is not None:
+        unlicensed = license_violation(driver, vehicle)
+        if unlicensed is not None:
+            blocking.append(unlicensed[0].upper() + unlicensed[1:])
 
     trip_dates = {d for d, _, _ in windows}
     resource_filters = []

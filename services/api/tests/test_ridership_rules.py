@@ -159,7 +159,9 @@ def _full_bus_day(client, h, *, runs=1):
     riders = [_student(client, h, school, name) for name in ("Ava", "Ben")]
     occasional = _student(client, h, school, "Cai", default="does_not_ride")
     for label in [str(i) for i in range(runs)]:
-        driver = client.post("/drivers", headers=h, json={"full_name": f"D{label}"}).json()
+        driver = client.post(
+            "/drivers", headers=h, json={"license_class": "cdl_a", "full_name": f"D{label}"}
+        ).json()
         vehicle = client.post(
             "/vehicles",
             headers=h,

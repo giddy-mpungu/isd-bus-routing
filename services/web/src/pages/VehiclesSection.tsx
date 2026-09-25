@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { Qualification, Vehicle } from '../api/types'
+import type { LicenseClass, Qualification, Vehicle } from '../api/types'
 import { Badge } from '../components/Badge'
+import { LICENSE_CLASSES, LICENSE_LABELS } from '../licenses'
 
 function qualificationLabel(q: Qualification): string {
   return q.description ? `${q.code} — ${q.description}` : q.code
@@ -16,6 +17,7 @@ interface DraftFields {
   width_m: string
   height_m: string
   weight_kg: string
+  required_license_class: LicenseClass
   qualification_codes: Set<string>
 }
 
@@ -28,6 +30,7 @@ function draftFrom(v: Vehicle): DraftFields {
     width_m: v.width_m != null ? String(v.width_m) : '',
     height_m: v.height_m != null ? String(v.height_m) : '',
     weight_kg: v.weight_kg != null ? String(v.weight_kg) : '',
+    required_license_class: v.required_license_class,
     qualification_codes: new Set(v.qualifications.map((q) => q.code)),
   }
 }
@@ -55,6 +58,7 @@ export function VehiclesSection({
   const [width, setWidth] = useState('')
   const [height, setHeight] = useState('')
   const [weight, setWeight] = useState('')
+  const [requiredLicense, setRequiredLicense] = useState<LicenseClass | ''>('')
   const [qualCodes, setQualCodes] = useState<Set<string>>(new Set())
   const [createError, setCreateError] = useState<string | null>(null)
   const [isSavingCreate, setIsSavingCreate] = useState(false)
@@ -85,6 +89,7 @@ export function VehiclesSection({
         height_m: height ? Number(height) : undefined,
         weight_kg: weight ? Number(weight) : undefined,
         qualification_codes: Array.from(qualCodes),
+        required_license_class: requiredLicense || undefined,
       })
       setLabel('')
       setNominalCapacity('')
@@ -93,6 +98,7 @@ export function VehiclesSection({
       setWidth('')
       setHeight('')
       setWeight('')
+      setRequiredLicense('')
       setQualCodes(new Set())
       await onChanged()
     } catch (err) {
@@ -148,6 +154,7 @@ export function VehiclesSection({
         height_m: draft.height_m ? Number(draft.height_m) : undefined,
         weight_kg: draft.weight_kg ? Number(draft.weight_kg) : undefined,
         qualification_codes: Array.from(draft.qualification_codes),
+        required_license_class: draft.required_license_class,
       })
       cancelEdit()
       await onChanged()
@@ -242,6 +249,23 @@ export function VehiclesSection({
                   value={draft.weight_kg}
                   onChange={(event) => setDraft({ ...draft, weight_kg: event.target.value })}
                 />
+                <label htmlFor={`vehicle-edit-license-${v.id}`}>Required license</label>
+                <select
+                  id={`vehicle-edit-license-${v.id}`}
+                  value={draft.required_license_class}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      required_license_class: event.target.value as LicenseClass,
+                    })
+                  }
+                >
+                  {LICENSE_CLASSES.map((c) => (
+                    <option key={c} value={c}>
+                      {LICENSE_LABELS[c]}
+                    </option>
+                  ))}
+                </select>
                 {vehicleQualifications.length > 0 && (
                   <fieldset>
                     <legend>Vehicle capability qualifications</legend>
@@ -269,6 +293,7 @@ export function VehiclesSection({
             <li key={v.id}>
               {v.label}
               {v.nominal_capacity != null && ` — capacity ${v.nominal_capacity}`}
+              {` — needs ${LICENSE_LABELS[v.required_license_class]}`}
               {(v.length_m != null || v.width_m != null || v.height_m != null) &&
                 ` — ${v.length_m ?? '?'}m × ${v.width_m ?? '?'}m × ${v.height_m ?? '?'}m`}
               {v.weight_kg != null && ` — ${v.weight_kg}kg`}
@@ -356,6 +381,19 @@ export function VehiclesSection({
             value={weight}
             onChange={(event) => setWeight(event.target.value)}
           />
+          <label htmlFor="vehicle-required-license">Required license</label>
+          <select
+            id="vehicle-required-license"
+            value={requiredLicense}
+            onChange={(event) => setRequiredLicense(event.target.value as LicenseClass | '')}
+          >
+            <option value="">Automatic: CDL B for 15+ passengers or unknown, else Class C</option>
+            {LICENSE_CLASSES.map((c) => (
+              <option key={c} value={c}>
+                {LICENSE_LABELS[c]}
+              </option>
+            ))}
+          </select>
           {vehicleQualifications.length > 0 && (
             <fieldset>
               <legend>Vehicle capability qualifications</legend>

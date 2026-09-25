@@ -30,7 +30,9 @@ def _seed(client, h, *, crews=2):
     ).json()
     made = []
     for label in "AB"[:crews]:
-        driver = client.post("/drivers", headers=h, json={"full_name": f"Driver {label}"}).json()
+        driver = client.post(
+            "/drivers", headers=h, json={"license_class": "cdl_a", "full_name": f"Driver {label}"}
+        ).json()
         vehicle = client.post("/vehicles", headers=h, json={"label": f"Bus {label}"}).json()
         made.append(
             client.post(

@@ -58,6 +58,15 @@ class QualificationKind(enum.StrEnum):
     VEHICLE_CAPABILITY = "vehicle_capability"
 
 
+class LicenseClass(enum.StrEnum):
+    """Spec section 1: "class A & B CDL, and Class C Non-CDL Drivers".
+    Tiered; see isd_api/licensing.py."""
+
+    CDL_A = "cdl_a"
+    CDL_B = "cdl_b"
+    CLASS_C = "class_c"
+
+
 class AssignmentStatus(enum.StrEnum):
     SCHEDULED = "scheduled"
     IN_PROGRESS = "in_progress"
@@ -334,6 +343,13 @@ class Vehicle(Base):
     label: Mapped[str] = mapped_column(String(64), nullable=False)  # e.g. bus number
     nominal_capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
     effective_capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Spec section 15: the license class needed to drive this vehicle.
+    # Inferred from capacity when not given (isd_api/licensing.py).
+    required_license_class: Mapped[LicenseClass] = mapped_column(
+        SAEnum(LicenseClass, native_enum=False, length=16),
+        nullable=False,
+        default=LicenseClass.CDL_B,
+    )
     # spec section 6 vehicle profile. Persisted only — not yet consumed by
     # routing (isd_solver.domain.Vehicle's own docstring names the follow-up).
     length_m: Mapped[float | None] = mapped_column(nullable=True)
@@ -365,6 +381,10 @@ class Driver(Base):
     # District-configured; see isd_solver.domain.Driver docstring — this
     # codebase asserts nothing about what any specific driver-hour law requires.
     max_continuous_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Spec section 15. None = not on record, which qualifies for nothing.
+    license_class: Mapped[LicenseClass | None] = mapped_column(
+        SAEnum(LicenseClass, native_enum=False, length=16), nullable=True
+    )
     # A departed/inactive driver: hidden from future crew-creation
     # dropdowns, never hard-deleted -- same reasoning as Vehicle.is_active.
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

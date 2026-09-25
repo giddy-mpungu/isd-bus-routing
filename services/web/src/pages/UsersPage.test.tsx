@@ -60,6 +60,7 @@ const driverRecord: Driver = {
   id: 5,
   full_name: 'Jordan Driver',
   max_continuous_minutes: null,
+  license_class: 'cdl_b',
   is_active: true,
   qualifications: [],
 }

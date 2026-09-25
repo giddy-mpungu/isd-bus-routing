@@ -178,6 +178,10 @@ export function SchedulePage() {
         )
         parts.push(`skipped crew for absent driver(s): ${names.join(', ')}`)
       }
+      const unlicensed = r.crews_skipped_unlicensed_template_ids.length
+      if (unlicensed > 0) {
+        parts.push(`skipped ${unlicensed} crew template(s) whose driver isn't licensed for the bus`)
+      }
       const outOfService = r.crews_skipped_out_of_service_template_ids.length
       if (outOfService > 0) {
         parts.push(

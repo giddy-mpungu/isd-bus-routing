@@ -44,7 +44,9 @@ def _seed_two_far_schools_and_two_crews(client, admin_headers):
         )
     for label in ("A", "B"):
         driver = client.post(
-            "/drivers", headers=admin_headers, json={"full_name": f"Driver {label}"}
+            "/drivers",
+            headers=admin_headers,
+            json={"license_class": "cdl_a", "full_name": f"Driver {label}"},
         ).json()
         vehicle = client.post(
             "/vehicles", headers=admin_headers, json={"label": f"Bus {label}"}
@@ -180,7 +182,9 @@ def test_arrival_buffer_weight_moves_assignments_earlier(client, admin_headers):
             "buffer_minutes": 10,
         },
     )
-    driver = client.post("/drivers", headers=admin_headers, json={"full_name": "Driver S"}).json()
+    driver = client.post(
+        "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": "Driver S"}
+    ).json()
     vehicle = client.post("/vehicles", headers=admin_headers, json={"label": "Bus S"}).json()
     client.post(
         "/crews",

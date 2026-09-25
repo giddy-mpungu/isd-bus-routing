@@ -22,6 +22,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from isd_api.licensing import license_violation
 from isd_api.models import Assignment, Crew, Driver, DriverAbsence, FieldTrip, Vehicle
 
 # Time a field trip's driver and bus are held before departure and after
@@ -139,8 +140,14 @@ def driver_absences(db: Session, driver_id: int, service_date: date) -> list[Dri
     )
 
 
+def pairing_problem(driver: Driver, vehicle: Vehicle) -> str | None:
+    """Why this driver can't work this vehicle at all: out of service,
+    deactivated, or not licensed for it (spec sections 2.1, 15)."""
+    return resource_unavailable_reason(driver, vehicle) or license_violation(driver, vehicle)
+
+
 def crew_availability(db: Session, crew: Crew) -> CrewAvailability:
-    reason = resource_unavailable_reason(crew.driver, crew.vehicle)
+    reason = pairing_problem(crew.driver, crew.vehicle)
     if reason is not None:
         return CrewAvailability(unavailable_reason=reason)
 

@@ -58,10 +58,16 @@ export interface Qualification {
   is_active: boolean
 }
 
+// Spec section 15: tiered CDL A > CDL B > Class C (non-CDL). A driver may
+// drive any vehicle whose required class is at or below their own.
+export type LicenseClass = 'cdl_a' | 'cdl_b' | 'class_c'
+
 export interface Driver {
   id: number
   full_name: string
   max_continuous_minutes: number | null
+  // null = not on record, which qualifies for no vehicle.
+  license_class: LicenseClass | null
   is_active: boolean
   qualifications: Qualification[]
 }
@@ -75,6 +81,7 @@ export interface Vehicle {
   width_m: number | null
   height_m: number | null
   weight_kg: number | null
+  required_license_class: LicenseClass
   is_active: boolean
   qualifications: Qualification[]
 }
@@ -215,6 +222,7 @@ export interface DriverCreate {
   full_name: string
   max_continuous_minutes?: number
   qualification_codes: string[]
+  license_class?: LicenseClass
 }
 
 export interface DriverUpdate {
@@ -222,6 +230,7 @@ export interface DriverUpdate {
   max_continuous_minutes?: number
   qualification_codes?: string[]
   is_active?: boolean
+  license_class?: LicenseClass | null
 }
 
 export interface VehicleCreate {
@@ -233,6 +242,8 @@ export interface VehicleCreate {
   height_m?: number
   weight_kg?: number
   qualification_codes: string[]
+  // Omitted = inferred from capacity (15+ passengers needs CDL B).
+  required_license_class?: LicenseClass
 }
 
 export interface VehicleUpdate {
@@ -245,6 +256,7 @@ export interface VehicleUpdate {
   weight_kg?: number
   qualification_codes?: string[]
   is_active?: boolean
+  required_license_class?: LicenseClass
 }
 
 export interface CrewCreate {
@@ -685,6 +697,7 @@ export interface GenerateFromTemplatesResult {
   crews_already_existing: number
   crews_skipped_absent_driver_ids: number[]
   crews_skipped_out_of_service_template_ids: number[]
+  crews_skipped_unlicensed_template_ids: number[]
 }
 
 export type SisImportAction =

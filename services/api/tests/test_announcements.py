@@ -68,7 +68,9 @@ def _seed_driver_crew_and_run(
     too, so a manual PATCH reassignment between the two runs is
     actually eligible rather than tripping the hard-constraint check."""
     driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": f"Driver {label}"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": f"Driver {label}"},
     ).json()
     qualification_code = f"QUAL_{label}"
     client.post(
@@ -420,7 +422,9 @@ def test_crew_driver_change_with_no_assignments_yet_creates_no_announcement(clie
         client, admin_headers, label="A", school_id=school["id"]
     )
     substitute = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Substitute Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Substitute Driver"},
     ).json()
     response = client.patch(
         f"/crews/{crew['id']}", headers=admin_headers, json={"driver_id": substitute["id"]}
@@ -443,7 +447,9 @@ def test_crew_driver_change_on_solved_unambiguous_run_creates_family_substitutio
     assert schedule.status_code == 200, schedule.text
 
     substitute = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Substitute Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Substitute Driver"},
     ).json()
     response = client.patch(
         f"/crews/{crew['id']}", headers=admin_headers, json={"driver_id": substitute["id"]}
@@ -500,7 +506,9 @@ def test_crew_driver_change_is_skipped_when_school_date_direction_is_ambiguous(
     assert schedule.status_code == 200, schedule.text
 
     substitute = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Substitute Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Substitute Driver"},
     ).json()
     response = client.patch(
         f"/crews/{crew_a['id']}", headers=admin_headers, json={"driver_id": substitute["id"]}
@@ -528,8 +536,12 @@ def test_schedule_reassigning_a_crew_to_a_different_assignment_creates_substitut
         headers=admin_headers,
         json={"code": "QUAL_SHARED", "kind": "vehicle_capability"},
     )
-    driver_a = client.post("/drivers", headers=admin_headers, json={"full_name": "Driver A"}).json()
-    driver_b = client.post("/drivers", headers=admin_headers, json={"full_name": "Driver B"}).json()
+    driver_a = client.post(
+        "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": "Driver A"}
+    ).json()
+    driver_b = client.post(
+        "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": "Driver B"}
+    ).json()
     vehicle_a = client.post(
         "/vehicles",
         headers=admin_headers,

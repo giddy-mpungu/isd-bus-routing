@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from isd_api.audit import record as record_audit
 from isd_api.availability import resource_unavailable_reason
 from isd_api.db import get_db
+from isd_api.licensing import license_violation
 from isd_api.models import (
     Crew,
     CrewTemplate,
@@ -166,10 +167,18 @@ def create_crew_template(
             detail="available_window_earliest must be <= available_window_latest",
         )
     _check_active_range(payload.active_from, payload.active_until)
-    if db.get(Driver, payload.driver_id) is None:
+    template_driver = db.get(Driver, payload.driver_id)
+    if template_driver is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown driver_id")
-    if db.get(Vehicle, payload.vehicle_id) is None:
+    template_vehicle = db.get(Vehicle, payload.vehicle_id)
+    if template_vehicle is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown vehicle_id")
+    unlicensed = license_violation(template_driver, template_vehicle)
+    if unlicensed is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot create crew template: {unlicensed}",
+        )
 
     template = CrewTemplate(
         driver_id=payload.driver_id,
@@ -255,6 +264,7 @@ def generate_from_templates(
     runs_created = runs_existing = crews_created = crews_existing = 0
     absent_driver_ids: list[int] = []
     out_of_service_template_ids: list[int] = []
+    unlicensed_template_ids: list[int] = []
 
     for rt in db.query(RouteTemplate).order_by(RouteTemplate.id).all():
         if not _applies_on(rt, service_date):
@@ -310,6 +320,9 @@ def generate_from_templates(
         if resource_unavailable_reason(ct.driver, ct.vehicle) is not None:
             out_of_service_template_ids.append(ct.id)
             continue
+        if license_violation(ct.driver, ct.vehicle) is not None:
+            unlicensed_template_ids.append(ct.id)
+            continue
         fully_absent = (
             db.query(DriverAbsence)
             .filter(
@@ -353,4 +366,5 @@ def generate_from_templates(
         crews_already_existing=crews_existing,
         crews_skipped_absent_driver_ids=absent_driver_ids,
         crews_skipped_out_of_service_template_ids=out_of_service_template_ids,
+        crews_skipped_unlicensed_template_ids=unlicensed_template_ids,
     )

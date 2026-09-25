@@ -25,7 +25,9 @@ def _add_crew(
     service_date — used by tests that need two crews to choose between.
     vehicle_qualification_codes must already exist (POST /qualifications)."""
     driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": f"Driver {label}"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": f"Driver {label}"},
     ).json()
     vehicle = client.post(
         "/vehicles",
@@ -61,7 +63,11 @@ def _seed_spec_section5_scenario(client, admin_headers):
     driver = client.post(
         "/drivers",
         headers=admin_headers,
-        json={"full_name": "Jordan Driver", "qualification_codes": ["CDL_B"]},
+        json={
+            "license_class": "cdl_a",
+            "full_name": "Jordan Driver",
+            "qualification_codes": ["CDL_B"],
+        },
     ).json()
     vehicle = client.post(
         "/vehicles",
@@ -174,7 +180,9 @@ def test_schedule_passes_vehicle_dimensions_through_to_the_deadhead_estimator(
         headers=admin_headers,
         json={"name": "S", "location_lat": 29.70, "location_lon": -95.40},
     ).json()
-    driver = client.post("/drivers", headers=admin_headers, json={"full_name": "D"}).json()
+    driver = client.post(
+        "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": "D"}
+    ).json()
     vehicle = client.post(
         "/vehicles",
         headers=admin_headers,
@@ -454,7 +462,9 @@ def test_schedule_routes_to_a_preferred_entrance_instead_of_the_school_centroid(
             "school_id": school["id"],
         },
     )
-    driver = client.post("/drivers", headers=admin_headers, json={"full_name": "D"}).json()
+    driver = client.post(
+        "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": "D"}
+    ).json()
     vehicle = client.post("/vehicles", headers=admin_headers, json={"label": "Bus"}).json()
     client.post(
         "/crews",
@@ -528,7 +538,9 @@ def test_schedule_falls_back_to_school_centroid_when_preferred_entrance_is_ambig
                 "school_id": school["id"],
             },
         )
-    driver = client.post("/drivers", headers=admin_headers, json={"full_name": "D"}).json()
+    driver = client.post(
+        "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": "D"}
+    ).json()
     vehicle = client.post("/vehicles", headers=admin_headers, json={"label": "Bus"}).json()
     client.post(
         "/crews",
@@ -616,7 +628,9 @@ def test_schedule_endpoint_reports_infeasible_clearly(client, admin_headers):
         headers=admin_headers,
         json={"name": "S", "location_lat": 29.70, "location_lon": -95.40},
     ).json()
-    driver = client.post("/drivers", headers=admin_headers, json={"full_name": "D"}).json()
+    driver = client.post(
+        "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": "D"}
+    ).json()
     vehicle = client.post("/vehicles", headers=admin_headers, json={"label": "V"}).json()
     client.post(
         "/crews",
@@ -668,7 +682,9 @@ def test_driver_only_sees_own_crews_assignments(client, admin_headers, db_sessio
     # A second, unrelated driver sees nothing for this date.
     make_user(db_session, email="driver2@example.org", role=Role.DRIVER)
     other_driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Other Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Other Driver"},
     ).json()
     from isd_api.models import User
 

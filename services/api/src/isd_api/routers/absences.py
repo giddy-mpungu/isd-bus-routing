@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from isd_api.audit import record as record_audit
 from isd_api.availability import driver_conflict_for_window
 from isd_api.db import get_db
+from isd_api.licensing import license_violation
 from isd_api.models import Assignment, Crew, Driver, DriverAbsence, Role, Run, User
 from isd_api.schemas import (
     AbsenceCreate,
@@ -130,16 +131,12 @@ def _rank_substitute_candidates(db: Session, assignment: Assignment) -> list[Sub
     exact weights (section 2.2 already anticipates configurable
     objective weighting as a future admin setting).
 
-    Deliberately does NOT attempt a driver-license-vs-vehicle-type
-    qualification match: Driver.qualifications (license-kind) and
-    Vehicle.qualifications (vehicle-capability-kind) are different
-    QualificationKind namespaces with no existing cross-table
-    compatibility mapping anywhere in this codebase — inventing one
-    here would be a fabricated signal, not a real one. The genuine
-    hard constraints (vehicle capacity, a run's required vehicle
-    qualifications) are still enforced when the chosen candidate is
-    actually assigned, via the same _hard_constraint_violation check
-    every manual PATCH /schedule/assignments/{id} already goes
+    A candidate must be licensed (spec section 15) for the bus they'd
+    drive: their own crew's bus that day if they have one, else the
+    absent driver's bus, which they'd take over by a crew repoint. The
+    other hard constraints (capacity, a run's required vehicle
+    qualifications) are enforced when the chosen candidate is actually
+    assigned, via the same checks every manual reassignment goes
     through."""
     absent_driver_id = assignment.crew.driver_id
     service_date = assignment.crew.service_date
@@ -150,6 +147,15 @@ def _rank_substitute_candidates(db: Session, assignment: Assignment) -> list[Sub
     for driver in db.query(Driver).filter(Driver.id != absent_driver_id).order_by(Driver.id):
         # Hard exclude: deactivated, or absent themselves during this run.
         if driver_conflict_for_window(db, driver, service_date, start, end) is not None:
+            continue
+        # Hard exclude: not licensed for the bus they'd be driving.
+        own_crew = (
+            db.query(Crew)
+            .filter(Crew.driver_id == driver.id, Crew.service_date == service_date)
+            .one_or_none()
+        )
+        bus = own_crew.vehicle if own_crew is not None else assignment.crew.vehicle
+        if license_violation(driver, bus) is not None:
             continue
         same_day = (
             db.query(Assignment)

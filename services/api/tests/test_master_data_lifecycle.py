@@ -15,7 +15,7 @@ def _vehicle(client, admin_headers, **overrides):
 
 
 def _driver(client, admin_headers, **overrides):
-    payload = {"full_name": "Driver A"}
+    payload = {"full_name": "Driver A", "license_class": "cdl_a"}
     payload.update(overrides)
     return client.post("/drivers", headers=admin_headers, json=payload).json()
 

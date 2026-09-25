@@ -19,7 +19,11 @@ def _seed_school(client, admin_headers, name="Riverside Elementary"):
 
 
 def _seed_driver_vehicle(client, admin_headers, label="A"):
-    driver = client.post("/drivers", headers=admin_headers, json={"full_name": f"Driver {label}"})
+    driver = client.post(
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": f"Driver {label}"},
+    )
     vehicle = client.post("/vehicles", headers=admin_headers, json={"label": f"Bus {label}"})
     return driver.json(), vehicle.json()
 
@@ -351,7 +355,9 @@ def test_generated_runs_carry_required_qualifications_and_solve_end_to_end(clien
         headers=admin_headers,
         json={"code": "wheelchair_lift", "kind": "vehicle_capability"},
     )
-    driver = client.post("/drivers", headers=admin_headers, json={"full_name": "Driver Q"}).json()
+    driver = client.post(
+        "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": "Driver Q"}
+    ).json()
     vehicle = client.post(
         "/vehicles",
         headers=admin_headers,

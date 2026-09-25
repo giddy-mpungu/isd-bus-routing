@@ -31,6 +31,7 @@ const driverRecord: Driver = {
   id: 2,
   full_name: 'Jordan Driver',
   max_continuous_minutes: null,
+  license_class: 'cdl_b',
   is_active: true,
   qualifications: [],
 }
@@ -43,6 +44,7 @@ const vehicle: Vehicle = {
   width_m: null,
   height_m: null,
   weight_kg: null,
+  required_license_class: 'cdl_b',
   is_active: true,
   qualifications: [],
 }

@@ -755,6 +755,41 @@ keep names.
   components (extracted from SetupPage like the other sections), with Edit
   and a per-student Guardians panel.
 
+## Driver license classes (spec sections 1, 2.1, 15)
+
+`isd_api/licensing.py`. Decided by the user on 2026-09-24 ("use your
+recommendation"): **tiered** classes, CDL A > CDL B > Class C (non-CDL).
+A driver may drive any vehicle whose required class is at or below their own.
+
+- `Driver.license_class` (nullable). Set explicitly, or taken at creation
+  from a license qualification code (`CDL_A`, `CDL_B`, `CLASS_C`/`NON_CDL_C`,
+  case- and punctuation-insensitive). `None` = **not on record, which
+  qualifies for no vehicle** (fail closed; every vehicle needs at least
+  Class C).
+- `Vehicle.required_license_class` (not null). When not given, it's inferred
+  from capacity: **15+ passengers (16+ people with the driver, the US CDL
+  threshold) or unknown capacity → CDL B, else Class C.** Admins can
+  override it (e.g. CDL A for a combination vehicle). Changing capacity
+  later doesn't re-infer it.
+- Enforced everywhere a driver meets a vehicle, through
+  `availability.pairing_problem()` (out of service, deactivated, or
+  unlicensed): crew creation (400), crew repoint (409), crew-template
+  creation (400), template generation (skipped, reported in
+  `crews_skipped_unlicensed_template_ids`), the solver (crew excluded),
+  manual reassignment (422), substitute ranking (candidates must be licensed
+  for the bus they'd drive, their own crew's or the absent driver's), and
+  field-trip assignment (409). A locked assignment whose driver was
+  downgraded is kept and flagged via `availability_issue`, like any other
+  availability problem.
+- The solver's `Driver.license_qualifications` field is still unused. The
+  pairing is validated before crews reach the solver, so it doesn't need to
+  know.
+- **Upgrade note**: migration `9a1f3c5e7b20` backfills drivers from their
+  existing license codes and vehicles from capacity. A driver with no
+  license code gets no class, so their crews stop being scheduled and their
+  existing assignments are flagged until an admin records a class
+  (Setup → Fleet & drivers shows "no license on record").
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)

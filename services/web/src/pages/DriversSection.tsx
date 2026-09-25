@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { Driver, Qualification } from '../api/types'
+import type { Driver, LicenseClass, Qualification } from '../api/types'
 import { Badge } from '../components/Badge'
+import { LICENSE_CLASSES, LICENSE_LABELS } from '../licenses'
 
 function qualificationLabel(q: Qualification): string {
   return q.description ? `${q.code} — ${q.description}` : q.code
@@ -11,6 +12,7 @@ function qualificationLabel(q: Qualification): string {
 interface DraftFields {
   full_name: string
   max_continuous_minutes: string
+  license_class: LicenseClass | ''
   qualification_codes: Set<string>
 }
 
@@ -19,6 +21,7 @@ function draftFrom(d: Driver): DraftFields {
     full_name: d.full_name,
     max_continuous_minutes:
       d.max_continuous_minutes != null ? String(d.max_continuous_minutes) : '',
+    license_class: d.license_class ?? '',
     qualification_codes: new Set(d.qualifications.map((q) => q.code)),
   }
 }
@@ -39,6 +42,7 @@ export function DriversSection({
   // --- Create form ---
   const [fullName, setFullName] = useState('')
   const [maxContinuous, setMaxContinuous] = useState('')
+  const [licenseClass, setLicenseClass] = useState<LicenseClass | ''>('')
   const [qualCodes, setQualCodes] = useState<Set<string>>(new Set())
   const [createError, setCreateError] = useState<string | null>(null)
   const [isSavingCreate, setIsSavingCreate] = useState(false)
@@ -64,9 +68,11 @@ export function DriversSection({
         full_name: fullName,
         max_continuous_minutes: maxContinuous ? Number(maxContinuous) : undefined,
         qualification_codes: Array.from(qualCodes),
+        license_class: licenseClass || undefined,
       })
       setFullName('')
       setMaxContinuous('')
+      setLicenseClass('')
       setQualCodes(new Set())
       await onChanged()
     } catch (err) {
@@ -119,6 +125,7 @@ export function DriversSection({
           ? Number(draft.max_continuous_minutes)
           : undefined,
         qualification_codes: Array.from(draft.qualification_codes),
+        license_class: draft.license_class || null,
       })
       cancelEdit()
       await onChanged()
@@ -169,6 +176,21 @@ export function DriversSection({
                     setDraft({ ...draft, max_continuous_minutes: event.target.value })
                   }
                 />
+                <label htmlFor={`driver-edit-license-${d.id}`}>License class</label>
+                <select
+                  id={`driver-edit-license-${d.id}`}
+                  value={draft.license_class}
+                  onChange={(event) =>
+                    setDraft({ ...draft, license_class: event.target.value as LicenseClass | '' })
+                  }
+                >
+                  <option value="">Not on record</option>
+                  {LICENSE_CLASSES.map((c) => (
+                    <option key={c} value={c}>
+                      {LICENSE_LABELS[c]}
+                    </option>
+                  ))}
+                </select>
                 {licenseQualifications.length > 0 && (
                   <fieldset>
                     <legend>License qualifications</legend>
@@ -195,6 +217,12 @@ export function DriversSection({
           ) : (
             <li key={d.id}>
               {d.full_name}
+              {' — '}
+              {d.license_class ? (
+                LICENSE_LABELS[d.license_class]
+              ) : (
+                <Badge tone="warning">no license on record</Badge>
+              )}
               {d.qualifications.length > 0 &&
                 ` (${d.qualifications.map((q) => q.code).join(', ')})`}
               {!d.is_active && (
@@ -235,6 +263,23 @@ export function DriversSection({
             value={maxContinuous}
             onChange={(event) => setMaxContinuous(event.target.value)}
           />
+          <label htmlFor="driver-license-class">License class</label>
+          <select
+            id="driver-license-class"
+            value={licenseClass}
+            onChange={(event) => setLicenseClass(event.target.value as LicenseClass | '')}
+          >
+            <option value="">From a license qualification below, if any</option>
+            {LICENSE_CLASSES.map((c) => (
+              <option key={c} value={c}>
+                {LICENSE_LABELS[c]}
+              </option>
+            ))}
+          </select>
+          <small>
+            A driver may drive any vehicle at or below their class. Without one on record they
+            can&apos;t be scheduled.
+          </small>
           {licenseQualifications.length > 0 && (
             <fieldset>
               <legend>License qualifications</legend>

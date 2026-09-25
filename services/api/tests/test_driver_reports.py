@@ -8,7 +8,9 @@ from tests.conftest import auth_headers, login, make_user
 
 def _seed_driver_with_crew(client, admin_headers, *, service_date="2026-09-01"):
     driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Jordan Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Jordan Driver"},
     ).json()
     vehicle = client.post("/vehicles", headers=admin_headers, json={"label": "Bus 101"}).json()
     client.post(
@@ -57,7 +59,9 @@ def test_create_report_leaves_vehicle_null_with_no_crew_that_date(
     client, admin_headers, db_session
 ):
     driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Unscheduled Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Unscheduled Driver"},
     ).json()
     driver_headers = _login_as_driver(client, db_session, driver["id"])
 
@@ -113,7 +117,9 @@ def test_staff_can_file_a_report_on_a_drivers_behalf(client, admin_headers, db_s
 def test_driver_cannot_file_a_report_for_another_driver(client, admin_headers, db_session):
     driver, _vehicle = _seed_driver_with_crew(client, admin_headers)
     other_driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Other Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Other Driver"},
     ).json()
     other_headers = _login_as_driver(
         client, db_session, other_driver["id"], email="driver2@example.org"

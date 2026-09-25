@@ -15,7 +15,9 @@ def _seed_single_run_scenario(client, admin_headers, *, service_date="2026-09-01
         json={"name": "Riverside Elementary", "location_lat": 29.70, "location_lon": -95.40},
     ).json()
     driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Jordan Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Jordan Driver"},
     ).json()
     vehicle = client.post(
         "/vehicles",
@@ -78,7 +80,9 @@ def test_driver_my_assignments_excludes_another_drivers_runs(client, admin_heade
     client.post("/schedule", headers=admin_headers, json={"service_date": "2026-09-01"})
 
     other_driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Other Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Other Driver"},
     ).json()
     other_headers = _login_as_driver(
         client, db_session, admin_headers, other_driver["id"], email="driver2@example.org"
@@ -155,7 +159,9 @@ def test_driver_cannot_update_another_drivers_assignment_status(client, admin_he
     assignment_id = schedule.json()["assignments"][0]["id"]
 
     other_driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Other Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Other Driver"},
     ).json()
     other_headers = _login_as_driver(
         client, db_session, admin_headers, other_driver["id"], email="driver2@example.org"
@@ -276,7 +282,9 @@ def test_my_assignments_roster_is_empty_and_flagged_when_ambiguous(
             "buffer_minutes": 10,
         },
     )
-    driver2 = client.post("/drivers", headers=admin_headers, json={"full_name": "Driver 2"}).json()
+    driver2 = client.post(
+        "/drivers", headers=admin_headers, json={"license_class": "cdl_a", "full_name": "Driver 2"}
+    ).json()
     vehicle2 = client.post("/vehicles", headers=admin_headers, json={"label": "Bus 202"}).json()
     client.post(
         "/crews",

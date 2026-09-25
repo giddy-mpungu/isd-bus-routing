@@ -13,7 +13,9 @@ def _seed_single_run_scenario(client, admin_headers, *, service_date="2026-09-01
         json={"name": "Riverside Elementary", "location_lat": 29.70, "location_lon": -95.40},
     ).json()
     driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Jordan Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Jordan Driver"},
     ).json()
     vehicle = client.post(
         "/vehicles",
@@ -106,7 +108,9 @@ def test_reporting_position_again_overwrites_not_duplicates(client, admin_header
 def test_driver_cannot_report_another_drivers_position(client, admin_headers, db_session):
     _school, driver, _vehicle, _crew, _run = _seed_single_run_scenario(client, admin_headers)
     other_driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Other Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Other Driver"},
     ).json()
     other_headers = _login_as_driver(
         client, db_session, other_driver["id"], email="driver2@example.org"
@@ -127,7 +131,9 @@ def test_driver_cannot_report_another_drivers_position(client, admin_headers, db
 
 def test_driver_with_no_crew_that_date_gets_404(client, admin_headers, db_session):
     driver = client.post(
-        "/drivers", headers=admin_headers, json={"full_name": "Unscheduled Driver"}
+        "/drivers",
+        headers=admin_headers,
+        json={"license_class": "cdl_a", "full_name": "Unscheduled Driver"},
     ).json()
     driver_headers = _login_as_driver(client, db_session, driver["id"])
 
