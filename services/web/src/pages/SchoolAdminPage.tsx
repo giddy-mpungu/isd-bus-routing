@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { Announcement, AssignmentStatus, SchoolAssignment } from '../api/types'
-import { Badge, type BadgeTone } from '../components/Badge'
+import type { Announcement, SchoolAssignment } from '../api/types'
+import { STATUS_LABELS, STATUS_TONES } from '../assignmentStatus'
+import { Badge } from '../components/Badge'
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -12,20 +13,6 @@ function formatMinuteOfDay(minute: number): string {
   const hours = Math.floor(minute / 60)
   const mins = minute % 60
   return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
-}
-
-const STATUS_LABELS: Record<AssignmentStatus, string> = {
-  scheduled: 'Not started',
-  in_progress: 'In progress',
-  completed: 'Completed',
-  no_show: 'No-show',
-}
-
-const STATUS_TONES: Record<AssignmentStatus, BadgeTone> = {
-  scheduled: 'neutral',
-  in_progress: 'info',
-  completed: 'success',
-  no_show: 'danger',
 }
 
 export function SchoolAdminPage() {

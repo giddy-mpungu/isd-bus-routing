@@ -9,7 +9,8 @@ import type {
   DriverReportType,
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
-import { Badge, type BadgeTone } from '../components/Badge'
+import { FINISHED, NEXT_STEP, STATUS_LABELS, STATUS_TONES, UNDERWAY } from '../assignmentStatus'
+import { Badge } from '../components/Badge'
 
 const ABSENCE_REASONS: AbsenceReason[] = [
   'sick_leave',
@@ -32,20 +33,6 @@ function formatMinuteOfDay(minute: number): string {
   const hours = Math.floor(minute / 60)
   const mins = minute % 60
   return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
-}
-
-const STATUS_LABELS: Record<AssignmentStatus, string> = {
-  scheduled: 'Not started',
-  in_progress: 'In progress',
-  completed: 'Completed',
-  no_show: 'No-show',
-}
-
-const STATUS_TONES: Record<AssignmentStatus, BadgeTone> = {
-  scheduled: 'neutral',
-  in_progress: 'info',
-  completed: 'success',
-  no_show: 'danger',
 }
 
 function speakAssignment(a: DriverAssignment) {
@@ -72,7 +59,11 @@ export function DriverPage() {
   const loadAssignments = useCallback(async (date: string) => {
     setErrorMessage(null)
     try {
-      setAssignments(await api.getMyAssignments(date))
+      const mine = await api.getMyAssignments(date)
+      // Spec section 14: tell dispatch the tablet has received new work.
+      setAssignments(
+        mine.some((a) => a.status === 'sent') ? await api.markAssignmentsReceived(date) : mine,
+      )
     } catch (err) {
       setErrorMessage(err instanceof ApiError ? err.message : 'Failed to load your runs.')
     }
@@ -98,7 +89,7 @@ export function DriverPage() {
   // block or alarm a driver just trying to run their route.
   useEffect(() => {
     const driverId = user?.driver_id
-    const hasActiveAssignment = assignments.some((a) => a.status === 'in_progress')
+    const hasActiveAssignment = assignments.some((a) => UNDERWAY.includes(a.status))
     if (driverId == null || !hasActiveAssignment || !('geolocation' in navigator)) {
       return
     }
@@ -268,27 +259,26 @@ export function DriverPage() {
               )}
             </div>
             <div className="driver-run-actions">
-              <button
-                type="button"
-                disabled={a.status === 'in_progress' || busyAssignmentId === a.id}
-                onClick={() => void handleSetStatus(a.id, 'in_progress')}
-              >
-                Start
-              </button>
-              <button
-                type="button"
-                disabled={a.status === 'completed' || busyAssignmentId === a.id}
-                onClick={() => void handleSetStatus(a.id, 'completed')}
-              >
-                Complete
-              </button>
-              <button
-                type="button"
-                disabled={a.status === 'no_show' || busyAssignmentId === a.id}
-                onClick={() => void handleSetStatus(a.id, 'no_show')}
-              >
-                No-show
-              </button>
+              {NEXT_STEP[a.status] && (
+                <button
+                  type="button"
+                  className="driver-next-step"
+                  disabled={busyAssignmentId === a.id}
+                  onClick={() => void handleSetStatus(a.id, NEXT_STEP[a.status]!.to)}
+                >
+                  {NEXT_STEP[a.status]!.label}
+                </button>
+              )}
+              {!FINISHED.includes(a.status) && (
+                <button
+                  type="button"
+                  className="btn-danger"
+                  disabled={busyAssignmentId === a.id}
+                  onClick={() => void handleSetStatus(a.id, 'no_show')}
+                >
+                  No-show
+                </button>
+              )}
               <button type="button" onClick={() => speakAssignment(a)} aria-label="Read run aloud">
                 🔊 Read aloud
               </button>

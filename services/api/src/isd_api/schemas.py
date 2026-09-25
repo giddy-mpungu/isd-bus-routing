@@ -369,6 +369,7 @@ class AssignmentRead(BaseModel):
     end_minute: int
     explanation_text: str
     locked: bool
+    status: AssignmentStatus = AssignmentStatus.SENT
     # Set when the crew became unavailable after this assignment was made
     # (driver absent or deactivated, vehicle out of service), e.g. a locked
     # assignment a re-solve deliberately left in place. None when fine.
@@ -386,6 +387,8 @@ class AssignmentUpdate(BaseModel):
     start_minute: int | None = Field(default=None, ge=0, lt=1440)
     end_minute: int | None = Field(default=None, ge=0, lt=1440)
     locked: bool | None = None
+    # Dispatch may set any lifecycle state, e.g. to correct a driver's mistake.
+    status: AssignmentStatus | None = None
 
 
 class AssignmentStatusUpdate(BaseModel):

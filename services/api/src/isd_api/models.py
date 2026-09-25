@@ -68,7 +68,13 @@ class LicenseClass(enum.StrEnum):
 
 
 class AssignmentStatus(enum.StrEnum):
-    SCHEDULED = "scheduled"
+    """Spec section 14's lifecycle; see isd_api/assignment_states.py."""
+
+    SENT = "sent"
+    RECEIVED = "received"
+    ACKNOWLEDGED = "acknowledged"
+    EN_ROUTE = "en_route"
+    ARRIVED = "arrived"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     NO_SHOW = "no_show"
@@ -668,7 +674,7 @@ class Assignment(Base):
     # PATCH .../status endpoint, not the dispatcher override endpoint.
     status: Mapped[AssignmentStatus] = mapped_column(
         SAEnum(AssignmentStatus, native_enum=False, length=20),
-        default=AssignmentStatus.SCHEDULED,
+        default=AssignmentStatus.SENT,
         nullable=False,
     )
     status_updated_at: Mapped[datetime | None] = mapped_column(

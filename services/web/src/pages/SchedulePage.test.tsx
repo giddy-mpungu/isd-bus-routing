@@ -132,6 +132,7 @@ const assignment: Assignment = {
   end_minute: 410,
   explanation_text: 'Crew 20 was assigned job 10 because qualifications are satisfied.',
   locked: false,
+  status: 'sent',
   availability_issue: null,
 }
 
@@ -261,6 +262,12 @@ describe('SchedulePage', () => {
 
     expect(await screen.findByText('Needs cover')).toBeInTheDocument()
     expect(screen.getByText(/driver absent \(sick leave, 00:00-23:59\)/)).toBeInTheDocument()
+  })
+
+  it('shows each assignment’s lifecycle state to dispatch', async () => {
+    vi.mocked(api.getAssignments).mockResolvedValue([{ ...assignment, status: 'acknowledged' }])
+    render(<SchedulePage />)
+    expect(await screen.findByText('Acknowledged')).toBeInTheDocument()
   })
 
   it('shows no availability warning for a healthy assignment', async () => {

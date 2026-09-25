@@ -505,6 +505,21 @@ legend {
   padding-left: 1.1rem;
 }
 
+/* The driver's one next step (spec section 9: large controls, minimal
+   interaction). */
+.driver-run-actions .driver-next-step {
+  font-size: 1.15rem;
+  padding: 0.9rem 1.6rem;
+  min-height: 3.25rem;
+  background: linear-gradient(180deg, var(--brand-500), var(--brand-600));
+  border-color: var(--brand-700);
+  color: white;
+}
+
+.driver-run-actions .driver-next-step:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--brand-600), var(--brand-700));
+}
+
 /* An assignment whose crew became unavailable after it was made. */
 .availability-issue {
   margin-top: 0.4rem;
