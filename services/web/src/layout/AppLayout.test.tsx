@@ -44,6 +44,7 @@ describe('AppLayout', () => {
     renderLayout()
     await waitFor(() => expect(screen.getByRole('link', { name: 'Schedule' })).toBeInTheDocument())
     expect(screen.getByRole('link', { name: 'Setup' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Reports' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'My day' })).not.toBeInTheDocument()
   })
 

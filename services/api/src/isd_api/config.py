@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     # estimator when no key is configured, so CI/tests/local dev work
     # without one. See isd_solver.domain.ors_deadhead_estimator.
     ors_api_key: str | None = None
+
+    # GPS history (isd_api/position_history.py): how many days of a bus's
+    # track to keep. A track shows where students were, so it's deleted
+    # after this; spec section 20's learning only needs recent weeks.
+    position_history_days: int = 30
     ors_base_url: str = "https://api.openrouteservice.org"
     ors_profile: str = "driving-hgv"
 

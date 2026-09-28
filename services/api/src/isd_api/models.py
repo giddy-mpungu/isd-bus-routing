@@ -727,6 +727,29 @@ class VehiclePosition(Base):
     crew: Mapped[Crew] = relationship()
 
 
+class PositionSample(Base):
+    """One GPS report from a crew's tablet, kept as history (spec sections
+    9 "route progress", 20 historical data) next to `VehiclePosition`'s
+    latest-only row. Kept for `settings.position_history_days`, then
+    deleted (`isd_api/position_history.py`): a bus's track shows where
+    students were, so it isn't kept forever."""
+
+    __tablename__ = "position_samples"
+    __table_args__ = (
+        UniqueConstraint("crew_id", "recorded_at", name="uq_position_sample_crew_time"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    crew_id: Mapped[int] = mapped_column(ForeignKey("crews.id"), nullable=False, index=True)
+    location_lat: Mapped[float] = mapped_column(nullable=False)
+    location_lon: Mapped[float] = mapped_column(nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+
+    crew: Mapped[Crew] = relationship()
+
+
 class DestinationProfile(Base):
     """spec section 12.3: reusable transportation-specific information
     for a frequently used field-trip destination -- approved entrance,

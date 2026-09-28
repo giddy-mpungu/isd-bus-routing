@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { NO_TRACKS, type MapMarker, type MapTrack } from './mapTypes'
+
+export type { MapMarker, MapTrack, MarkerTone } from './mapTypes'
 
 // Map tiles come from OpenStreetMap unless the deployment points
 // VITE_MAP_TILE_URL at another provider or a self-hosted tile server. The
@@ -16,16 +19,6 @@ const TILE_ATTRIBUTION =
 // Where an empty map starts: the continental US, zoomed out.
 const DEFAULT_CENTER: L.LatLngTuple = [39.8, -98.6]
 const DEFAULT_ZOOM = 4
-
-export type MarkerTone = 'bus' | 'school' | 'stop' | 'pick' | 'approx'
-
-export interface MapMarker {
-  id: string
-  lat: number
-  lon: number
-  label: string
-  tone: MarkerTone
-}
 
 function markerIcon(marker: MapMarker): L.DivIcon {
   // Built as DOM nodes with textContent, never as an HTML string: labels
@@ -55,12 +48,14 @@ function markerIcon(marker: MapMarker): L.DivIcon {
  */
 export function MapView({
   markers,
+  tracks = NO_TRACKS,
   label,
   onPick,
   maxZoom = 18,
   height = 320,
 }: {
   markers: MapMarker[]
+  tracks?: MapTrack[]
   label: string
   onPick?: (lat: number, lon: number) => void
   maxZoom?: number
@@ -103,6 +98,13 @@ export function MapView({
     const layer = layerRef.current
     if (map === null || layer === null) return
     layer.clearLayers()
+    for (const track of tracks) {
+      if (track.points.length > 1) {
+        L.polyline(track.points, { className: 'map-track', weight: 4, opacity: 0.8 })
+          .bindTooltip(track.label)
+          .addTo(layer)
+      }
+    }
     for (const marker of markers) {
       L.marker([marker.lat, marker.lon], {
         icon: markerIcon(marker),
@@ -111,21 +113,24 @@ export function MapView({
         keyboard: false,
       }).addTo(layer)
     }
-    const key = markers
-      .map((m) => m.id)
+    const points: L.LatLngTuple[] = [
+      ...markers.map((m) => [m.lat, m.lon] as L.LatLngTuple),
+      ...tracks.flatMap((t) => t.points),
+    ]
+    const key = [...markers.map((m) => m.id), ...tracks.map((t) => `track:${t.id}`)]
       .sort()
       .join('|')
-    if (markers.length === 0 || key === fittedKeyRef.current) return
+    if (points.length === 0 || key === fittedKeyRef.current) return
     fittedKeyRef.current = key
-    if (markers.length === 1) {
-      map.setView([markers[0].lat, markers[0].lon], Math.min(15, maxZoom))
+    if (points.length === 1) {
+      map.setView(points[0], Math.min(15, maxZoom))
     } else {
-      map.fitBounds(L.latLngBounds(markers.map((m) => [m.lat, m.lon] as L.LatLngTuple)), {
+      map.fitBounds(L.latLngBounds(points), {
         padding: [30, 30],
         maxZoom: Math.min(16, maxZoom),
       })
     }
-  }, [markers, maxZoom])
+  }, [markers, tracks, maxZoom])
 
   return (
     <div

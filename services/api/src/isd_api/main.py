@@ -24,6 +24,7 @@ from isd_api.routers import (
     optimization_settings,
     positions,
     qualifications,
+    reports,
     ridership_rules,
     runs,
     schedule,
@@ -83,6 +84,7 @@ app.include_router(positions.fleet_router)
 app.include_router(field_trips.router)
 app.include_router(dispatch_tasks.router)
 app.include_router(alerts.router)
+app.include_router(reports.router)
 app.include_router(destination_profiles.router)
 app.include_router(announcements.router)
 app.include_router(driver_reports.router)

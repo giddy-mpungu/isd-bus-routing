@@ -718,6 +718,12 @@ class PositionUpdate(BaseModel):
     recorded_at: datetime
 
 
+class PositionSampleRead(BaseModel):
+    location_lat: float
+    location_lon: float
+    recorded_at: datetime
+
+
 class VehiclePositionRead(BaseModel):
     """Denormalized fleet-view row (dispatcher/transportation_admin,
     spec section 17's "GPS fleet view") -- resolved driver/vehicle
@@ -957,6 +963,20 @@ class DayAlertsRead(BaseModel):
     # District wall-clock time (HH:MM) when the date is today.
     district_time: str | None
     alerts: list[AlertRead]
+
+
+class ReportRead(BaseModel):
+    """A report for the page (isd_api/reports.py): `rows` is capped at
+    reports.PREVIEW_ROWS; `total_rows` is how many the CSV has."""
+
+    name: str
+    title: str
+    start: date
+    end: date
+    columns: list[str]
+    rows: list[list[str | int | float | None]]
+    total_rows: int
+    summary: dict[str, str | int | float | None]
 
 
 class AnnouncementCreate(BaseModel):

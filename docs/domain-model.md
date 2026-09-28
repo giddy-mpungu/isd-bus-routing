@@ -904,6 +904,44 @@ assignments, refreshed every minute and after every schedule reload.
 Not yet: acknowledging or snoozing an alert (a report stays listed all
 day), and pushing alerts to anyone who isn't looking at the page.
 
+## Reports and CSV export (spec sections 17, 20, 21)
+
+`isd_api/reports.py`, `GET /reports/{name}?start=&end=` (JSON for the
+Reports page: summary + the first 500 rows + `total_rows`) and
+`GET /reports/{name}/csv` (every row, as a download). Transportation
+admins and dispatchers only.
+
+| Report | Rows | Summary |
+|---|---|---|
+| `assignments` | each assignment: planned start/end, actual start and completion, minutes late, status | on time (completed within `ON_TIME_GRACE_MINUTES` = 5 of planned end), late, no-show, on-time %, average lateness |
+| `field-trips` | trips departing in the range, with minutes back later than expected | trips, completed, returned late, passengers |
+| `absences` | each absence, with runs in it still on the absent driver (nobody covered them) | absences, drivers, uncovered runs |
+| `driver-reports` | incident and defect reports | counts by type |
+| `dispatch-tasks` | tasks, with Cancelled shown | tasks, completed, cancelled |
+| `positions` | GPS history (below) | points, buses |
+
+- **Actual times come from the audit trail**: the first move to In
+  progress and the last to Completed, whether the driver tapped it or
+  dispatch corrected it. Times are district wall-clock, with the date
+  added when it isn't the service date.
+- **Ranges**: at most 92 days, 7 for `positions`.
+- **CSV**: UTF-8 with a byte-order mark (so Excel reads accented names),
+  `Cache-Control: no-store`. Text starting with `= + - @`, tab or CR gets
+  a leading `'` so a spreadsheet can't run it as a formula; numbers are
+  left alone, so a negative longitude stays a number.
+- The Reports page (`/reports`) downloads through a plain link to the API,
+  so the browser saves the file with the session cookie.
+
+## GPS position history (spec sections 9, 20)
+
+`PositionSample` (migration `e3c8a1f5d692`): each GPS report is kept, as
+well as updating the latest-only `VehiclePosition`. Unique on
+(`crew_id`, `recorded_at`), so a retried report is stored once. Deleted
+after `settings.position_history_days` (30 by default). The fleet map can
+show one bus's track for the day
+(`GET /schedule/{date}/fleet-positions/{crew_id}/track`), refreshed with
+each 20-second position poll. See ADR 0009's addendum.
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)

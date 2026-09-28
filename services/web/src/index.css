@@ -579,6 +579,21 @@ legend {
   cursor: crosshair;
 }
 
+.map-track {
+  stroke: var(--brand-600);
+}
+
+.fleet-track-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fleet-track-picker label {
+  margin-top: 0;
+}
+
 .map-pin-wrapper {
   background: none;
   border: none;
@@ -663,6 +678,64 @@ legend {
 .alert-item.alert-critical {
   border-left-color: var(--danger-600);
   background: var(--danger-50);
+}
+
+/* Reports (pages/ReportsPage.tsx). */
+.reports-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem 0.75rem;
+}
+
+.reports-controls label {
+  margin-top: 0;
+}
+
+.report-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0.6rem 0;
+}
+
+.report-summary div {
+  padding: 0.5rem 0.8rem;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  background: white;
+}
+
+.report-summary dt {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.report-summary dd {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+/* A download link styled as a primary button. */
+a.button-link {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--brand-700);
+  background: linear-gradient(180deg, var(--brand-500), var(--brand-600));
+  color: white;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+a.button-link:hover {
+  background: linear-gradient(180deg, var(--brand-600), var(--brand-700));
+}
+
+/* Wide reports scroll inside their box, not the page. */
+.report-table-wrap {
+  overflow-x: auto;
 }
 
 /* An assignment whose crew became unavailable after it was made. */

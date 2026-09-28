@@ -14,6 +14,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <NavLink to="/schedule">Schedule</NavLink>
             <NavLink to="/field-trips">Field Trips</NavLink>
             <NavLink to="/templates">Templates</NavLink>
+            <NavLink to="/reports">Reports</NavLink>
             <NavLink to="/setup">Setup</NavLink>
             {user.role === 'transportation_admin' && <NavLink to="/users">Users</NavLink>}
           </nav>

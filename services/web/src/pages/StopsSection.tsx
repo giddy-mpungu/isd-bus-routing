@@ -3,7 +3,7 @@ import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { Stop, Student } from '../api/types'
 import { LazyMapView } from '../components/LazyMapView'
-import type { MapMarker } from '../components/MapView'
+import type { MapMarker } from '../components/mapTypes'
 
 export function StopsSection({
   stops,

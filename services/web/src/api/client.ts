@@ -53,10 +53,13 @@ import type {
   ObservedRunDuration,
   OptimizationSettings,
   OptimizationSettingsUpdate,
+  PositionSample,
   PositionUpdate,
   Qualification,
   QualificationCreate,
   QualificationUpdate,
+  Report,
+  ReportName,
   RideDirection,
   RidershipOverrideUpdate,
   RidershipRules,
@@ -611,4 +614,18 @@ export async function getMyFieldTrips(serviceDate: string): Promise<DriverFieldT
 
 export async function getAlerts(serviceDate: string): Promise<DayAlerts> {
   return request<DayAlerts>(`/alerts?service_date=${serviceDate}`)
+}
+
+export async function getReport(name: ReportName, start: string, end: string): Promise<Report> {
+  return request<Report>(`/reports/${name}?start=${start}&end=${end}`)
+}
+
+// A plain link, so the browser downloads the file itself with the session
+// cookie; nothing has to be assembled in page script.
+export function reportCsvUrl(name: ReportName, start: string, end: string): string {
+  return `${API_BASE_URL}/reports/${name}/csv?start=${start}&end=${end}`
+}
+
+export async function getCrewTrack(serviceDate: string, crewId: number): Promise<PositionSample[]> {
+  return request<PositionSample[]>(`/schedule/${serviceDate}/fleet-positions/${crewId}/track`)
 }
