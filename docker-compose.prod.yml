@@ -83,6 +83,8 @@ services:
         # be the same public origin Caddy serves the api under.
         VITE_API_BASE_URL: ${PUBLIC_API_ORIGIN:?set the public https:// origin the api is reachable at in .env}
         # Optional; blank uses OpenStreetMap's public tiles (docs/deployment.md, "Map tiles").
+        # The image's Content-Security-Policy is derived from these build
+        # args too (docs/deployment.md, "Security headers").
         VITE_MAP_TILE_URL: ${MAP_TILE_URL:-}
         VITE_MAP_ATTRIBUTION: ${MAP_ATTRIBUTION:-}
     restart: unless-stopped
