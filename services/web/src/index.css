@@ -558,6 +558,81 @@ legend {
   color: var(--warning-700);
 }
 
+/* Maps (components/MapView.tsx): labelled dots on Leaflet/OSM tiles. */
+.map-view {
+  width: 100%;
+  margin: 0.6rem 0 0.9rem;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  z-index: 0; /* keep Leaflet's panes under the app header */
+}
+
+.map-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: var(--gray-50);
+}
+
+.map-view.is-pickable {
+  cursor: crosshair;
+}
+
+.map-pin-wrapper {
+  background: none;
+  border: none;
+}
+
+.map-pin {
+  position: relative;
+  width: 14px;
+  height: 14px;
+}
+
+.map-pin-dot {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.45);
+  background: var(--brand-600);
+}
+
+.map-pin-label {
+  position: absolute;
+  left: 18px;
+  top: -3px;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--gray-900);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
+}
+
+.map-pin-school .map-pin-dot {
+  background: var(--success-600);
+  border-radius: 3px;
+}
+
+.map-pin-stop .map-pin-dot {
+  background: var(--warning-500);
+}
+
+.map-pin-pick .map-pin-dot {
+  background: var(--danger-600);
+}
+
+/* An approximate position: a soft halo, not a precise pin. */
+.map-pin-approx .map-pin-dot {
+  background: var(--brand-500);
+  box-shadow: 0 0 0 10px rgba(99, 102, 241, 0.22);
+}
+
 /* An assignment whose crew became unavailable after it was made. */
 .availability-issue {
   margin-top: 0.4rem;

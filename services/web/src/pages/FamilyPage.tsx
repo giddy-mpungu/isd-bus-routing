@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { Announcement, BusPosition, FamilyMember, RideDirection } from '../api/types'
+import { LazyMapView } from '../components/LazyMapView'
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -124,6 +125,24 @@ export function FamilyPage() {
                   : ''
               }`}
           </p>
+        )}
+        {position?.available && position.location_lat != null && position.location_lon != null && (
+          // Spec section 18: approximate only. The API rounds to about
+          // 100 m, and the zoom stops short of street-level detail.
+          <LazyMapView
+            label={`Approximate location of ${position.vehicle_label}`}
+            markers={[
+              {
+                id: 'bus',
+                lat: position.location_lat,
+                lon: position.location_lon,
+                label: `${position.vehicle_label} (approximate)`,
+                tone: 'approx',
+              },
+            ]}
+            maxZoom={15}
+            height={220}
+          />
         )}
       </div>
     )

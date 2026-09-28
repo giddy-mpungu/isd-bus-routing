@@ -207,6 +207,27 @@ No centralized log aggregation or alerting is set up. For a pilot,
 periodic manual log review is the starting point; a real district
 deployment should ship these logs somewhere durable before go-live.
 
+## Map tiles
+
+The fleet map (Schedule page), the family "Locate bus" map and the
+stops map (Setup) draw OpenStreetMap tiles in the viewer's browser. The
+tile server receives each viewer's IP address and which map squares
+they look at. For a family, that's roughly where their child's bus is.
+
+- **Pilot / demo**: leave `MAP_TILE_URL` blank. The public OSM servers
+  are free for light use under their
+  [tile usage policy](https://operations.osmfoundation.org/policies/tiles/),
+  which requires the attribution the app already shows. They aren't
+  meant for heavy production traffic.
+- **Go-live**: set `MAP_TILE_URL` (and `MAP_ATTRIBUTION`) in `.env` to a
+  tile provider the district has a data agreement with, or to a
+  self-hosted tile server, then rebuild the web image
+  (`docker compose -f docker-compose.prod.yml up -d --build web`). The
+  value is baked in at build time, like `PUBLIC_API_ORIGIN`.
+
+The family map is approximate by design: the API rounds the bus position
+to about 100 m, and that map won't zoom in past street level.
+
 ## Security checklist before go-live
 
 - [ ] `.env` contains real, unique, generated secrets (never the
@@ -221,6 +242,8 @@ deployment should ship these logs somewhere durable before go-live.
       `docker-compose.prod.yml` and should stay that way.
 - [ ] Off-host backups are scheduled and a restore has actually been
       tested once against a throwaway environment.
+- [ ] `MAP_TILE_URL` points at a tile server the district has approved
+      (see "Map tiles" above), not the public OpenStreetMap servers.
 - [ ] The first administrator's password is a real, unique password,
       not the placeholder from this document.
 - [ ] `docs/adr/0006-persistence-and-rbac.md`'s open follow-ups
