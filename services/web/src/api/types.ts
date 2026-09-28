@@ -822,3 +822,27 @@ export interface DayAlerts {
   district_time: string | null
   alerts: OperationalAlert[]
 }
+
+// Operational reports (services/api/src/isd_api/reports.py).
+export type ReportName =
+  'assignments' | 'field-trips' | 'absences' | 'driver-reports' | 'dispatch-tasks' | 'positions'
+
+export type ReportCell = string | number | null
+
+export interface Report {
+  name: ReportName
+  title: string
+  start: string
+  end: string
+  columns: string[]
+  // The first rows only; `total_rows` is how many the CSV has.
+  rows: ReportCell[][]
+  total_rows: number
+  summary: Record<string, ReportCell>
+}
+
+export interface PositionSample {
+  location_lat: number
+  location_lon: number
+  recorded_at: string
+}

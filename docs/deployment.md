@@ -295,6 +295,10 @@ external resource was added without updating `csp.mjs`.
       `docker-compose.prod.yml` and should stay that way.
 - [ ] Off-host backups are scheduled and a restore has actually been
       tested once against a throwaway environment.
+- [ ] `ISD_API_POSITION_HISTORY_DAYS` matches the district's records
+      policy for vehicle location data (default 30 days; see ADR 0009's
+      addendum). Report CSVs contain driver names, absences and
+      locations: treat downloaded files like any other staff record.
 - [ ] `MAP_TILE_URL` points at a tile server the district has approved
       (see "Map tiles" above), not the public OpenStreetMap servers.
 - [ ] The security headers are actually served (see "Security headers"

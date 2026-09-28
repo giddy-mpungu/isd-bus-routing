@@ -1,7 +1,9 @@
 """spec section 9 (real-time navigation) and section 17 (dispatcher's
 "GPS fleet view"). ADR 0009: position comes from the driver's own
-tablet (browser Geolocation API), not a dedicated GPS/AVL vendor;
-latest position only, no breadcrumb trail. The family-facing read
+tablet (browser Geolocation API), not a dedicated GPS/AVL vendor.
+`VehiclePosition` holds the latest position for the live view; since
+PR #55 every report is also kept as history for a limited time
+(`isd_api/position_history.py`, ADR 0009's addendum). The family-facing read
 (spec section 18) lives in routers/students.py instead, since it needs
 the same guardian/self RBAC helper that file already has."""
 
@@ -14,7 +16,8 @@ from sqlalchemy.orm import Session
 
 from isd_api.db import get_db
 from isd_api.models import Crew, Driver, Role, User, VehiclePosition
-from isd_api.schemas import PositionUpdate, VehiclePositionRead
+from isd_api.position_history import record_sample, track
+from isd_api.schemas import PositionSampleRead, PositionUpdate, VehiclePositionRead
 from isd_api.security import get_current_user, require_role
 
 # A driver reporting their own position, alongside the existing
@@ -71,6 +74,7 @@ def report_position(
         position.location_lat = payload.location_lat
         position.location_lon = payload.location_lon
         position.recorded_at = payload.recorded_at
+    record_sample(db, crew, payload.location_lat, payload.location_lon, payload.recorded_at)
     # Deliberately not audit-logged (isd_api.audit): these pings are
     # expected every 15-30s while a run is active (ADR 0009), and the
     # append-only audit trail (spec section 14) is meant for material,
@@ -103,4 +107,26 @@ def list_fleet_positions(
             recorded_at=p.recorded_at,
         )
         for p in rows
+    ]
+
+
+@fleet_router.get(
+    "/{service_date}/fleet-positions/{crew_id}/track", response_model=list[PositionSampleRead]
+)
+def get_crew_track(
+    service_date: date,
+    crew_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role(*_FLEET_READ_ROLES)),
+) -> list[PositionSampleRead]:
+    """A crew's reported positions for the day, oldest first (spec section
+    9 "route progress"; the fleet map draws it as a line)."""
+    crew = db.get(Crew, crew_id)
+    if crew is None or crew.service_date != service_date:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Crew not found")
+    return [
+        PositionSampleRead(
+            location_lat=s.location_lat, location_lon=s.location_lon, recorded_at=s.recorded_at
+        )
+        for s in track(db, crew_id)
     ]

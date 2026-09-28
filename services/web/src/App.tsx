@@ -6,6 +6,7 @@ import { DriverPage } from './pages/DriverPage'
 import { FamilyPage } from './pages/FamilyPage'
 import { FieldTripsPage } from './pages/FieldTripsPage'
 import { LoginPage } from './pages/LoginPage'
+import { ReportsPage } from './pages/ReportsPage'
 import { SchedulePage } from './pages/SchedulePage'
 import { SchoolAdminPage } from './pages/SchoolAdminPage'
 import { SetupPage } from './pages/SetupPage'
@@ -92,6 +93,17 @@ function App() {
                 deniedMessage="the dispatcher console"
               >
                 <FieldTripsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reports"
+            element={
+              <ProtectedRoute
+                allowedRoles={['dispatcher', 'transportation_admin']}
+                deniedMessage="the dispatcher console"
+              >
+                <ReportsPage />
               </ProtectedRoute>
             }
           />

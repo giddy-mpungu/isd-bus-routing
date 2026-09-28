@@ -55,4 +55,39 @@ describe('MapView', () => {
     render(<MapView markers={[bus]} label="Fleet map" />)
     expect(screen.getByRole('region', { name: 'Fleet map' })).not.toHaveClass('is-pickable')
   })
+
+  it('draws a track as a line', () => {
+    render(
+      <MapView
+        markers={[bus]}
+        tracks={[
+          {
+            id: '1',
+            label: 'Bus 101 today',
+            points: [
+              [29.7, -95.4],
+              [29.71, -95.41],
+              [29.72, -95.42],
+            ],
+          },
+        ]}
+        label="Fleet map"
+      />,
+    )
+    const map = screen.getByRole('region', { name: 'Fleet map' })
+    expect(map.querySelectorAll('path.map-track')).toHaveLength(1)
+  })
+
+  it('skips a track with a single point', () => {
+    render(
+      <MapView
+        markers={[bus]}
+        tracks={[{ id: '1', label: 'x', points: [[29.7, -95.4]] }]}
+        label="Fleet map"
+      />,
+    )
+    expect(
+      screen.getByRole('region', { name: 'Fleet map' }).querySelectorAll('path.map-track'),
+    ).toHaveLength(0)
+  })
 })

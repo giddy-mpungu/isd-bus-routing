@@ -53,6 +53,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getDriverReportsForDate: vi.fn(),
     getDispatchTasks: vi.fn(),
     getAlerts: vi.fn(),
+    getCrewTrack: vi.fn(),
   }
 })
 
@@ -316,6 +317,37 @@ describe('SchedulePage', () => {
     const map = await screen.findByRole('region', { name: 'Fleet map' })
     expect(within(map).getByTitle('Bus 101 — Jordan Driver')).toBeInTheDocument()
     expect(within(map).getByTitle(school.name)).toBeInTheDocument()
+  })
+
+  it("shows a bus's GPS track on the fleet map when picked", async () => {
+    const position: VehiclePosition = {
+      crew_id: crew.id,
+      driver_id: driverRecord.id,
+      driver_full_name: driverRecord.full_name,
+      vehicle_id: vehicle.id,
+      vehicle_label: vehicle.label,
+      location_lat: 29.72,
+      location_lon: -95.42,
+      recorded_at: new Date().toISOString(),
+    }
+    vi.mocked(api.getFleetPositions).mockResolvedValue([position])
+    vi.mocked(api.getCrewTrack).mockResolvedValue([
+      { location_lat: 29.7, location_lon: -95.4, recorded_at: '2026-10-05T12:00:00Z' },
+      { location_lat: 29.72, location_lon: -95.42, recorded_at: '2026-10-05T12:01:00Z' },
+    ])
+    render(<SchedulePage />)
+    const picker = await screen.findByLabelText("Show a bus's track")
+    const map = await screen.findByRole('region', { name: 'Fleet map' })
+    expect(map.querySelector('path.map-track')).toBeNull()
+
+    const user = userEvent.setup()
+    await user.selectOptions(picker, String(crew.id))
+
+    await waitFor(() => expect(api.getCrewTrack).toHaveBeenCalledWith(expect.any(String), crew.id))
+    await waitFor(() => expect(map.querySelector('path.map-track')).not.toBeNull())
+
+    await user.selectOptions(picker, '')
+    await waitFor(() => expect(map.querySelector('path.map-track')).toBeNull())
   })
 
   it('shows a status message when no vehicle has reported a position yet', async () => {

@@ -77,3 +77,28 @@ actually needs it.
   a family shouldn't have to poll for), that's a new ADR superseding
   the transport half of this one — not a reason to have built
   WebSocket infrastructure now for a need that doesn't exist yet.
+
+## Addendum (2026-09-28, PR #55): position history
+
+The "no history" half of this decision is reversed; the transport half
+(the tablet's browser Geolocation API, polled, no push) stands.
+
+§20's "follow-up if/when §20 work actually needs it" arrived with Phase
+2.5: on-time reporting, a bus's track on the fleet map (§9 "route
+progress"), and later route-deviation checks all need where a bus has
+been, not just where it is now.
+
+- Every `PUT /drivers/{id}/position` still updates `VehiclePosition`
+  (latest, for the live view) and now also appends a `PositionSample`
+  (`isd_api/position_history.py`). A repeated reading (same crew, same
+  `recorded_at`, e.g. a retry) is stored once.
+- **Retention**: samples older than `ISD_API_POSITION_HISTORY_DAYS`
+  (default 30) are deleted, on the write path at most once an hour per
+  process. A track shows where a bus full of students was, so it's kept
+  only as long as operations need it; a district can shorten it, or
+  lengthen it if its records policy requires.
+- Reads are dispatcher/admin only:
+  `GET /schedule/{date}/fleet-positions/{crew_id}/track` and the
+  positions report (`GET /reports/positions`, 7 days at a time).
+- Still not built: route-deviation detection, which needs a planned
+  route geometry (Phase 3).

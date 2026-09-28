@@ -4,7 +4,7 @@ import { ApiError } from '../api/client'
 import { STATUS_LABELS, STATUS_TONES } from '../assignmentStatus'
 import { Badge } from '../components/Badge'
 import { LazyMapView } from '../components/LazyMapView'
-import type { MapMarker } from '../components/MapView'
+import { NO_TRACKS, type MapMarker, type MapTrack } from '../components/mapTypes'
 import { AlertsPanel } from './AlertsPanel'
 import { DispatchTasksSection } from './DispatchTasksSection'
 import type {
@@ -134,6 +134,40 @@ export function SchedulePage() {
     }, 20000)
     return () => window.clearInterval(intervalId)
   }, [serviceDate])
+
+  // Spec section 9 "route progress": one bus's GPS track for the day.
+  const [trackCrewId, setTrackCrewId] = useState<number | null>(null)
+  const [track, setTrack] = useState<{ crewId: number; tracks: MapTrack[] } | null>(null)
+  const [trackError, setTrackError] = useState<string | null>(null)
+  useEffect(() => {
+    if (trackCrewId === null) return
+    let current = true
+    const position = fleetPositions.find((p) => p.crew_id === trackCrewId)
+    api.getCrewTrack(serviceDate, trackCrewId).then(
+      (samples) => {
+        if (!current) return
+        setTrackError(null)
+        setTrack({
+          crewId: trackCrewId,
+          tracks: [
+            {
+              id: String(trackCrewId),
+              label: position ? `${position.vehicle_label} today` : 'Track',
+              points: samples.map((s) => [s.location_lat, s.location_lon]),
+            },
+          ],
+        })
+      },
+      (err: unknown) => {
+        if (current) setTrackError(err instanceof ApiError ? err.message : 'Failed to load track.')
+      },
+    )
+    return () => {
+      current = false
+    }
+    // Refetched whenever the 20-second fleet poll brings new positions.
+  }, [trackCrewId, serviceDate, fleetPositions])
+  const shownTracks = track !== null && track.crewId === trackCrewId ? track.tracks : NO_TRACKS
 
   const schoolsById = new Map(schools.map((s) => [s.id, s]))
   // Spec section 9: the dispatcher's GPS fleet view, with schools for context.
@@ -656,7 +690,31 @@ export function SchedulePage() {
 
       <section className="fleet-positions-section">
         <h2>Live fleet positions</h2>
-        <LazyMapView markers={fleetMarkers} label="Fleet map" />
+        {fleetPositions.length > 0 && (
+          <div className="fleet-track-picker">
+            <label htmlFor="fleet-track">Show a bus's track</label>
+            <select
+              id="fleet-track"
+              value={trackCrewId ?? ''}
+              onChange={(event) =>
+                setTrackCrewId(event.target.value === '' ? null : Number(event.target.value))
+              }
+            >
+              <option value="">No track</option>
+              {fleetPositions.map((p) => (
+                <option key={p.crew_id} value={p.crew_id}>
+                  {p.vehicle_label} — {p.driver_full_name}
+                </option>
+              ))}
+            </select>
+            {trackError && (
+              <p role="alert" className="error">
+                {trackError}
+              </p>
+            )}
+          </div>
+        )}
+        <LazyMapView markers={fleetMarkers} tracks={shownTracks} label="Fleet map" />
         {fleetPositions.length === 0 ? (
           <p className="status">No vehicle has reported a position for this date yet.</p>
         ) : (
