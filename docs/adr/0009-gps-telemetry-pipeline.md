@@ -81,7 +81,11 @@ actually needs it.
 ## Addendum (2026-09-28, PR #55): position history
 
 The "no history" half of this decision is reversed; the transport half
-(the tablet's browser Geolocation API, polled, no push) stands.
+(the tablet's browser Geolocation API, no push) stands. Since PR #56 the
+tablet uses one continuous `watchPosition` feed instead of a 20-second
+`getCurrentPosition` poll: the same fixes tell whether the bus is moving
+(the in-motion lockout), and reports to the server are still sent at
+most every 20 seconds.
 
 §20's "follow-up if/when §20 work actually needs it" arrived with Phase
 2.5: on-time reporting, a bus's track on the fleet map (§9 "route

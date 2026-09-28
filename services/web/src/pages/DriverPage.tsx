@@ -15,6 +15,7 @@ import { FINISHED, NEXT_STEP, STATUS_LABELS, STATUS_TONES } from '../assignmentS
 import { Badge, type BadgeTone } from '../components/Badge'
 import { TASK_KIND_LABELS } from '../dispatchTasks'
 import { buildDay, isUnderway, SLOT_LABELS, type QueueSlot } from '../driverDay'
+import { nextMoving, speedAt, type Fix } from '../motion'
 
 const ABSENCE_REASONS: AbsenceReason[] = [
   'sick_leave',
@@ -28,6 +29,9 @@ const ABSENCE_REASONS: AbsenceReason[] = [
   'no_call_no_show',
   'other',
 ]
+
+// How often the moving tablet sends its position to dispatch.
+const REPORT_EVERY_MS = 20_000
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -143,37 +147,59 @@ export function DriverPage() {
       .catch(() => undefined)
   }, [])
 
-  // ADR 0009: report this vehicle's position periodically while a run
-  // is actually in progress -- automatic, no driver interaction (spec
-  // section 9: "limited driver interaction while moving"). Silently
-  // does nothing if the browser has no geolocation, permission was
-  // denied, or this login isn't linked to a driver record -- position
-  // reporting is a best-effort enhancement, not something that should
-  // block or alarm a driver just trying to run their route.
+  // ADR 0009: one continuous GPS feed while work is under way does two
+  // jobs, with no driver interaction (spec section 9: "limited driver
+  // interaction while moving"): it reports the bus's position to dispatch
+  // at most every REPORT_EVERY_MS, and tells whether the bus is moving
+  // (motion.ts), which locks typing. Silently does nothing if the browser
+  // has no geolocation, permission was denied, or this login isn't linked
+  // to a driver record: a best-effort aid, never something that blocks or
+  // alarms a driver just trying to run their route.
+  const [isMoving, setIsMoving] = useState(false)
   useEffect(() => {
     const driverId = user?.driver_id
     if (driverId == null || !anythingUnderway || !('geolocation' in navigator)) {
       return
     }
-    const reportPosition = () => {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
+    let previous: Fix | null = null
+    let moving = false
+    let lastReportedAt = Number.NEGATIVE_INFINITY
+    // Stopped on the same object it started on.
+    const geolocation = navigator.geolocation
+    const watchId = geolocation.watchPosition(
+      (position) => {
+        const fix: Fix = {
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+          time: position.timestamp,
+          speed: position.coords.speed ?? null,
+        }
+        moving = nextMoving(moving, speedAt(previous, fix))
+        previous = fix
+        setIsMoving(moving)
+        if (fix.time - lastReportedAt >= REPORT_EVERY_MS) {
+          lastReportedAt = fix.time
           void api
             .reportPosition(driverId, {
               service_date: serviceDate,
-              location_lat: position.coords.latitude,
-              location_lon: position.coords.longitude,
-              recorded_at: new Date(position.timestamp).toISOString(),
+              location_lat: fix.lat,
+              location_lon: fix.lon,
+              recorded_at: new Date(fix.time).toISOString(),
             })
             .catch(() => undefined)
-        },
-        () => undefined,
-      )
-    }
-    reportPosition()
-    const intervalId = window.setInterval(reportPosition, 20000)
-    return () => window.clearInterval(intervalId)
+        }
+      },
+      // Lost or refused GPS can't prove the bus is moving.
+      () => {
+        moving = false
+        setIsMoving(false)
+      },
+      { enableHighAccuracy: true, maximumAge: 5000 },
+    )
+    return () => geolocation.clearWatch(watchId)
   }, [anythingUnderway, user, serviceDate])
+  // Only while something is under way: once the run ends, nothing is locked.
+  const locked = anythingUnderway && isMoving
 
   async function handleSetStatus(assignmentId: number, status: AssignmentStatus) {
     setErrorMessage(null)
@@ -275,6 +301,12 @@ export function DriverPage() {
   return (
     <div className="driver-page">
       <h1>My day — {serviceDate}</h1>
+
+      {locked && (
+        <p role="status" className="motion-lock">
+          Bus moving: typing is locked until you stop. The next-step buttons still work.
+        </p>
+      )}
 
       {announcements.length > 0 && (
         <section className="announcements-panel">
@@ -443,7 +475,8 @@ export function DriverPage() {
                   <button
                     type="button"
                     className="btn-danger"
-                    disabled={busyKey === item.key}
+                    disabled={busyKey === item.key || locked}
+                    title={locked ? 'Stop the bus first' : undefined}
                     onClick={() => void handleSetStatus(a.id, 'no_show')}
                   >
                     No-show
@@ -465,90 +498,94 @@ export function DriverPage() {
       <section className="driver-absence-section">
         <h2>Report an absence</h2>
         <form onSubmit={(event) => void handleReportAbsence(event)}>
-          <label htmlFor="driver-absence-reason">Reason</label>
-          <select
-            id="driver-absence-reason"
-            value={absenceReason}
-            onChange={(event) => setAbsenceReason(event.target.value as AbsenceReason)}
-          >
-            {ABSENCE_REASONS.map((reason) => (
-              <option key={reason} value={reason}>
-                {reason.replace(/_/g, ' ')}
-              </option>
-            ))}
-          </select>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={absenceWholeDay}
-              onChange={(event) => setAbsenceWholeDay(event.target.checked)}
-            />
-            Whole day
-          </label>
-          {!absenceWholeDay && (
-            <>
-              <label htmlFor="driver-absence-start">Start (minute of day)</label>
+          <fieldset className="motion-lockable" disabled={locked}>
+            <label htmlFor="driver-absence-reason">Reason</label>
+            <select
+              id="driver-absence-reason"
+              value={absenceReason}
+              onChange={(event) => setAbsenceReason(event.target.value as AbsenceReason)}
+            >
+              {ABSENCE_REASONS.map((reason) => (
+                <option key={reason} value={reason}>
+                  {reason.replace(/_/g, ' ')}
+                </option>
+              ))}
+            </select>
+            <label className="checkbox-label">
               <input
-                id="driver-absence-start"
-                type="number"
-                min="0"
-                max="1439"
-                value={absenceStartMinute}
-                onChange={(event) => setAbsenceStartMinute(event.target.value)}
-                required
+                type="checkbox"
+                checked={absenceWholeDay}
+                onChange={(event) => setAbsenceWholeDay(event.target.checked)}
               />
-              <label htmlFor="driver-absence-end">End (minute of day)</label>
-              <input
-                id="driver-absence-end"
-                type="number"
-                min="0"
-                max="1439"
-                value={absenceEndMinute}
-                onChange={(event) => setAbsenceEndMinute(event.target.value)}
-                required
-              />
-            </>
-          )}
-          {absenceError && (
-            <p role="alert" className="error">
-              {absenceError}
-            </p>
-          )}
-          {absenceSuccess && <p className="status">Absence reported.</p>}
-          <button type="submit" disabled={isSavingAbsence}>
-            {isSavingAbsence ? 'Reporting…' : 'Report absence'}
-          </button>
+              Whole day
+            </label>
+            {!absenceWholeDay && (
+              <>
+                <label htmlFor="driver-absence-start">Start (minute of day)</label>
+                <input
+                  id="driver-absence-start"
+                  type="number"
+                  min="0"
+                  max="1439"
+                  value={absenceStartMinute}
+                  onChange={(event) => setAbsenceStartMinute(event.target.value)}
+                  required
+                />
+                <label htmlFor="driver-absence-end">End (minute of day)</label>
+                <input
+                  id="driver-absence-end"
+                  type="number"
+                  min="0"
+                  max="1439"
+                  value={absenceEndMinute}
+                  onChange={(event) => setAbsenceEndMinute(event.target.value)}
+                  required
+                />
+              </>
+            )}
+            {absenceError && (
+              <p role="alert" className="error">
+                {absenceError}
+              </p>
+            )}
+            {absenceSuccess && <p className="status">Absence reported.</p>}
+            <button type="submit" disabled={isSavingAbsence}>
+              {isSavingAbsence ? 'Reporting…' : 'Report absence'}
+            </button>
+          </fieldset>
         </form>
       </section>
 
       <section className="driver-report-section">
         <h2>Report an incident or vehicle defect</h2>
         <form onSubmit={(event) => void handleSubmitReport(event)}>
-          <label htmlFor="driver-report-type">Type</label>
-          <select
-            id="driver-report-type"
-            value={reportType}
-            onChange={(event) => setReportType(event.target.value as DriverReportType)}
-          >
-            <option value="incident">Incident</option>
-            <option value="vehicle_defect">Vehicle defect</option>
-          </select>
-          <label htmlFor="driver-report-description">Description</label>
-          <textarea
-            id="driver-report-description"
-            value={reportDescription}
-            onChange={(event) => setReportDescription(event.target.value)}
-            required
-          />
-          {reportError && (
-            <p role="alert" className="error">
-              {reportError}
-            </p>
-          )}
-          {reportSuccess && <p className="status">Report submitted.</p>}
-          <button type="submit" disabled={isSavingReport}>
-            {isSavingReport ? 'Submitting…' : 'Submit report'}
-          </button>
+          <fieldset className="motion-lockable" disabled={locked}>
+            <label htmlFor="driver-report-type">Type</label>
+            <select
+              id="driver-report-type"
+              value={reportType}
+              onChange={(event) => setReportType(event.target.value as DriverReportType)}
+            >
+              <option value="incident">Incident</option>
+              <option value="vehicle_defect">Vehicle defect</option>
+            </select>
+            <label htmlFor="driver-report-description">Description</label>
+            <textarea
+              id="driver-report-description"
+              value={reportDescription}
+              onChange={(event) => setReportDescription(event.target.value)}
+              required
+            />
+            {reportError && (
+              <p role="alert" className="error">
+                {reportError}
+              </p>
+            )}
+            {reportSuccess && <p className="status">Report submitted.</p>}
+            <button type="submit" disabled={isSavingReport}>
+              {isSavingReport ? 'Submitting…' : 'Submit report'}
+            </button>
+          </fieldset>
         </form>
       </section>
     </div>

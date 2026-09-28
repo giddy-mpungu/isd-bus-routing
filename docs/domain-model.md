@@ -942,6 +942,31 @@ show one bus's track for the day
 (`GET /schedule/{date}/fleet-positions/{crew_id}/track`), refreshed with
 each 20-second position poll. See ADR 0009's addendum.
 
+## In-motion lockout (spec section 9)
+
+"Selected functions should be disabled or restricted while the vehicle is
+in motion." The driver app (`/driver`) decides "moving" from the tablet's
+own GPS (`web/src/motion.ts`): the device's reported speed, or distance
+over time between two fixes at least 2 seconds apart when it reports
+none. It starts counting as moving at `MOVING_MPS` (2.2 m/s, about 5 mph)
+and stops only below `STOPPED_MPS` (0.9 m/s, about 2 mph), so the lock
+doesn't flicker at a crawl.
+
+While moving, and only while a run, task or trip is under way:
+- **Locked**: the absence form and the incident/defect report form
+  (typing), and No-show (a destructive tap). Both forms sit in a disabled
+  `<fieldset>`; a sticky banner says why.
+- **Still available**: the one large next-step button per job (Arrived,
+  Start run, Complete run...) and Read aloud, which is what a driver
+  needs without typing.
+- Lost or refused GPS can't prove the bus is moving, so it unlocks.
+
+This is a client-side safety aid, not an access control: the API doesn't
+refuse a report because the bus is moving (it can't know the tablet's
+speed better than the tablet does). The GPS feed is one `watchPosition`
+while work is under way, which also sends the position to dispatch at
+most every 20 seconds, and stops when nothing is under way.
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)

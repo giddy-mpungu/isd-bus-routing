@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type {
@@ -218,13 +218,17 @@ describe('DriverPage', () => {
   it('reports position automatically (ADR 0009) when a run is in progress', async () => {
     vi.mocked(api.getMyAssignments).mockResolvedValue([{ ...assignment, status: 'in_progress' }])
     vi.mocked(api.reportPosition).mockResolvedValue(undefined)
-    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+    const watchPosition = vi.fn((success: PositionCallback) => {
       success({
-        coords: { latitude: 29.71, longitude: -95.41 } as GeolocationCoordinates,
+        coords: { latitude: 29.71, longitude: -95.41, speed: null } as GeolocationCoordinates,
         timestamp: 1_700_000_000_000,
       } as GeolocationPosition)
+      return 1
     })
-    vi.stubGlobal('navigator', { ...navigator, geolocation: { getCurrentPosition } })
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      geolocation: { watchPosition, clearWatch: vi.fn() },
+    })
 
     renderPage()
 
@@ -243,13 +247,16 @@ describe('DriverPage', () => {
 
   it('does not report position before the bus is under way', async () => {
     vi.mocked(api.getMyAssignments).mockResolvedValue([{ ...assignment, status: 'acknowledged' }])
-    const getCurrentPosition = vi.fn()
-    vi.stubGlobal('navigator', { ...navigator, geolocation: { getCurrentPosition } })
+    const watchPosition = vi.fn()
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      geolocation: { watchPosition, clearWatch: vi.fn() },
+    })
 
     renderPage()
     await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
 
-    expect(getCurrentPosition).not.toHaveBeenCalled()
+    expect(watchPosition).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
 
@@ -533,13 +540,17 @@ describe('DriverPage: the day as one queue (spec sections 11 and 14)', () => {
   it('reports position while a dispatch task is under way', async () => {
     vi.mocked(api.getMyDispatchTasks).mockResolvedValue([{ ...task, status: 'en_route' }])
     vi.mocked(api.reportPosition).mockResolvedValue(undefined)
-    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+    const watchPosition = vi.fn((success: PositionCallback) => {
       success({
-        coords: { latitude: 29.71, longitude: -95.41 } as GeolocationCoordinates,
+        coords: { latitude: 29.71, longitude: -95.41, speed: null } as GeolocationCoordinates,
         timestamp: 1_700_000_000_000,
       } as GeolocationPosition)
+      return 1
     })
-    vi.stubGlobal('navigator', { ...navigator, geolocation: { getCurrentPosition } })
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      geolocation: { watchPosition, clearWatch: vi.fn() },
+    })
 
     renderPage()
 
@@ -550,5 +561,111 @@ describe('DriverPage: the day as one queue (spec sections 11 and 14)', () => {
       ),
     )
     vi.unstubAllGlobals()
+  })
+})
+
+// A GPS the test drives: send(speed in m/s, seconds since start).
+function fakeGps() {
+  let onFix: PositionCallback | null = null
+  let onError: PositionErrorCallback | null = null
+  const clearWatch = vi.fn()
+  const watchPosition = vi.fn((success: PositionCallback, error?: PositionErrorCallback | null) => {
+    onFix = success
+    onError = error ?? null
+    return 7
+  })
+  vi.stubGlobal('navigator', { ...navigator, geolocation: { watchPosition, clearWatch } })
+  return {
+    watchPosition,
+    clearWatch,
+    send(speed: number | null, seconds: number) {
+      act(() =>
+        onFix!({
+          coords: { latitude: 29.71, longitude: -95.41, speed } as GeolocationCoordinates,
+          timestamp: 1_700_000_000_000 + seconds * 1000,
+        } as GeolocationPosition),
+      )
+    },
+    fail() {
+      act(() => onError!({ code: 2, message: 'no signal' } as GeolocationPositionError))
+    },
+  }
+}
+
+describe('DriverPage: locked while the bus is moving (spec section 9)', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.mocked(api.getMyAnnouncements).mockResolvedValue([])
+    vi.mocked(api.getMyDispatchTasks).mockResolvedValue([])
+    vi.mocked(api.getMyFieldTrips).mockResolvedValue([])
+    vi.mocked(api.reportPosition).mockResolvedValue(undefined)
+    vi.mocked(api.getMyAssignments).mockResolvedValue([{ ...assignment, status: 'en_route' }])
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  async function renderUnderway() {
+    const gps = fakeGps()
+    renderPage()
+    await waitFor(() => expect(gps.watchPosition).toHaveBeenCalled())
+    return gps
+  }
+
+  it('locks typing and no-show while moving, but keeps the next step', async () => {
+    const gps = await renderUnderway()
+    gps.send(12, 0) // about 27 mph
+
+    expect(screen.getByRole('status')).toHaveTextContent('Bus moving: typing is locked')
+    expect(screen.getByLabelText('Description')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Submit report' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Report absence' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'No-show' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Arrived' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Read run aloud' })).toBeEnabled()
+  })
+
+  it('stays locked at a crawl and unlocks once stopped', async () => {
+    const gps = await renderUnderway()
+    gps.send(12, 0)
+    gps.send(1.5, 5) // crawling in traffic
+    expect(screen.getByRole('button', { name: 'Submit report' })).toBeDisabled()
+    gps.send(0.3, 10)
+    expect(screen.queryByText(/Bus moving/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Submit report' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'No-show' })).toBeEnabled()
+  })
+
+  it('stays unlocked below walking-pace speeds', async () => {
+    const gps = await renderUnderway()
+    gps.send(2, 0)
+    expect(screen.queryByText(/Bus moving/)).not.toBeInTheDocument()
+  })
+
+  it('unlocks when GPS is lost, since it can no longer tell', async () => {
+    const gps = await renderUnderway()
+    gps.send(12, 0)
+    gps.fail()
+    expect(screen.queryByText(/Bus moving/)).not.toBeInTheDocument()
+  })
+
+  it('reports the position at most every 20 seconds', async () => {
+    const gps = await renderUnderway()
+    for (const second of [0, 5, 10, 15, 20, 25]) gps.send(10, second)
+    expect(api.reportPosition).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(api.reportPosition).mock.calls[1][1].recorded_at).toBe(
+      new Date(1_700_000_020_000).toISOString(),
+    )
+  })
+
+  it('stops watching the GPS once nothing is under way', async () => {
+    const gps = await renderUnderway()
+    vi.mocked(api.getMyAssignments).mockResolvedValue([{ ...assignment, status: 'completed' }])
+    vi.mocked(api.updateAssignmentStatus).mockResolvedValue({ ...assignment, status: 'arrived' })
+    gps.send(0, 0)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Arrived' }))
+    await waitFor(() => expect(gps.clearWatch).toHaveBeenCalledWith(7))
   })
 })
