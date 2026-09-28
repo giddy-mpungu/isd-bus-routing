@@ -236,6 +236,18 @@ subdomain placeholder becomes a `*.` wildcard, e.g.
 `https://*.tiles.example.com`. A value that isn't an absolute http(s)
 URL or a same-origin `/path` fails the image build.
 
+## Address lookup (US Census geocoder)
+
+Transportation admins can look up student home addresses (Setup →
+Schools & students → Home). The API sends only the address, over HTTPS,
+to `https://geocoding.geo.census.gov` (free, no key, US addresses only).
+The host needs outbound HTTPS to that domain. If it's blocked, lookups
+fail with a clear message and admins can still place homes on the map.
+
+Addresses are personal data: only transportation admins can see them,
+the audit trail records that a home changed but not the address, and
+backups contain them like any other student record.
+
 ## Security headers
 
 Every response carries a strict set of browser security headers. Most

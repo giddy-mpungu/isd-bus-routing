@@ -10,9 +10,11 @@ vendors, which is why this is the first adapter rather than any one
 vendor's API.
 
 Only what this system needs is read: sourcedId, status, role, givenName,
-familyName, orgSourcedIds. Nothing else in the file (email, phone,
-address-like fields, identifiers) is retained, in keeping with the
-README's PII-minimalism rule.
+familyName, orgSourcedIds, and grades (optional; the first grade listed,
+normalised to PK/K/1-12, for grade-band walk and ride limits). Nothing
+else in the file (email, phone, address-like fields, identifiers) is
+retained, in keeping with the README's PII-minimalism rule. Home
+addresses are entered in this system and geocoded separately.
 """
 
 from __future__ import annotations
@@ -21,6 +23,8 @@ import csv
 import io
 import re
 from dataclasses import dataclass
+
+from isd_api.eligibility import normalize_grade
 
 MAX_BYTES = 5 * 1024 * 1024
 MAX_ROWS = 50_000
@@ -43,6 +47,9 @@ class RosterStudent:
     full_name: str
     org_ids: tuple[str, ...]
     removal_requested: bool
+    # None when the file has no grades column, or the grade isn't one this
+    # system uses; the import then leaves the student's grade alone.
+    grade: str | None = None
 
 
 @dataclass(frozen=True)
@@ -124,6 +131,7 @@ def parse_students_csv(raw: bytes) -> ParsedRoster:
                 o for o in (_clean(o) for o in (row.get("orgSourcedIds") or "").split(",")) if o
             )
             status = _clean(row.get("status")).lower()
+            grades = [g for g in (_clean(g) for g in (row.get("grades") or "").split(",")) if g]
             students.append(
                 RosterStudent(
                     line=line,
@@ -131,6 +139,7 @@ def parse_students_csv(raw: bytes) -> ParsedRoster:
                     full_name=full_name,
                     org_ids=org_ids,
                     removal_requested=status == "tobedeleted",
+                    grade=normalize_grade(grades[0]) if grades else None,
                 )
             )
     except csv.Error as exc:

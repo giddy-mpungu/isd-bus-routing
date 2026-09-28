@@ -285,10 +285,9 @@ class Stop(Base):
 
 
 class Student(Base):
-    """spec section 3. Deliberately minimal fields — no home address is
-    collected here, even though spec section 3 mentions it, because
-    nothing in this phase consumes it (automated stop generation is
-    deferred); same PII-minimalism precedent as Driver above."""
+    """spec section 3. The home location lives in its own admin-only
+    table (`StudentHome`), so no read that dispatchers or drivers use can
+    carry it. Eligibility is worked out, not stored (isd_api/eligibility.py)."""
 
     __tablename__ = "students"
 
@@ -305,11 +304,86 @@ class Student(Base):
         default=RidershipDefault.RIDES,
         nullable=False,
     )
+    # "PK", "K" or "1".."12" (isd_api/eligibility.py GRADES). SIS-owned for
+    # imported students, like name and school.
+    grade: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    # Spec section 3.1 "students receiving specialized transportation":
+    # always eligible, with their own walk and ride limits.
+    needs_specialized_transport: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    # Eligible regardless of distance, because the walk to school is
+    # unsafe (an admin decision, e.g. a highway with no crossing).
+    hazardous_route: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     school: Mapped[School] = relationship()
     stop: Mapped[Stop | None] = relationship()
+    # What the bus must have for this student (spec section 3
+    # "accommodation data"), in the same tags vehicles and runs use.
+    accommodations: Mapped[list[Qualification]] = relationship(secondary="student_accommodations")
     guardians: Mapped[list[User]] = relationship(
         secondary="student_guardians", back_populates="guardian_of"
+    )
+
+
+student_accommodations = Table(
+    "student_accommodations",
+    Base.metadata,
+    Column("student_id", ForeignKey("students.id"), primary_key=True),
+    Column("qualification_id", ForeignKey("qualifications.id"), primary_key=True),
+)
+
+
+class GeocodeSource(enum.StrEnum):
+    CENSUS = "census"
+    MANUAL = "manual"
+
+
+class StudentHome(Base):
+    """A student's home location (spec section 3), for eligibility and,
+    later, stop placement. Transportation admins only: dispatchers and
+    drivers work with stops, never homes. `matched_address` is what the
+    geocoder matched, so a wrong match is visible. The audit trail records
+    that a home changed, never the address itself (audit rows can't be
+    deleted, and this is personal data)."""
+
+    __tablename__ = "student_homes"
+
+    student_id: Mapped[int] = mapped_column(ForeignKey("students.id"), primary_key=True)
+    address: Mapped[str] = mapped_column(String(500), nullable=False)
+    location_lat: Mapped[float] = mapped_column(nullable=False)
+    location_lon: Mapped[float] = mapped_column(nullable=False)
+    source: Mapped[GeocodeSource] = mapped_column(
+        SAEnum(GeocodeSource, native_enum=False, length=16), nullable=False
+    )
+    matched_address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+
+class TransportationRules(Base):
+    """District transportation rules for route building (spec section 3.1):
+    who is eligible, and how far students may walk to a stop and how long
+    they may ride, by grade band. One row (id 1); missing means the
+    defaults in isd_api/eligibility.py."""
+
+    __tablename__ = "transportation_rules"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    eligibility_miles: Mapped[float] = mapped_column(nullable=False)
+    walk_miles_prek: Mapped[float] = mapped_column(nullable=False)
+    walk_miles_elementary: Mapped[float] = mapped_column(nullable=False)
+    walk_miles_middle: Mapped[float] = mapped_column(nullable=False)
+    walk_miles_high: Mapped[float] = mapped_column(nullable=False)
+    walk_miles_specialized: Mapped[float] = mapped_column(nullable=False)
+    ride_minutes_prek: Mapped[int] = mapped_column(Integer, nullable=False)
+    ride_minutes_elementary: Mapped[int] = mapped_column(Integer, nullable=False)
+    ride_minutes_middle: Mapped[int] = mapped_column(Integer, nullable=False)
+    ride_minutes_high: Mapped[int] = mapped_column(Integer, nullable=False)
+    ride_minutes_specialized: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
 
 

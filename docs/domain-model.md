@@ -159,9 +159,10 @@ produces them rather than duplicated here.
   `label`, `location_lat`/`location_lon`. No automated stop-generation
   yet — see "Not yet implemented" below.
 - **Student**: `full_name`, `school_id`, optional `stop_id`,
-  `default_ridership` (spec §4.1: `rides` or `does_not_ride`).
-  Deliberately minimal — no address/geocoding field, since nothing
-  consumes it yet (same PII-minimalism precedent as `Driver`).
+  `default_ridership` (spec §4.1: `rides` or `does_not_ride`). Since PR
+  #57 also `grade`, `needs_specialized_transport`, `hazardous_route` and
+  `accommodations`; the home location is a separate admin-only
+  `StudentHome` (see "Student eligibility and home locations").
 - **student_guardians**: many-to-many join between `Student` and
   `User` (a parent's access to their children, spec §17) — distinct
   from `User.student_id`, which is a student's *own* login.
@@ -966,6 +967,50 @@ refuse a report because the bus is moving (it can't know the tablet's
 speed better than the tablet does). The GPS feed is one `watchPosition`
 while work is under way, which also sends the position to dispatch at
 most every 20 seconds, and stops when nothing is under way.
+
+## Student eligibility and home locations (spec sections 3, 3.1)
+
+Phase 3.1, PR #57, migration `f1b9d3e7a284`. The product owner decided on
+2026-09-28 that real home addresses may be stored, geocoded with the US
+Census geocoder, and accepted the recommended limits below.
+
+- **`Student`** gains `grade` ("PK", "K", "1".."12"; normalised from
+  OneRoster/CEDS codes such as `KG`, `03`, and SIS-owned for imported
+  students, from users.csv's optional `grades` column, whose absence
+  leaves grades alone), `needs_specialized_transport`, `hazardous_route`
+  (an admin override: eligible at any distance), and `accommodations`
+  (qualification tags the bus must have, e.g. a wheelchair lift).
+- **`StudentHome`** (one per student): `address`, `location_lat/lon`,
+  `source` (`census` or `manual`), `matched_address`. Transportation
+  admins only (`GET/PUT/DELETE /students/{id}/home`): dispatchers,
+  drivers and families never get it. `PUT` with just the address asks
+  the Census (`integrations/census_geocoder.py`, only the address is
+  sent); with coordinates too, it's a pin placed by hand on the map, for
+  an address the Census can't find or places wrongly. No match is a 422
+  and an outage a 503, both saying to place the home on the map. The
+  audit trail records `home_set` (with the source) and `home_removed`,
+  never the address or coordinates, because audit rows can't be deleted.
+- **`TransportationRules`** (`GET/PUT /transportation-rules`; dispatchers
+  read, admins edit, audited): `eligibility_miles` and, per band (Pre-K,
+  elementary K-5, middle 6-8, high 9-12, specialized, which takes
+  precedence), the longest walk to a stop and the longest ride. Defaults:
+  2 miles; Pre-K and elementary 0.25 mi / 45 min; middle and high
+  0.5 mi / 60 min; specialized 0 mi (curb to curb) / 60 min. The walk and
+  ride limits are stored for route building (Phase 3.2 on); nothing
+  enforces them yet.
+- **Eligibility** (`isd_api/eligibility.py`, in every `StudentRead` as
+  `eligibility`: eligible, reason, miles, band): specialized
+  transportation, a hazardous route, or a home at least
+  `eligibility_miles` from school. Distance is straight-line for now
+  (road distance comes with routing), compared unrounded and shown
+  rounded down to two decimals, so a home 1.999 mi away never reads
+  "2.00". No home on file means not eligible, with that reason.
+  `StudentRead` carries `has_home` and the distance, never the home.
+- UI: Setup → Schools & students shows each student's grade,
+  eligibility badge and reason, and needs; the edit form has grade (locked
+  for SIS students), the two flags and needs; a **Home** panel per student
+  looks addresses up and places or moves the pin on a map. Setup → Rules &
+  optimization has the eligibility and limits table.
 
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 

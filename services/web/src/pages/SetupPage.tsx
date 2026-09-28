@@ -27,6 +27,7 @@ import { SchoolsSection } from './SchoolsSection'
 import { SisImportSection } from './SisImportSection'
 import { StopsSection } from './StopsSection'
 import { StudentsSection } from './StudentsSection'
+import { TransportationRulesSection } from './TransportationRulesSection'
 import { VehiclesSection } from './VehiclesSection'
 
 // Creating a school/qualification/driver/vehicle is transportation_admin
@@ -339,6 +340,7 @@ export function SetupPage() {
           students={students}
           schools={schools}
           stops={stops}
+          qualifications={qualifications}
           canEdit={canCreate}
           onChanged={loadAll}
         />
@@ -579,6 +581,7 @@ export function SetupPage() {
       </TabPanel>
 
       <TabPanel id="optimization" activeId={activeTab} idPrefix={TAB_PREFIX}>
+        <TransportationRulesSection canEdit={canCreate} />
         <RidershipRulesSection canEdit={canCreate} />
         <OptimizationSettingsSection canEdit={canCreate} />
       </TabPanel>
