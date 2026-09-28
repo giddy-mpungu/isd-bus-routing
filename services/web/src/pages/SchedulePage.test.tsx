@@ -51,6 +51,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getFleetPositions: vi.fn(),
     getObservedRunDuration: vi.fn(),
     getDriverReportsForDate: vi.fn(),
+    getDispatchTasks: vi.fn(),
   }
 })
 
@@ -173,6 +174,7 @@ function mockLoad() {
   vi.mocked(api.getAbsencesForDate).mockResolvedValue([absence])
   vi.mocked(api.getFleetPositions).mockResolvedValue([])
   vi.mocked(api.getDriverReportsForDate).mockResolvedValue([])
+  vi.mocked(api.getDispatchTasks).mockResolvedValue([])
 }
 
 describe('SchedulePage', () => {
@@ -590,7 +592,9 @@ describe('SchedulePage', () => {
     await user.click(screen.getByRole('button', { name: 'Find substitutes' }))
 
     await waitFor(() => expect(api.getSubstituteCandidates).toHaveBeenCalledWith(2, today()))
-    const panel = (await screen.findByRole('heading', { level: 3 })).closest('div') as HTMLElement
+    const panel = (
+      await screen.findByRole('heading', { level: 3, name: /^Substitutes for/ })
+    ).closest('div') as HTMLElement
     expect(within(panel).getByText(/Sam Substitute/)).toBeInTheDocument()
     expect(within(panel).getByText(/Bus 101/)).toBeInTheDocument()
   })

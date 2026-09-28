@@ -3,13 +3,16 @@ sections 2.1, 5, 13): one place that decides whether a crew can take
 work at a given time, so the solver, manual reassignment, crew creation,
 template generation, and substitute ranking can't disagree.
 
-Four things make a crew unavailable:
+Five things make a crew unavailable:
   - its vehicle is out of service (``Vehicle.is_active`` false),
   - its driver is deactivated (``Driver.is_active`` false),
   - a recorded ``DriverAbsence`` for that driver and date,
   - a field trip assigned to that driver or that vehicle (spec section 12:
     trips are jobs in the same scheduling engine), padded by
-    ``FIELD_TRIP_TURNAROUND_MINUTES`` on each side.
+    ``FIELD_TRIP_TURNAROUND_MINUTES`` on each side,
+  - a dispatch task (spec section 14's unplanned work) for that driver or
+    that vehicle, unless it was cancelled. Not padded: dispatch sets the
+    window it needs.
 A block that covers only part of the crew's available window is busy
 time; one covering the whole window makes the crew unavailable all day.
 """
@@ -23,7 +26,15 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from isd_api.licensing import license_violation
-from isd_api.models import Assignment, Crew, Driver, DriverAbsence, FieldTrip, Vehicle
+from isd_api.models import (
+    Assignment,
+    Crew,
+    DispatchTask,
+    Driver,
+    DriverAbsence,
+    FieldTrip,
+    Vehicle,
+)
 
 # Time a field trip's driver and bus are held before departure and after
 # return: pre-/post-trip inspection and travel between the yard and the
@@ -122,6 +133,40 @@ def trips_blocking(
     return blocking
 
 
+def task_label(task: DispatchTask) -> str:
+    return (
+        f"on dispatch task #{task.id} ({task.kind.value.replace('_', ' ')}, "
+        f"{_hhmm(task.start_minute)}-{_hhmm(task.end_minute)})"
+    )
+
+
+def tasks_blocking(
+    db: Session,
+    service_date: date,
+    *,
+    driver_id: int | None = None,
+    vehicle_id: int | None = None,
+    exclude_task_id: int | None = None,
+) -> list[DispatchTask]:
+    """Uncancelled dispatch tasks holding this driver or vehicle on
+    `service_date`."""
+    matches = []
+    if driver_id is not None:
+        matches.append(DispatchTask.driver_id == driver_id)
+    if vehicle_id is not None:
+        matches.append(DispatchTask.vehicle_id == vehicle_id)
+    if not matches:
+        return []
+    query = db.query(DispatchTask).filter(
+        DispatchTask.service_date == service_date,
+        DispatchTask.cancelled_at.is_(None),
+        or_(*matches),
+    )
+    if exclude_task_id is not None:
+        query = query.filter(DispatchTask.id != exclude_task_id)
+    return query.order_by(DispatchTask.start_minute, DispatchTask.id).all()
+
+
 def resource_unavailable_reason(driver: Driver, vehicle: Vehicle) -> str | None:
     """Out-of-service or deactivated resources: never schedulable."""
     if not vehicle.is_active:
@@ -151,15 +196,24 @@ def crew_availability(db: Session, crew: Crew) -> CrewAvailability:
     if reason is not None:
         return CrewAvailability(unavailable_reason=reason)
 
-    blocks = [
-        (a.start_minute, a.end_minute, _absence_label(a))
-        for a in driver_absences(db, crew.driver_id, crew.service_date)
-    ] + [
-        (start, end, _trip_label(trip))
-        for trip, start, end in trips_blocking(
-            db, crew.service_date, driver_id=crew.driver_id, vehicle_id=crew.vehicle_id
-        )
-    ]
+    blocks = (
+        [
+            (a.start_minute, a.end_minute, _absence_label(a))
+            for a in driver_absences(db, crew.driver_id, crew.service_date)
+        ]
+        + [
+            (start, end, _trip_label(trip))
+            for trip, start, end in trips_blocking(
+                db, crew.service_date, driver_id=crew.driver_id, vehicle_id=crew.vehicle_id
+            )
+        ]
+        + [
+            (task.start_minute, task.end_minute, task_label(task))
+            for task in tasks_blocking(
+                db, crew.service_date, driver_id=crew.driver_id, vehicle_id=crew.vehicle_id
+            )
+        ]
+    )
     earliest, latest = crew.available_window_earliest, crew.available_window_latest
     busy: list[BusyWindow] = []
     for block_start, block_end, label in blocks:
@@ -187,7 +241,8 @@ def driver_conflict_for_window(
     db: Session, driver: Driver, service_date: date, start_minute: int, end_minute: int
 ) -> str | None:
     """The same rule for a driver without a crew yet (substitute
-    ranking): deactivated, or absent during any part of the window."""
+    ranking): deactivated, absent, on a field trip or on a dispatch task
+    during any part of the window."""
     if not driver.is_active:
         return f"driver {driver.full_name} is deactivated"
     for absence in driver_absences(db, driver.id, service_date):
@@ -196,6 +251,9 @@ def driver_conflict_for_window(
     for trip, trip_start, trip_end in trips_blocking(db, service_date, driver_id=driver.id):
         if start_minute < trip_end and trip_start < end_minute:
             return _trip_label(trip)
+    for task in tasks_blocking(db, service_date, driver_id=driver.id):
+        if start_minute < task.end_minute and task.start_minute < end_minute:
+            return task_label(task)
     return None
 
 

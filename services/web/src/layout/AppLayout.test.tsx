@@ -39,29 +39,29 @@ describe('AppLayout', () => {
     vi.resetAllMocks()
   })
 
-  it('shows Schedule/Setup and not My Runs for a dispatcher', async () => {
+  it('shows Schedule/Setup and not My day for a dispatcher', async () => {
     vi.mocked(api.getCurrentUser).mockResolvedValue(dispatcherUser)
     renderLayout()
     await waitFor(() => expect(screen.getByRole('link', { name: 'Schedule' })).toBeInTheDocument())
     expect(screen.getByRole('link', { name: 'Setup' })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'My Runs' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'My day' })).not.toBeInTheDocument()
   })
 
-  it('shows My Runs and not Schedule/Setup for a driver', async () => {
+  it('shows My day and not Schedule/Setup for a driver', async () => {
     vi.mocked(api.getCurrentUser).mockResolvedValue({ ...dispatcherUser, role: 'driver' })
     renderLayout()
-    await waitFor(() => expect(screen.getByRole('link', { name: 'My Runs' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('link', { name: 'My day' })).toBeInTheDocument())
     expect(screen.queryByRole('link', { name: 'Schedule' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Setup' })).not.toBeInTheDocument()
   })
 
-  it('shows My Family and not Schedule/Setup/My Runs for a parent', async () => {
+  it('shows My Family and not Schedule/Setup/My day for a parent', async () => {
     vi.mocked(api.getCurrentUser).mockResolvedValue({ ...dispatcherUser, role: 'parent' })
     renderLayout()
     await waitFor(() => expect(screen.getByRole('link', { name: 'My Family' })).toBeInTheDocument())
     expect(screen.queryByRole('link', { name: 'Schedule' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Setup' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'My Runs' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'My day' })).not.toBeInTheDocument()
   })
 
   it('shows My Family for a student too', async () => {

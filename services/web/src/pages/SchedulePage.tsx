@@ -3,6 +3,7 @@ import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import { STATUS_LABELS, STATUS_TONES } from '../assignmentStatus'
 import { Badge } from '../components/Badge'
+import { DispatchTasksSection } from './DispatchTasksSection'
 import type {
   Absence,
   AbsenceReason,
@@ -909,6 +910,13 @@ export function SchedulePage() {
           </form>
         </div>
       </section>
+
+      <DispatchTasksSection
+        serviceDate={serviceDate}
+        drivers={drivers}
+        vehicles={vehicles}
+        onChanged={() => void loadAll(serviceDate)}
+      />
 
       <section className="driver-reports-section">
         <h2>Driver reports for {serviceDate}</h2>

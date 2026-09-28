@@ -12,7 +12,8 @@ expected return.
 - **Overnight (multi-day) trips** are split into one (date, start_minute,
   end_minute) window per calendar day (`availability.daily_windows`).
 - **Conflicts (section 12.1)**: out-of-service bus, deactivated or absent
-  driver, another field trip, and regular routes. The first four refuse
+  driver, another field trip or a dispatch task, and regular routes. All
+  but the last refuse
   the assignment (409). A regular-route clash doesn't: the dispatcher may
   prioritise the trip, and that route is then flagged "needs cover".
   Training, maintenance and required-break conflicts have no entity in
@@ -38,6 +39,7 @@ from isd_api.availability import (
     FIELD_TRIP_TURNAROUND_MINUTES,
     daily_windows,
     driver_absences,
+    tasks_blocking,
     trip_return,
     trip_windows,
 )
@@ -56,6 +58,8 @@ from isd_api.models import (
 )
 from isd_api.routers.vehicles import _resolve_qualifications
 from isd_api.schemas import (
+    DestinationProfileRead,
+    DriverFieldTripRead,
     FieldTripConflictCheck,
     FieldTripCreate,
     FieldTripObservedDurationRead,
@@ -208,6 +212,59 @@ def get_field_trip_observed_duration(
         most_recent_actual_minutes=round(most_recent_minutes),
         most_recent_departure_date=most_recent_date,
     )
+
+
+@router.get("/mine/{service_date}", response_model=list[DriverFieldTripRead])
+def list_my_field_trips(
+    service_date: date,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DRIVER)),
+) -> list[DriverFieldTripRead]:
+    """Spec sections 11 and 14: field trips are part of the assigned
+    driver's day, so the tablet lists them alongside runs and tasks. Only
+    trips assigned to this driver that touch `service_date`."""
+    if current_user.driver_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This driver account is not linked to a Driver record",
+        )
+    trips = (
+        db.query(FieldTrip)
+        .filter(FieldTrip.assigned_driver_id == current_user.driver_id)
+        .order_by(FieldTrip.departure_at)
+        .all()
+    )
+    results = []
+    for trip in trips:
+        for day, start, end in trip_windows(trip, padded=False):
+            if day != service_date:
+                continue
+            results.append(
+                DriverFieldTripRead(
+                    id=trip.id,
+                    status=trip.status,
+                    requesting_party=trip.requesting_party,
+                    origin=trip.origin,
+                    destination=trip.destination,
+                    departure_at=trip.departure_at,
+                    return_at=trip_return(trip),
+                    start_minute=start,
+                    end_minute=end,
+                    passenger_count=trip.passenger_count,
+                    vehicle_label=trip.assigned_vehicle.label
+                    if trip.assigned_vehicle is not None
+                    else None,
+                    bus_assistant_name=trip.bus_assistant_name,
+                    trip_contact=trip.trip_contact,
+                    special_instructions=trip.special_instructions,
+                    destination_profile=DestinationProfileRead.model_validate(
+                        trip.destination_profile
+                    )
+                    if trip.destination_profile is not None
+                    else None,
+                )
+            )
+    return results
 
 
 @router.get("/{trip_id}", response_model=FieldTripRead)
@@ -417,6 +474,13 @@ def _trip_conflicts(
                     f"Field trip #{other.id} to {other.destination} "
                     f"({other.departure_at.strftime('%Y-%m-%d %H:%M')}-"
                     f"{trip_return(other).strftime('%Y-%m-%d %H:%M')}) overlaps this trip"
+                )
+    for day, start, end in windows:
+        for task in tasks_blocking(db, day, driver_id=driver_id, vehicle_id=vehicle_id):
+            if start < task.end_minute and task.start_minute < end:
+                blocking.append(
+                    f"Dispatch task #{task.id} ({task.kind.value.replace('_', ' ')}, {day} "
+                    f"{_hhmm(task.start_minute)}-{_hhmm(task.end_minute)}) overlaps this trip"
                 )
     return blocking, route_overlaps
 

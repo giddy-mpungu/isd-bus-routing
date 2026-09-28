@@ -6,11 +6,15 @@ import type {
   Announcement,
   AssignmentStatus,
   DriverAssignment,
+  DriverDispatchTask,
+  DriverFieldTrip,
   DriverReportType,
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
-import { FINISHED, NEXT_STEP, STATUS_LABELS, STATUS_TONES, UNDERWAY } from '../assignmentStatus'
-import { Badge } from '../components/Badge'
+import { FINISHED, NEXT_STEP, STATUS_LABELS, STATUS_TONES } from '../assignmentStatus'
+import { Badge, type BadgeTone } from '../components/Badge'
+import { TASK_KIND_LABELS } from '../dispatchTasks'
+import { buildDay, isUnderway, SLOT_LABELS, type QueueSlot } from '../driverDay'
 
 const ABSENCE_REASONS: AbsenceReason[] = [
   'sick_leave',
@@ -35,43 +39,102 @@ function formatMinuteOfDay(minute: number): string {
   return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
 }
 
-function speakAssignment(a: DriverAssignment) {
+function speak(text: string) {
   // Spec section 9: "audible instructions" for drivers. Native browser
   // API, zero dependencies — a no-op where unsupported (older
   // browsers, some in-vehicle tablets) rather than an error.
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
     return
   }
-  const text = `${a.school_name}, ${formatMinuteOfDay(a.start_minute)} to ${formatMinuteOfDay(a.end_minute)}, vehicle ${a.vehicle_label}.`
   window.speechSynthesis.speak(new SpeechSynthesisUtterance(text))
+}
+
+function speakAssignment(a: DriverAssignment) {
+  speak(
+    `${a.school_name}, ${formatMinuteOfDay(a.start_minute)} to ${formatMinuteOfDay(a.end_minute)}, vehicle ${a.vehicle_label}.`,
+  )
+}
+
+function speakTask(t: DriverDispatchTask) {
+  speak(
+    `${TASK_KIND_LABELS[t.kind]}, ${formatMinuteOfDay(t.start_minute)} to ${formatMinuteOfDay(t.end_minute)}` +
+      `${t.location ? `, at ${t.location}` : ''}. ${t.instructions}`,
+  )
+}
+
+// "2026-10-08T09:00:00" -> "2026-10-08 09:00"
+function formatTimestamp(iso: string): string {
+  return iso.slice(0, 16).replace('T', ' ')
+}
+
+const SLOT_TONES: Record<QueueSlot, BadgeTone> = {
+  current: 'info',
+  next: 'neutral',
+  later: 'neutral',
+  done: 'success',
+  cancelled: 'danger',
+}
+
+function SlotLabel({ slot }: { slot: QueueSlot }) {
+  return (
+    <div className="driver-queue-slot">
+      <Badge tone={SLOT_TONES[slot]}>{SLOT_LABELS[slot]}</Badge>
+    </div>
+  )
+}
+
+// A task's last two steps read better as "Start task" / "Task done".
+function taskStepLabel(to: AssignmentStatus, label: string): string {
+  if (to === 'in_progress') return 'Start task'
+  if (to === 'completed') return 'Task done'
+  return label
 }
 
 export function DriverPage() {
   const { user } = useAuth()
   const [serviceDate] = useState(today)
   const [assignments, setAssignments] = useState<DriverAssignment[]>([])
+  const [tasks, setTasks] = useState<DriverDispatchTask[]>([])
+  const [trips, setTrips] = useState<DriverFieldTrip[]>([])
+  const [hasLoaded, setHasLoaded] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [busyAssignmentId, setBusyAssignmentId] = useState<number | null>(null)
+  // "run-12" / "task-3": the card whose button is waiting on the server.
+  const [busyKey, setBusyKey] = useState<string | null>(null)
   // spec section 9: "Messages from dispatch" -- dispatcher-authored,
   // never auto-generated (see routers/announcements.py).
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
 
-  const loadAssignments = useCallback(async (date: string) => {
+  const loadDay = useCallback(async (date: string) => {
     setErrorMessage(null)
     try {
-      const mine = await api.getMyAssignments(date)
+      const [myRuns, myTasks, myTrips] = await Promise.all([
+        api.getMyAssignments(date),
+        api.getMyDispatchTasks(date),
+        api.getMyFieldTrips(date),
+      ])
       // Spec section 14: tell dispatch the tablet has received new work.
-      setAssignments(
-        mine.some((a) => a.status === 'sent') ? await api.markAssignmentsReceived(date) : mine,
-      )
+      const [runs, tasksNow] = await Promise.all([
+        myRuns.some((a) => a.status === 'sent') ? api.markAssignmentsReceived(date) : myRuns,
+        myTasks.some((t) => t.status === 'sent' && !t.cancelled)
+          ? api.markDispatchTasksReceived(date)
+          : myTasks,
+      ])
+      setAssignments(runs)
+      setTasks(tasksNow)
+      setTrips(myTrips)
     } catch (err) {
-      setErrorMessage(err instanceof ApiError ? err.message : 'Failed to load your runs.')
+      setErrorMessage(err instanceof ApiError ? err.message : 'Failed to load your day.')
+    } finally {
+      setHasLoaded(true)
     }
   }, [])
 
   useEffect(() => {
-    void loadAssignments(serviceDate)
-  }, [serviceDate, loadAssignments])
+    void loadDay(serviceDate)
+  }, [serviceDate, loadDay])
+
+  const day = buildDay(assignments, tasks, trips)
+  const anythingUnderway = day.some(({ item }) => isUnderway(item))
 
   useEffect(() => {
     api
@@ -89,8 +152,7 @@ export function DriverPage() {
   // block or alarm a driver just trying to run their route.
   useEffect(() => {
     const driverId = user?.driver_id
-    const hasActiveAssignment = assignments.some((a) => UNDERWAY.includes(a.status))
-    if (driverId == null || !hasActiveAssignment || !('geolocation' in navigator)) {
+    if (driverId == null || !anythingUnderway || !('geolocation' in navigator)) {
       return
     }
     const reportPosition = () => {
@@ -111,18 +173,31 @@ export function DriverPage() {
     reportPosition()
     const intervalId = window.setInterval(reportPosition, 20000)
     return () => window.clearInterval(intervalId)
-  }, [assignments, user, serviceDate])
+  }, [anythingUnderway, user, serviceDate])
 
   async function handleSetStatus(assignmentId: number, status: AssignmentStatus) {
     setErrorMessage(null)
-    setBusyAssignmentId(assignmentId)
+    setBusyKey(`run-${assignmentId}`)
     try {
       await api.updateAssignmentStatus(assignmentId, status)
-      await loadAssignments(serviceDate)
+      await loadDay(serviceDate)
     } catch (err) {
       setErrorMessage(err instanceof ApiError ? err.message : 'Failed to update run status.')
     } finally {
-      setBusyAssignmentId(null)
+      setBusyKey(null)
+    }
+  }
+
+  async function handleSetTaskStatus(taskId: number, status: AssignmentStatus) {
+    setErrorMessage(null)
+    setBusyKey(`task-${taskId}`)
+    try {
+      await api.updateDispatchTaskStatus(taskId, status)
+      await loadDay(serviceDate)
+    } catch (err) {
+      setErrorMessage(err instanceof ApiError ? err.message : 'Failed to update the task.')
+    } finally {
+      setBusyKey(null)
     }
   }
 
@@ -199,7 +274,7 @@ export function DriverPage() {
 
   return (
     <div className="driver-page">
-      <h1>My runs — {serviceDate}</h1>
+      <h1>My day — {serviceDate}</h1>
 
       {announcements.length > 0 && (
         <section className="announcements-panel">
@@ -219,72 +294,172 @@ export function DriverPage() {
           {errorMessage}
         </p>
       )}
-      {assignments.length === 0 && !errorMessage && (
-        <p className="status">No runs scheduled for today.</p>
+      {hasLoaded && day.length === 0 && !errorMessage && (
+        <p className="status">Nothing scheduled for you today.</p>
       )}
 
       <ul className="driver-run-list">
-        {assignments.map((a) => (
-          <li key={a.id} className="driver-run-card">
-            <div className="driver-run-time">
-              {formatMinuteOfDay(a.start_minute)} – {formatMinuteOfDay(a.end_minute)}
-            </div>
-            <div className="driver-run-school">{a.school_name}</div>
-            <div className="driver-run-vehicle">Vehicle: {a.vehicle_label}</div>
-            <div className="driver-run-status">
-              Status: <Badge tone={STATUS_TONES[a.status]}>{STATUS_LABELS[a.status]}</Badge>
-            </div>
-            <div className="driver-run-roster">
-              {a.roster_ambiguous ? (
-                <p>
-                  Rider list unavailable — more than one bus serves this school today, so it can't
-                  be split between them.
-                </p>
-              ) : a.stops.length === 0 ? (
-                <p>No riders expected today.</p>
-              ) : (
-                <>
-                  <h3>Expected riders by stop</h3>
-                  <p className="driver-run-roster-note">
-                    Not a route order — stops aren't sequenced yet.
-                  </p>
-                  <ul>
-                    {a.stops.map((stop) => (
-                      <li key={stop.stop_label ?? '__no_stop__'}>
-                        {stop.stop_label ?? 'No stop assigned'}: {stop.student_names.join(', ')}
-                      </li>
-                    ))}
+        {day.map(({ item, slot }) => {
+          if (item.type === 'task') {
+            const t = item.task
+            const step = t.cancelled ? undefined : NEXT_STEP[t.status]
+            return (
+              <li
+                key={item.key}
+                className={`driver-run-card driver-task-card${t.cancelled ? ' is-cancelled' : ''}`}
+              >
+                <SlotLabel slot={slot} />
+                <div className="driver-run-time">
+                  {formatMinuteOfDay(t.start_minute)} – {formatMinuteOfDay(t.end_minute)}
+                </div>
+                <div className="driver-run-school">Dispatch: {TASK_KIND_LABELS[t.kind]}</div>
+                {t.location && <div className="driver-run-vehicle">Where: {t.location}</div>}
+                {t.vehicle_label && (
+                  <div className="driver-run-vehicle">Vehicle: {t.vehicle_label}</div>
+                )}
+                <p className="driver-task-instructions">{t.instructions}</p>
+                <div className="driver-run-status">
+                  Status:{' '}
+                  {t.cancelled ? (
+                    <Badge tone="danger">Cancelled by dispatch</Badge>
+                  ) : (
+                    <Badge tone={STATUS_TONES[t.status]}>{STATUS_LABELS[t.status]}</Badge>
+                  )}
+                </div>
+                <div className="driver-run-actions">
+                  {step && (
+                    <button
+                      type="button"
+                      className="driver-next-step"
+                      disabled={busyKey === item.key}
+                      onClick={() => void handleSetTaskStatus(t.id, step.to)}
+                    >
+                      {taskStepLabel(step.to, step.label)}
+                    </button>
+                  )}
+                  <button type="button" onClick={() => speakTask(t)} aria-label="Read task aloud">
+                    🔊 Read aloud
+                  </button>
+                </div>
+              </li>
+            )
+          }
+          if (item.type === 'trip') {
+            const trip = item.trip
+            const profile = trip.destination_profile
+            return (
+              <li key={item.key} className="driver-run-card driver-trip-card">
+                <SlotLabel slot={slot} />
+                <div className="driver-run-time">
+                  {formatMinuteOfDay(trip.start_minute)} – {formatMinuteOfDay(trip.end_minute)}
+                </div>
+                <div className="driver-run-school">
+                  Field trip #{trip.id} to {trip.destination}
+                </div>
+                <div className="driver-run-vehicle">
+                  Departs {formatTimestamp(trip.departure_at)} from {trip.origin}, returns{' '}
+                  {formatTimestamp(trip.return_at)}
+                </div>
+                {trip.vehicle_label && (
+                  <div className="driver-run-vehicle">Vehicle: {trip.vehicle_label}</div>
+                )}
+                <div className="driver-run-vehicle">
+                  {trip.passenger_count} passengers for {trip.requesting_party}. Contact:{' '}
+                  {trip.trip_contact}
+                  {trip.bus_assistant_name && `. Bus assistant: ${trip.bus_assistant_name}`}
+                </div>
+                {trip.special_instructions && (
+                  <p className="driver-task-instructions">{trip.special_instructions}</p>
+                )}
+                {profile && (
+                  <ul className="driver-trip-notes">
+                    {profile.approved_entrance && (
+                      <li>Approved entrance: {profile.approved_entrance}</li>
+                    )}
+                    {profile.parking_notes && <li>Parking: {profile.parking_notes}</li>}
+                    {profile.turn_restrictions && (
+                      <li>Turn restrictions: {profile.turn_restrictions}</li>
+                    )}
+                    {profile.driver_notes && <li>Driver notes: {profile.driver_notes}</li>}
                   </ul>
-                </>
-              )}
-            </div>
-            <div className="driver-run-actions">
-              {NEXT_STEP[a.status] && (
+                )}
+                <div className="driver-run-status">
+                  Trip status:{' '}
+                  <Badge tone={trip.status === 'completed' ? 'success' : 'info'}>
+                    {trip.status.replace(/_/g, ' ')}
+                  </Badge>
+                </div>
+              </li>
+            )
+          }
+          const a = item.run
+          return (
+            <li key={item.key} className="driver-run-card">
+              <SlotLabel slot={slot} />
+              <div className="driver-run-time">
+                {formatMinuteOfDay(a.start_minute)} – {formatMinuteOfDay(a.end_minute)}
+              </div>
+              <div className="driver-run-school">{a.school_name}</div>
+              <div className="driver-run-vehicle">Vehicle: {a.vehicle_label}</div>
+              <div className="driver-run-status">
+                Status: <Badge tone={STATUS_TONES[a.status]}>{STATUS_LABELS[a.status]}</Badge>
+              </div>
+              <div className="driver-run-roster">
+                {a.roster_ambiguous ? (
+                  <p>
+                    Rider list unavailable — more than one bus serves this school today, so it can't
+                    be split between them.
+                  </p>
+                ) : a.stops.length === 0 ? (
+                  <p>No riders expected today.</p>
+                ) : (
+                  <>
+                    <h3>Expected riders by stop</h3>
+                    <p className="driver-run-roster-note">
+                      Not a route order — stops aren't sequenced yet.
+                    </p>
+                    <ul>
+                      {a.stops.map((stop) => (
+                        <li key={stop.stop_label ?? '__no_stop__'}>
+                          {stop.stop_label ?? 'No stop assigned'}: {stop.student_names.join(', ')}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+              <div className="driver-run-actions">
+                {NEXT_STEP[a.status] && (
+                  <button
+                    type="button"
+                    className="driver-next-step"
+                    disabled={busyKey === item.key}
+                    onClick={() => void handleSetStatus(a.id, NEXT_STEP[a.status]!.to)}
+                  >
+                    {NEXT_STEP[a.status]!.label}
+                  </button>
+                )}
+                {!FINISHED.includes(a.status) && (
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    disabled={busyKey === item.key}
+                    onClick={() => void handleSetStatus(a.id, 'no_show')}
+                  >
+                    No-show
+                  </button>
+                )}
                 <button
                   type="button"
-                  className="driver-next-step"
-                  disabled={busyAssignmentId === a.id}
-                  onClick={() => void handleSetStatus(a.id, NEXT_STEP[a.status]!.to)}
+                  onClick={() => speakAssignment(a)}
+                  aria-label="Read run aloud"
                 >
-                  {NEXT_STEP[a.status]!.label}
+                  🔊 Read aloud
                 </button>
-              )}
-              {!FINISHED.includes(a.status) && (
-                <button
-                  type="button"
-                  className="btn-danger"
-                  disabled={busyAssignmentId === a.id}
-                  onClick={() => void handleSetStatus(a.id, 'no_show')}
-                >
-                  No-show
-                </button>
-              )}
-              <button type="button" onClick={() => speakAssignment(a)} aria-label="Read run aloud">
-                🔊 Read aloud
-              </button>
-            </div>
-          </li>
-        ))}
+              </div>
+            </li>
+          )
+        })}
       </ul>
 
       <section className="driver-absence-section">
