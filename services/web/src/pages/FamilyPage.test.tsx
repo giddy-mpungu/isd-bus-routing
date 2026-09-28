@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
@@ -131,6 +131,28 @@ describe('FamilyPage', () => {
       expect(screen.getByText(/Bus 101 was near 29\.712, -95\.419 at /)).toBeInTheDocument(),
     )
     expect(screen.queryByText(/Jordan/)).not.toBeInTheDocument()
+    const map = await screen.findByRole('region', { name: 'Approximate location of Bus 101' })
+    expect(within(map).getByTitle('Bus 101 (approximate)')).toBeInTheDocument()
+    expect(map.querySelector('.map-pin-approx')).not.toBeNull()
+  })
+
+  it('shows no map when the bus has no live position', async () => {
+    vi.mocked(api.getMyFamily).mockResolvedValue([child])
+    vi.mocked(api.getBusPosition).mockResolvedValue({
+      available: false,
+      ambiguous: false,
+      location_lat: null,
+      location_lon: null,
+      recorded_at: null,
+      vehicle_label: 'Bus 101',
+    })
+    render(<FamilyPage />)
+    await waitFor(() => expect(screen.getByText('Jamie Student')).toBeInTheDocument())
+    const user = userEvent.setup()
+    await user.click(screen.getAllByRole('button', { name: 'Locate bus' })[0])
+
+    expect(await screen.findByText('No live position yet.')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: /Approximate location/ })).not.toBeInTheDocument()
   })
 
   it('locating the bus shows an ambiguous notice when multiple runs share the leg', async () => {

@@ -12,6 +12,12 @@ COPY . .
 # `docker run -e` at deploy time (that would silently do nothing).
 ARG VITE_API_BASE_URL
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+# Optional map tile server (components/MapView.tsx); empty means
+# OpenStreetMap's public tiles. See docs/deployment.md, "Map tiles".
+ARG VITE_MAP_TILE_URL
+ENV VITE_MAP_TILE_URL=${VITE_MAP_TILE_URL}
+ARG VITE_MAP_ATTRIBUTION
+ENV VITE_MAP_ATTRIBUTION=${VITE_MAP_ATTRIBUTION}
 RUN npm run build
 
 FROM nginx:alpine

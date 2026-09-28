@@ -2,6 +2,8 @@ import { useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { Stop, Student } from '../api/types'
+import { LazyMapView } from '../components/LazyMapView'
+import type { MapMarker } from '../components/MapView'
 
 export function StopsSection({
   stops,
@@ -93,6 +95,46 @@ export function StopsSection({
     }
   }
 
+  // Spec section 3.1: place or relocate a stop by clicking the map. The
+  // coordinate fields stay the keyboard-accessible way to do the same.
+  function handlePick(pickedLat: number, pickedLon: number) {
+    if (editingId !== null) {
+      setDraftLat(String(pickedLat))
+      setDraftLon(String(pickedLon))
+    } else {
+      setLat(String(pickedLat))
+      setLon(String(pickedLon))
+    }
+  }
+
+  const pickLat = editingId !== null ? draftLat : lat
+  const pickLon = editingId !== null ? draftLon : lon
+  const mapMarkers: MapMarker[] = [
+    ...stops
+      .filter((s) => s.id !== editingId)
+      .map((s) => ({
+        id: `stop-${s.id}`,
+        lat: s.location_lat,
+        lon: s.location_lon,
+        label: s.label,
+        tone: 'stop' as const,
+      })),
+    ...(pickLat !== '' &&
+    pickLon !== '' &&
+    Number.isFinite(Number(pickLat)) &&
+    Number.isFinite(Number(pickLon))
+      ? [
+          {
+            id: 'pick',
+            lat: Number(pickLat),
+            lon: Number(pickLon),
+            label: editingId !== null ? `${draftLabel || 'Stop'} (new spot)` : label || 'New stop',
+            tone: 'pick' as const,
+          },
+        ]
+      : []),
+  ]
+
   function studentsAt(stopId: number): number {
     return students.filter((s) => s.stop_id === stopId).length
   }
@@ -100,6 +142,16 @@ export function StopsSection({
   return (
     <section className="stops-section">
       <h2>Stops</h2>
+      {canEdit && (
+        <p className="status">
+          Click the map to set the coordinates of the stop you're adding or relocating.
+        </p>
+      )}
+      <LazyMapView
+        markers={mapMarkers}
+        label="Stops map"
+        onPick={canEdit ? handlePick : undefined}
+      />
       {rowError && (
         <p role="alert" className="error">
           {rowError}

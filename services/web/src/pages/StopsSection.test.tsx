@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
@@ -25,6 +25,50 @@ describe('StopsSection', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     onChanged.mockResolvedValue(undefined)
+  })
+
+  it('shows every stop on the map', async () => {
+    render(<StopsSection stops={[stop]} students={[]} canEdit={false} onChanged={onChanged} />)
+    const map = await screen.findByRole('region', { name: 'Stops map' })
+    expect(within(map).getByTitle('Main St & 1st')).toBeInTheDocument()
+    expect(map).not.toHaveClass('is-pickable')
+  })
+
+  it('clicking the map fills in a new stop’s coordinates and marks the spot', async () => {
+    vi.mocked(api.createStop).mockResolvedValue({ ...stop, id: 2, label: 'Oak Ave' })
+    render(<StopsSection stops={[stop]} students={[]} canEdit onChanged={onChanged} />)
+    const map = await screen.findByRole('region', { name: 'Stops map' })
+
+    fireEvent.click(map, { clientX: 5, clientY: 5 })
+
+    const lat = screen.getByLabelText('Stop latitude') as HTMLInputElement
+    const lon = screen.getByLabelText('Stop longitude') as HTMLInputElement
+    expect(lat.value).not.toBe('')
+    expect(Number.isFinite(Number(lat.value)) && Number.isFinite(Number(lon.value))).toBe(true)
+    expect(within(map).getByTitle('New stop')).toBeInTheDocument()
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Stop label'), 'Oak Ave')
+    expect(within(map).getByTitle('Oak Ave')).toBeInTheDocument()
+    const picked = { location_lat: Number(lat.value), location_lon: Number(lon.value) }
+    await user.click(screen.getByRole('button', { name: 'Add stop' }))
+    await waitFor(() =>
+      expect(api.createStop).toHaveBeenCalledWith({ label: 'Oak Ave', ...picked }),
+    )
+  })
+
+  it('while relocating, a map click moves that stop’s coordinates, not the new-stop form', async () => {
+    render(<StopsSection stops={[stop]} students={[]} canEdit onChanged={onChanged} />)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Relocate' }))
+    const map = await screen.findByRole('region', { name: 'Stops map' })
+
+    fireEvent.click(map, { clientX: 5, clientY: 5 })
+
+    const draftLat = document.getElementById('stop-edit-lat-1') as HTMLInputElement
+    expect(draftLat.value).not.toBe('29.7')
+    expect((document.getElementById('stop-lat') as HTMLInputElement).value).toBe('')
+    expect(within(map).getByTitle('Main St & 1st (new spot)')).toBeInTheDocument()
   })
 
   it('relocates a stop (label and coordinates)', async () => {

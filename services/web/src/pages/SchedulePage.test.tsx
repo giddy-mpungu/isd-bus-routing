@@ -306,6 +306,10 @@ describe('SchedulePage', () => {
     await waitFor(() =>
       expect(screen.getByText(/Jordan Driver — Bus 101: 29.71000, -95.41000/)).toBeInTheDocument(),
     )
+    // The same bus on the fleet map, with its schools for context.
+    const map = await screen.findByRole('region', { name: 'Fleet map' })
+    expect(within(map).getByTitle('Bus 101 — Jordan Driver')).toBeInTheDocument()
+    expect(within(map).getByTitle(school.name)).toBeInTheDocument()
   })
 
   it('shows a status message when no vehicle has reported a position yet', async () => {

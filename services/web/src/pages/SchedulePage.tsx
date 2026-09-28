@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import { STATUS_LABELS, STATUS_TONES } from '../assignmentStatus'
 import { Badge } from '../components/Badge'
+import { LazyMapView } from '../components/LazyMapView'
+import type { MapMarker } from '../components/MapView'
 import { DispatchTasksSection } from './DispatchTasksSection'
 import type {
   Absence,
@@ -130,6 +132,26 @@ export function SchedulePage() {
   }, [serviceDate])
 
   const schoolsById = new Map(schools.map((s) => [s.id, s]))
+  // Spec section 9: the dispatcher's GPS fleet view, with schools for context.
+  const fleetMarkers = useMemo<MapMarker[]>(
+    () => [
+      ...schools.map((s) => ({
+        id: `school-${s.id}`,
+        lat: s.location_lat,
+        lon: s.location_lon,
+        label: s.name,
+        tone: 'school' as const,
+      })),
+      ...fleetPositions.map((p) => ({
+        id: `bus-${p.crew_id}`,
+        lat: p.location_lat,
+        lon: p.location_lon,
+        label: `${p.vehicle_label} — ${p.driver_full_name}`,
+        tone: 'bus' as const,
+      })),
+    ],
+    [schools, fleetPositions],
+  )
   const driversById = new Map(drivers.map((d) => [d.id, d]))
   const vehiclesById = new Map(vehicles.map((v) => [v.id, v]))
   const runsById = new Map(runs.map((r) => [r.id, r]))
@@ -628,6 +650,7 @@ export function SchedulePage() {
 
       <section className="fleet-positions-section">
         <h2>Live fleet positions</h2>
+        <LazyMapView markers={fleetMarkers} label="Fleet map" />
         {fleetPositions.length === 0 ? (
           <p className="status">No vehicle has reported a position for this date yet.</p>
         ) : (

@@ -2,6 +2,9 @@
 
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string
+  // Map tiles (components/MapView.tsx); default is OpenStreetMap.
+  readonly VITE_MAP_TILE_URL?: string
+  readonly VITE_MAP_ATTRIBUTION?: string
 }
 
 interface ImportMeta {
