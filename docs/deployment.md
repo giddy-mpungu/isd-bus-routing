@@ -228,6 +228,59 @@ they look at. For a family, that's roughly where their child's bus is.
 The family map is approximate by design: the API rounds the bus position
 to about 100 m, and that map won't zoom in past street level.
 
+The web image's Content-Security-Policy allows tiles only from
+`MAP_TILE_URL`'s host (see "Security headers" below), so a new tile
+provider only needs that one value and a rebuild. Leaflet's `{s}`
+subdomain placeholder becomes a `*.` wildcard, e.g.
+`https://{s}.tiles.example.com/{z}/{x}/{y}.png` allows
+`https://*.tiles.example.com`. A value that isn't an absolute http(s)
+URL or a same-origin `/path` fails the image build.
+
+## Security headers
+
+Every response carries a strict set of browser security headers. Most
+are set once in the `Caddyfile`, for the SPA and the api alike:
+
+| Header | Value | Why |
+| --- | --- | --- |
+| `Strict-Transport-Security` | `max-age=31536000` | HTTPS only; never sent over plain HTTP (the local demo). No `includeSubDomains`, so this host doesn't force HTTPS on the rest of the district's domain. Add it yourself if you want that. |
+| `X-Content-Type-Options` | `nosniff` | |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Cross-origin requests see only the origin. OpenStreetMap's tile policy needs a Referer, and the origin satisfies it. |
+| `Permissions-Policy` | `geolocation=(self)`, and camera, microphone, payment, USB etc. off | The driver app reports GPS; nothing else is needed. |
+| `X-Frame-Options` | `DENY` | For browsers without CSP `frame-ancestors`. |
+| `Cross-Origin-Opener-Policy` | `same-origin` | |
+| `Server` | removed | |
+
+Content-Security-Policy differs by path:
+
+- **api (`/api/*`)**, set by Caddy: `default-src 'none'; frame-ancestors 'none'`.
+  The api returns only JSON, so nothing in a response may load, run or
+  be framed. FastAPI's interactive `/docs` page won't render behind it
+  (it didn't work behind the `/api` prefix before either).
+- **SPA (everything else)**, sent by the web container's nginx. It's
+  generated during the image build by `services/web/scripts/csp.mjs`
+  from the same build args the bundle uses, so it always allows exactly
+  the api and tile origins that build talks to:
+
+  ```text
+  default-src 'self'; script-src 'self'; style-src 'self';
+  img-src 'self' data: <MAP_TILE_URL's origin>; connect-src 'self' <PUBLIC_API_ORIGIN's origin>;
+  object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  ```
+
+  No `'unsafe-inline'` anywhere: Leaflet and React set styles through
+  the CSSOM, which CSP doesn't restrict. When `PUBLIC_API_ORIGIN` is on
+  the same origin as the site, as the Caddy setup requires, it's
+  already covered by `'self'`.
+
+To check a deployment, run
+`curl -sI https://bus.yourdistrict.example.org/` and
+`curl -sI https://bus.yourdistrict.example.org/api/health` and compare
+the headers against the table above. In the browser, the console should
+show no `Content Security Policy` errors on the Schedule page, the
+driver's "My day" or the family page. A violation there means a new
+external resource was added without updating `csp.mjs`.
+
 ## Security checklist before go-live
 
 - [ ] `.env` contains real, unique, generated secrets (never the
@@ -244,6 +297,14 @@ to about 100 m, and that map won't zoom in past street level.
       tested once against a throwaway environment.
 - [ ] `MAP_TILE_URL` points at a tile server the district has approved
       (see "Map tiles" above), not the public OpenStreetMap servers.
+- [ ] The security headers are actually served (see "Security headers"
+      above): `curl -sI` on `/` and `/api/health` both show
+      `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`,
+      `Referrer-Policy`, `Permissions-Policy` and a
+      `Content-Security-Policy`, and the fleet map's tiles load with no
+      CSP errors in the browser console. If you replaced Caddy with your
+      own reverse proxy, it must set these headers itself; only the
+      SPA's CSP comes from the web image.
 - [ ] The first administrator's password is a real, unique password,
       not the placeholder from this document.
 - [ ] `docs/adr/0006-persistence-and-rbac.md`'s open follow-ups

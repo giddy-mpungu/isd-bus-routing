@@ -5,7 +5,8 @@ import 'leaflet/dist/leaflet.css'
 // Map tiles come from OpenStreetMap unless the deployment points
 // VITE_MAP_TILE_URL at another provider or a self-hosted tile server. The
 // tile server sees which area a viewer looks at, so a district may want its
-// own (docs/deployment.md, "Map tiles").
+// own (docs/deployment.md, "Map tiles"). The image's Content-Security-Policy
+// allows this host via scripts/csp.mjs, which has the same default.
 const TILE_URL =
   import.meta.env.VITE_MAP_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 const TILE_ATTRIBUTION =

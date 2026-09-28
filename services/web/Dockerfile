@@ -19,10 +19,15 @@ ENV VITE_MAP_TILE_URL=${VITE_MAP_TILE_URL}
 ARG VITE_MAP_ATTRIBUTION
 ENV VITE_MAP_ATTRIBUTION=${VITE_MAP_ATTRIBUTION}
 RUN npm run build
+# The Content-Security-Policy, derived from the same build args so it
+# allows exactly the api and tile origins this bundle uses. A malformed
+# URL fails the build here instead of shipping a broken policy.
+RUN node scripts/csp.mjs > /app/csp-header.conf
 
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/csp-header.conf /etc/nginx/csp-header.conf
 EXPOSE 80
 # 127.0.0.1, not localhost: inside this Alpine image `localhost`
 # resolves to ::1 first, and nginx.conf only listens on IPv4, so a

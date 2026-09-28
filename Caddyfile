@@ -7,9 +7,45 @@
 # The web image is built with VITE_API_BASE_URL={$PUBLIC_API_ORIGIN}
 # (docker-compose.prod.yml), so PUBLIC_API_ORIGIN in your .env must be
 # this same domain with an /api path, e.g. https://bus.yourdistrict.example.org/api.
+#
+# Security headers (docs/deployment.md, "Security headers") are set here
+# so they cover the SPA and the api alike. The one exception is the SPA's
+# Content-Security-Policy: it depends on the web image's build args (api
+# origin, map tile server), so the web image generates it and nginx sends
+# it (services/web/scripts/csp.mjs).
+
+(security_headers) {
+    header {
+        # Applied as the response is written, so these win over anything
+        # an upstream sends.
+        defer
+        X-Content-Type-Options "nosniff"
+        # Origin only on cross-origin requests. OpenStreetMap's tile
+        # policy needs a Referer, and the origin is enough for it.
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # The driver app reports GPS; nothing needs any other feature.
+        Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=(), usb=(), serial=(), bluetooth=(), hid=(), accelerometer=(), gyroscope=(), magnetometer=(), display-capture=()"
+        # For browsers that predate CSP frame-ancestors.
+        X-Frame-Options "DENY"
+        Cross-Origin-Opener-Policy "same-origin"
+        -Server
+    }
+
+    # HSTS only on HTTPS. The local demo serves plain HTTP on :8080 (and
+    # the Cloudflare tunnel reaches it over HTTP), where HSTS doesn't
+    # belong. No includeSubDomains: this host shouldn't decide HTTPS for
+    # every other site under the district's domain.
+    @https protocol https
+    header @https Strict-Transport-Security "max-age=31536000"
+}
 
 {$CADDY_DOMAIN} {
+    import security_headers
+
     handle /api/* {
+        # JSON only: nothing in an api response should ever load, run or
+        # be framed.
+        header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
         uri strip_prefix /api
         reverse_proxy api:8000
     }
