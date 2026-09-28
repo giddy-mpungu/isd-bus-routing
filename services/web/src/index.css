@@ -738,6 +738,32 @@ a.button-link:hover {
   overflow-x: auto;
 }
 
+/* In-motion lockout (spec section 9, motion.ts). */
+.motion-lock {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin: 0.5rem 0 1rem;
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--warning-50);
+  border: 2px solid var(--warning-500);
+  color: var(--warning-700);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+fieldset.motion-lockable {
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+fieldset.motion-lockable:disabled {
+  opacity: 0.55;
+}
+
 /* An assignment whose crew became unavailable after it was made. */
 .availability-issue {
   margin-top: 0.4rem;
