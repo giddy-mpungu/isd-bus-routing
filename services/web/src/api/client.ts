@@ -28,9 +28,13 @@ import type {
   CurrentUser,
   DestinationProfile,
   DestinationProfileCreate,
+  DispatchTask,
+  DispatchTaskCreate,
   Driver,
   DriverAssignment,
   DriverCreate,
+  DriverDispatchTask,
+  DriverFieldTrip,
   DriverReport,
   DriverReportCreate,
   DriverUpdate,
@@ -566,4 +570,40 @@ export async function importSisStudents(
     method: 'POST',
     body: form,
   })
+}
+
+export async function getDispatchTasks(serviceDate: string): Promise<DispatchTask[]> {
+  return request<DispatchTask[]>(`/dispatch-tasks?service_date=${serviceDate}`)
+}
+
+export async function createDispatchTask(payload: DispatchTaskCreate): Promise<DispatchTask> {
+  return request<DispatchTask>('/dispatch-tasks', jsonInit('POST', payload))
+}
+
+export async function cancelDispatchTask(id: number): Promise<DispatchTask> {
+  return request<DispatchTask>(`/dispatch-tasks/${id}/cancel`, jsonInit('POST', {}))
+}
+
+export async function getMyDispatchTasks(serviceDate: string): Promise<DriverDispatchTask[]> {
+  return request<DriverDispatchTask[]>(`/dispatch-tasks/mine/${serviceDate}`)
+}
+
+export async function markDispatchTasksReceived(
+  serviceDate: string,
+): Promise<DriverDispatchTask[]> {
+  return request<DriverDispatchTask[]>(
+    `/dispatch-tasks/mine/${serviceDate}/receipt`,
+    jsonInit('POST', {}),
+  )
+}
+
+export async function updateDispatchTaskStatus(
+  id: number,
+  status: AssignmentStatus,
+): Promise<DriverDispatchTask> {
+  return request<DriverDispatchTask>(`/dispatch-tasks/${id}/status`, jsonInit('PATCH', { status }))
+}
+
+export async function getMyFieldTrips(serviceDate: string): Promise<DriverFieldTrip[]> {
+  return request<DriverFieldTrip[]>(`/field-trips/mine/${serviceDate}`)
 }

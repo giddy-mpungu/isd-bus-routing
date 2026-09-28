@@ -131,6 +131,19 @@ class TripStatus(enum.StrEnum):
     COMPLETED = "completed"
 
 
+class DispatchTaskKind(enum.StrEnum):
+    """Spec section 14's unplanned assignments dispatch can issue."""
+
+    COVER_ROUTE = "cover_route"
+    ASSIST_DISABLED_BUS = "assist_disabled_bus"
+    TRANSFER_PASSENGERS = "transfer_passengers"
+    RETURN_TO_SCHOOL = "return_to_school"
+    MOVE_VEHICLE = "move_vehicle"
+    ASSIST_DRIVER = "assist_driver"
+    EMERGENCY = "emergency"
+    OTHER = "other"
+
+
 class AbsenceReason(enum.StrEnum):
     """spec section 13's enumerated reasons. "Partial-day absence" is
     deliberately not a value here — it's already representable via
@@ -794,6 +807,46 @@ class FieldTrip(Base):
     )
     assigned_driver: Mapped[Driver | None] = relationship(foreign_keys=[assigned_driver_id])
     assigned_vehicle: Mapped[Vehicle | None] = relationship(foreign_keys=[assigned_vehicle_id])
+
+
+class DispatchTask(Base):
+    """Spec sections 11 and 14: unplanned work dispatch sends to a driver's
+    tablet (assist a disabled bus, move a vehicle, respond to an emergency).
+    It's one more job in the driver's day: it follows the same lifecycle
+    as a regular assignment (`isd_api/assignment_states.py`) and is busy
+    time for its driver and vehicle (`isd_api/availability.py`).
+
+    A single-day minute window, like absences and runs. `vehicle_id` is
+    optional: assisting another driver may not need a bus. Cancelling
+    keeps the row (and the audit trail) and frees the time."""
+
+    __tablename__ = "dispatch_tasks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[DispatchTaskKind] = mapped_column(
+        SAEnum(DispatchTaskKind, native_enum=False, length=32), nullable=False
+    )
+    service_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    start_minute: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_minute: Mapped[int] = mapped_column(Integer, nullable=False)
+    driver_id: Mapped[int] = mapped_column(ForeignKey("drivers.id"), nullable=False)
+    vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    instructions: Mapped[str] = mapped_column(String(1000), nullable=False)
+    status: Mapped[AssignmentStatus] = mapped_column(
+        SAEnum(AssignmentStatus, native_enum=False, length=20),
+        default=AssignmentStatus.SENT,
+        nullable=False,
+    )
+    status_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    driver: Mapped[Driver] = relationship()
+    vehicle: Mapped[Vehicle | None] = relationship()
 
 
 class Announcement(Base):

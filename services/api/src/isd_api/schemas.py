@@ -10,6 +10,7 @@ from isd_api.models import (
     AnnouncementAudience,
     AnnouncementCategory,
     AssignmentStatus,
+    DispatchTaskKind,
     DriverReportType,
     GeographicKnowledgeCategory,
     LicenseClass,
@@ -851,6 +852,91 @@ class FieldTripObservedDurationRead(BaseModel):
     average_actual_minutes: float | None
     most_recent_actual_minutes: int | None
     most_recent_departure_date: date | None
+
+
+class DriverFieldTripRead(BaseModel):
+    """A field trip as the driver assigned to it sees it (spec sections 11,
+    12, 14: trips are part of the driver's day). `start_minute` and
+    `end_minute` are the trip's (unpadded) span on the requested date, so
+    the tablet can order it among the day's runs and tasks."""
+
+    id: int
+    status: TripStatus
+    requesting_party: str
+    origin: str
+    destination: str
+    departure_at: datetime
+    return_at: datetime
+    start_minute: int
+    end_minute: int
+    passenger_count: int
+    vehicle_label: str | None
+    bus_assistant_name: str | None
+    trip_contact: str
+    special_instructions: str | None
+    destination_profile: DestinationProfileRead | None
+
+
+class DispatchTaskCreate(BaseModel):
+    kind: DispatchTaskKind
+    service_date: date
+    start_minute: int = Field(ge=0, lt=1440)
+    end_minute: int = Field(ge=0, lt=1440)
+    driver_id: int
+    vehicle_id: int | None = None
+    location: str | None = Field(default=None, max_length=255)
+    instructions: str = Field(min_length=1, max_length=1000)
+
+
+class DispatchTaskUpdate(BaseModel):
+    """Partial update; only fields sent are changed, and an explicit null
+    clears `vehicle_id` or `location`. Dispatch may set any lifecycle
+    state, as with regular assignments."""
+
+    kind: DispatchTaskKind | None = None
+    start_minute: int | None = Field(default=None, ge=0, lt=1440)
+    end_minute: int | None = Field(default=None, ge=0, lt=1440)
+    driver_id: int | None = None
+    vehicle_id: int | None = None
+    location: str | None = Field(default=None, max_length=255)
+    instructions: str | None = Field(default=None, min_length=1, max_length=1000)
+    status: AssignmentStatus | None = None
+
+
+class DispatchTaskRead(BaseModel):
+    id: int
+    kind: DispatchTaskKind
+    service_date: date
+    start_minute: int
+    end_minute: int
+    driver_id: int
+    driver_full_name: str
+    vehicle_id: int | None
+    vehicle_label: str | None
+    location: str | None
+    instructions: str
+    status: AssignmentStatus
+    cancelled: bool
+    created_at: datetime
+    # Regular routes this task takes the driver or bus away from. They
+    # don't block the task (dispatch may prioritise it); each is flagged
+    # "needs cover" on the schedule instead.
+    routes_needing_cover: list[str] = []
+
+
+class DriverDispatchTaskRead(BaseModel):
+    """A dispatch task as its driver sees it on the tablet."""
+
+    id: int
+    kind: DispatchTaskKind
+    service_date: date
+    start_minute: int
+    end_minute: int
+    vehicle_label: str | None
+    location: str | None
+    instructions: str
+    status: AssignmentStatus
+    cancelled: bool
 
 
 class AnnouncementCreate(BaseModel):

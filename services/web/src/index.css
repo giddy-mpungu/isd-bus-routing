@@ -520,6 +520,44 @@ legend {
   background: linear-gradient(180deg, var(--brand-600), var(--brand-700));
 }
 
+/* The driver's day queue (spec sections 11 and 14): runs, field trips and
+   dispatch tasks in one list, each labelled Current / Next / Later. */
+.driver-queue-slot {
+  margin-bottom: 0.35rem;
+}
+
+.driver-task-card {
+  border-left-color: var(--warning-500);
+}
+
+.driver-trip-card {
+  border-left-color: var(--success-500);
+}
+
+.driver-task-card.is-cancelled {
+  opacity: 0.6;
+  border-left-color: var(--gray-300);
+}
+
+.driver-task-instructions {
+  font-size: 1.05rem;
+  margin: 0.6rem 0 0.2rem;
+  color: var(--gray-900);
+}
+
+.driver-trip-notes {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.95rem;
+}
+
+/* A dispatch task's knock-on effect on the plan. */
+.dispatch-task-cover {
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
+  color: var(--warning-700);
+}
+
 /* An assignment whose crew became unavailable after it was made. */
 .availability-issue {
   margin-top: 0.4rem;

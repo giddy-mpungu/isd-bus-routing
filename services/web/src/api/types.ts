@@ -730,3 +730,76 @@ export interface SisImportResult {
   rows_truncated: boolean
   ignored_non_student_rows: number
 }
+
+// Spec sections 11 and 14: unplanned work dispatch sends to a driver.
+export type DispatchTaskKind =
+  | 'cover_route'
+  | 'assist_disabled_bus'
+  | 'transfer_passengers'
+  | 'return_to_school'
+  | 'move_vehicle'
+  | 'assist_driver'
+  | 'emergency'
+  | 'other'
+
+export interface DispatchTask {
+  id: number
+  kind: DispatchTaskKind
+  service_date: string
+  start_minute: number
+  end_minute: number
+  driver_id: number
+  driver_full_name: string
+  vehicle_id: number | null
+  vehicle_label: string | null
+  location: string | null
+  instructions: string
+  status: AssignmentStatus
+  cancelled: boolean
+  created_at: string
+  routes_needing_cover: string[]
+}
+
+export interface DispatchTaskCreate {
+  kind: DispatchTaskKind
+  service_date: string
+  start_minute: number
+  end_minute: number
+  driver_id: number
+  vehicle_id?: number | null
+  location?: string | null
+  instructions: string
+}
+
+export interface DriverDispatchTask {
+  id: number
+  kind: DispatchTaskKind
+  service_date: string
+  start_minute: number
+  end_minute: number
+  vehicle_label: string | null
+  location: string | null
+  instructions: string
+  status: AssignmentStatus
+  cancelled: boolean
+}
+
+// A field trip as its assigned driver sees it; start/end minutes are its
+// span on the requested day.
+export interface DriverFieldTrip {
+  id: number
+  status: TripStatus
+  requesting_party: string
+  origin: string
+  destination: string
+  departure_at: string
+  return_at: string
+  start_minute: number
+  end_minute: number
+  passenger_count: number
+  vehicle_label: string | null
+  bus_assistant_name: string | null
+  trip_contact: string
+  special_instructions: string | null
+  destination_profile: DestinationProfile | null
+}

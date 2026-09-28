@@ -672,6 +672,9 @@ ranking.
   ("Needs cover · on field trip #N …"). `GET /field-trips/{id}/conflicts`
   lists them in `routes_needing_cover`, and a re-solve moves the unlocked
   ones.
+- **Dispatch tasks (PR #51)**: an uncancelled `DispatchTask` holds its
+  driver *and* its vehicle (if any) for exactly its window, unpadded, since
+  dispatch sets the window it needs. See "Dispatch tasks" below.
 
 Before PR #45 none of this held. The solver used every crew on the date,
 and absences only suppressed template generation when they covered the
@@ -817,6 +820,56 @@ Migration `b4e8d2a6c913` turned the old `scheduled` into `sent`.
   carries `status`, and the Schedule page shows it per assignment.
 - The observed-duration signal (`GET /runs/observed-duration`) still reads
   the in_progress → completed audit timestamps, so it's unaffected.
+
+## Dispatch tasks and the driver's day (spec sections 11, 14)
+
+`DispatchTask` (`routers/dispatch_tasks.py`) is unplanned work dispatch
+sends to a driver's tablet. `kind` is one of spec §14's list: cover another
+route, assist a disabled bus, pick up transferred passengers, return to a
+school, move a vehicle, assist another driver, respond to an emergency, or
+other. It has a single-day minute window, a driver, an optional vehicle,
+an optional free-text location, and instructions.
+
+- **Same lifecycle as assignments**: `status` is an `AssignmentStatus`,
+  moved by the rules in `assignment_states.py`. The driver moves it
+  forward (`PATCH /dispatch-tasks/{id}/status`), the tablet's load marks
+  Sent tasks Received (`POST /dispatch-tasks/mine/{date}/receipt`), and
+  dispatch may set any state (`PATCH /dispatch-tasks/{id}`). Handing an
+  unstarted task to another driver sends it again.
+- **Busy time**: see "Availability" above. So the solver, manual
+  reassignment, field-trip assignment and substitute ranking all respect
+  it.
+- **Conflicts** are checked against the prospective values before
+  anything changes. A deactivated, absent or unlicensed driver, an
+  out-of-service bus, an overlapping field trip (with its turnaround) or
+  another task refuses it (409). A clash with a regular run doesn't, since
+  an emergency may take priority. That run is flagged "Needs cover · on
+  dispatch task #N …" on the schedule, and the task's
+  `routes_needing_cover` lists it.
+- **Cancel** (`POST /dispatch-tasks/{id}/cancel`) keeps the row and its
+  audit trail and frees the time. A completed task can't be cancelled. The
+  driver still sees a cancelled task, marked "Cancelled by dispatch", so
+  it doesn't just vanish from the tablet.
+- Every create, update, cancel and state change is audited
+  (`entity_type = "dispatch_task"`).
+
+**The driver's day** (`/driver`, "My day") is one list of the driver's
+runs (`GET /schedule/{date}/my-assignments`), field trips
+(`GET /field-trips/mine/{date}`, new: only trips assigned to this driver
+that touch the date, with the trip's span on that day, contact, special
+instructions and the destination profile's entrance/parking/turn notes)
+and tasks (`GET /dispatch-tasks/mine/{date}`), in time order.
+`web/src/driverDay.ts` labels them as in spec §14's example: the first
+unfinished job is **Current**, the second **Next**, the rest **Later**;
+finished ones are **Done**. Work already under way is Current even if an
+earlier job was never closed. GPS reporting runs while any run or task is
+under way, or a trip is dispatched / in progress / returning.
+
+Dispatchers create and cancel tasks on the Schedule page ("Dispatch tasks
+for {date}"). Not yet: the driver can't update a field trip's own status
+from the tablet (trip status stays a dispatcher action), and tasks don't
+yet reach the driver as a push notification; the tablet sees them on its
+next load.
 
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
