@@ -80,7 +80,11 @@ import type {
   StopUpdate,
   Student,
   StudentCreate,
+  StudentHome,
+  StudentHomeUpdate,
   StudentUpdate,
+  TransportationRules,
+  TransportationRulesUpdate,
   User,
   UserCreate,
   UserUpdate,
@@ -316,6 +320,32 @@ export async function createStudent(payload: StudentCreate): Promise<Student> {
 
 export async function updateStudent(id: number, payload: StudentUpdate): Promise<Student> {
   return request<Student>(`/students/${id}`, jsonInit('PATCH', payload))
+}
+
+// A student's home: transportation admins only. 404 means none on file.
+export async function getStudentHome(studentId: number): Promise<StudentHome> {
+  return request<StudentHome>(`/students/${studentId}/home`)
+}
+
+export async function setStudentHome(
+  studentId: number,
+  payload: StudentHomeUpdate,
+): Promise<StudentHome> {
+  return request<StudentHome>(`/students/${studentId}/home`, jsonInit('PUT', payload))
+}
+
+export async function deleteStudentHome(studentId: number): Promise<void> {
+  return request<void>(`/students/${studentId}/home`, { method: 'DELETE' })
+}
+
+export async function getTransportationRules(): Promise<TransportationRules> {
+  return request<TransportationRules>('/transportation-rules')
+}
+
+export async function updateTransportationRules(
+  payload: TransportationRulesUpdate,
+): Promise<TransportationRules> {
+  return request<TransportationRules>('/transportation-rules', jsonInit('PUT', payload))
 }
 
 export async function getGuardians(studentId: number): Promise<Guardian[]> {

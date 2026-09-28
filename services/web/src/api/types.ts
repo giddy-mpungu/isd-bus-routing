@@ -335,9 +335,59 @@ export interface Student {
   school_id: number
   stop_id: number | null
   default_ridership: RidershipDefault
-  // Set for students imported from the SIS: their name and school are
-  // owned by the SIS and can't be edited here.
+  // Set for students imported from the SIS: their name, school and grade
+  // are owned by the SIS and can't be edited here.
   external_id?: string | null
+  // "PK", "K" or "1".."12".
+  grade?: string | null
+  needs_specialized_transport?: boolean
+  hazardous_route?: boolean
+  // What the bus must have for this student (qualification tags).
+  accommodations?: Qualification[]
+  // Whether a home location is on file. The home itself is admin-only
+  // (GET /students/{id}/home) and never part of this record.
+  has_home?: boolean
+  eligibility?: Eligibility | null
+}
+
+export type GradeBand = 'prek' | 'elementary' | 'middle' | 'high' | 'specialized'
+
+export interface Eligibility {
+  eligible: boolean
+  reason: string
+  miles_from_school: number | null
+  band: GradeBand | null
+}
+
+export interface StudentHome {
+  address: string
+  location_lat: number
+  location_lon: number
+  source: 'census' | 'manual'
+  matched_address: string | null
+  updated_at: string
+}
+
+// Just the address: looked up with the US Census geocoder. With both
+// coordinates: a location placed by hand on the map.
+export interface StudentHomeUpdate {
+  address: string
+  location_lat?: number
+  location_lon?: number
+}
+
+export interface TransportationRules {
+  eligibility_miles: number
+  walk_miles: Record<GradeBand, number>
+  ride_minutes: Record<GradeBand, number>
+  band_labels: Record<GradeBand, string>
+  is_default: boolean
+}
+
+export interface TransportationRulesUpdate {
+  eligibility_miles: number
+  walk_miles: Record<GradeBand, number>
+  ride_minutes: Record<GradeBand, number>
 }
 
 // Only the fields sent are changed; stop_id: null clears the stop.
@@ -346,6 +396,11 @@ export interface StudentUpdate {
   school_id?: number
   stop_id?: number | null
   default_ridership?: RidershipDefault
+  // null clears it (not allowed for SIS students).
+  grade?: string | null
+  needs_specialized_transport?: boolean
+  hazardous_route?: boolean
+  accommodation_codes?: string[]
 }
 
 export interface Guardian {
@@ -359,6 +414,7 @@ export interface StudentCreate {
   school_id: number
   stop_id?: number
   default_ridership: RidershipDefault
+  grade?: string | null
 }
 
 export type RideDirection = 'am' | 'pm'

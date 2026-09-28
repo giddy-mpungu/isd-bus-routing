@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { School, Stop, Student, User } from '../api/types'
+import type { Qualification, School, Stop, Student, User } from '../api/types'
 import { StudentsSection } from './StudentsSection'
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -82,8 +82,12 @@ describe('StudentsSection', () => {
       expect(api.updateStudent).toHaveBeenCalledWith(10, {
         full_name: 'Jamie Student',
         school_id: 2,
+        grade: null,
         stop_id: 6,
         default_ridership: 'rides',
+        needs_specialized_transport: false,
+        hazardous_route: false,
+        accommodation_codes: [],
       }),
     )
     expect(onChanged).toHaveBeenCalled()
@@ -118,9 +122,13 @@ describe('StudentsSection', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
+      // No name, school or grade: the SIS owns those.
       expect(api.updateStudent).toHaveBeenCalledWith(10, {
         stop_id: 5,
         default_ridership: 'rides',
+        needs_specialized_transport: false,
+        hazardous_route: false,
+        accommodation_codes: [],
       }),
     )
   })
@@ -193,4 +201,90 @@ describe('StudentsSection', () => {
     expect(await screen.findByText(/No parent account can see Jamie Student/)).toBeInTheDocument()
     expect(screen.getByText(/Create one on the Users page/)).toBeInTheDocument()
   })
+
+  it('shows grade, eligibility with its reason, and needs on the bus', () => {
+    renderSection({
+      students: [
+        {
+          ...jamie,
+          grade: '3',
+          accommodations: [lift],
+          eligibility: {
+            eligible: true,
+            reason: '2.50 mi from school (at least 2 mi)',
+            miles_from_school: 2.5,
+            band: 'elementary',
+          },
+        },
+      ],
+    })
+    const row = screen.getByText(/Jamie Student/).closest('li') as HTMLElement
+    expect(row).toHaveTextContent('Grade 3')
+    expect(within(row).getByText('Eligible')).toBeInTheDocument()
+    expect(within(row).getByText('2.50 mi from school (at least 2 mi)')).toBeInTheDocument()
+    expect(within(row).getByText('Wheelchair lift')).toBeInTheDocument()
+  })
+
+  it('edits grade, specialized transportation, hazardous route and accommodations', async () => {
+    vi.mocked(api.updateStudent).mockResolvedValue(jamie)
+    const onChanged = renderSection({ qualifications: [lift, licence] })
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Edit Jamie Student' }))
+
+    // Only vehicle capabilities are offered as needs, not licence tags.
+    expect(screen.queryByLabelText('CDL B')).not.toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText("Student's grade"), 'K')
+    await user.click(screen.getByLabelText('Receives specialized transportation'))
+    await user.click(screen.getByLabelText('Hazardous walking route (eligible at any distance)'))
+    await user.click(screen.getByLabelText('Wheelchair lift'))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(api.updateStudent).toHaveBeenCalledWith(
+        10,
+        expect.objectContaining({
+          grade: 'K',
+          needs_specialized_transport: true,
+          hazardous_route: true,
+          accommodation_codes: ['wheelchair_lift'],
+        }),
+      ),
+    )
+    expect(onChanged).toHaveBeenCalled()
+  })
+
+  it("locks a SIS student's grade", async () => {
+    renderSection({ students: [{ ...jamie, external_id: 'stu-1', grade: '4' }] })
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Edit Jamie Student' }))
+    expect(screen.getByLabelText("Student's grade")).toBeDisabled()
+  })
+
+  it('sends the grade when adding a student', async () => {
+    vi.mocked(api.createStudent).mockResolvedValue(jamie)
+    renderSection()
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Student name'), 'Sam New')
+    await user.selectOptions(screen.getByLabelText('School'), '1')
+    await user.selectOptions(screen.getByLabelText('Grade (optional)'), 'PK')
+    await user.click(screen.getByRole('button', { name: 'Add student' }))
+    await waitFor(() =>
+      expect(api.createStudent).toHaveBeenCalledWith(expect.objectContaining({ grade: 'PK' })),
+    )
+  })
 })
+
+const lift: Qualification = {
+  id: 1,
+  code: 'wheelchair_lift',
+  kind: 'vehicle_capability',
+  description: 'Wheelchair lift',
+  is_active: true,
+}
+const licence: Qualification = {
+  id: 2,
+  code: 'cdl_b',
+  kind: 'license',
+  description: 'CDL B',
+  is_active: true,
+}

@@ -12,6 +12,7 @@ from isd_api.models import (
     AssignmentStatus,
     DispatchTaskKind,
     DriverReportType,
+    GeocodeSource,
     GeographicKnowledgeCategory,
     LicenseClass,
     QualificationKind,
@@ -564,11 +565,40 @@ class StopUpdate(BaseModel):
     location_lon: float | None = Field(default=None, ge=-180, le=180)
 
 
+def _grade(value: str | None) -> str | None:
+    # Imported here to keep schemas free of import cycles.
+    from isd_api.eligibility import normalize_grade
+
+    if value is None or value.strip() == "":
+        return None
+    grade = normalize_grade(value)
+    if grade is None:
+        raise ValueError("grade must be PK, K or 1-12")
+    return grade
+
+
 class StudentCreate(BaseModel):
     full_name: str
     school_id: int
     stop_id: int | None = None
     default_ridership: RidershipDefault = RidershipDefault.RIDES
+    grade: str | None = None
+    needs_specialized_transport: bool = False
+    hazardous_route: bool = False
+    accommodation_codes: list[str] = Field(default_factory=list)
+
+    _normalize_grade = field_validator("grade")(classmethod(lambda cls, v: _grade(v)))
+
+
+class EligibilityRead(BaseModel):
+    """Spec section 3 "transportation-eligibility", worked out from the
+    district rules (isd_api/eligibility.py). No address, only the
+    straight-line distance to school."""
+
+    eligible: bool
+    reason: str
+    miles_from_school: float | None
+    band: str | None
 
 
 class StudentRead(BaseModel):
@@ -579,6 +609,12 @@ class StudentRead(BaseModel):
     external_id: str | None = None
     stop_id: int | None
     default_ridership: RidershipDefault
+    grade: str | None = None
+    needs_specialized_transport: bool = False
+    hazardous_route: bool = False
+    accommodations: list[QualificationRead] = []
+    has_home: bool = False
+    eligibility: EligibilityRead | None = None
 
 
 class StudentUpdate(BaseModel):
@@ -591,6 +627,69 @@ class StudentUpdate(BaseModel):
     school_id: int | None = None
     stop_id: int | None = None
     default_ridership: RidershipDefault | None = None
+    # An explicit null clears the grade (unless the SIS owns it).
+    grade: str | None = None
+    needs_specialized_transport: bool | None = None
+    hazardous_route: bool | None = None
+    accommodation_codes: list[str] | None = None
+
+    _normalize_grade = field_validator("grade")(classmethod(lambda cls, v: _grade(v)))
+
+
+class StudentHomeRead(BaseModel):
+    """A student's home location: transportation admins only."""
+
+    model_config = ConfigDict(from_attributes=True)
+    address: str
+    location_lat: float
+    location_lon: float
+    source: GeocodeSource
+    matched_address: str | None
+    updated_at: datetime
+
+
+class StudentHomeUpdate(BaseModel):
+    """Send just the address to look it up with the Census geocoder, or the
+    address with a location placed by hand (both coordinates)."""
+
+    address: str = Field(min_length=3, max_length=500)
+    location_lat: float | None = Field(default=None, ge=-90, le=90)
+    location_lon: float | None = Field(default=None, ge=-180, le=180)
+
+    @model_validator(mode="after")
+    def _both_or_neither(self) -> StudentHomeUpdate:
+        if (self.location_lat is None) != (self.location_lon is None):
+            raise ValueError("send both location_lat and location_lon, or neither")
+        return self
+
+
+class TransportationRulesRead(BaseModel):
+    eligibility_miles: float
+    walk_miles: dict[str, float]
+    ride_minutes: dict[str, int]
+    band_labels: dict[str, str]
+    is_default: bool
+
+
+class TransportationRulesUpdate(BaseModel):
+    eligibility_miles: float = Field(ge=0, le=25)
+    walk_miles: dict[str, float]
+    ride_minutes: dict[str, int]
+
+    @model_validator(mode="after")
+    def _every_band(self) -> TransportationRulesUpdate:
+        from isd_api.eligibility import BANDS
+
+        for name, values, top in (
+            ("walk_miles", self.walk_miles, 5),
+            ("ride_minutes", self.ride_minutes, 240),
+        ):
+            if set(values) != set(BANDS):
+                raise ValueError(f"{name} needs exactly these bands: {', '.join(BANDS)}")
+            for band, value in values.items():
+                if not 0 <= value <= top:
+                    raise ValueError(f"{name}.{band} must be between 0 and {top}")
+        return self
 
 
 class GuardianLink(BaseModel):

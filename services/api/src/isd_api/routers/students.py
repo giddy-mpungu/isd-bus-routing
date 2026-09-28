@@ -13,10 +13,13 @@ from datetime import UTC, date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from isd_api import eligibility
 from isd_api.audit import record as record_audit
 from isd_api.db import get_db
+from isd_api.integrations import census_geocoder
 from isd_api.models import (
     Assignment,
+    GeocodeSource,
     RideDirection,
     RidershipOverride,
     Role,
@@ -24,18 +27,24 @@ from isd_api.models import (
     School,
     Stop,
     Student,
+    StudentHome,
     User,
     VehiclePosition,
 )
 from isd_api.ridership_rules import change_closed_reason, load_rules
 from isd_api.routers.runs import _resolve_riding_students
+from isd_api.routers.vehicles import _resolve_qualifications
 from isd_api.schemas import (
     BusPositionRead,
+    EligibilityRead,
     FamilyMemberRead,
     GuardianLink,
     GuardianRead,
+    QualificationRead,
     RidershipOverrideUpdate,
     StudentCreate,
+    StudentHomeRead,
+    StudentHomeUpdate,
     StudentRead,
     StudentUpdate,
 )
@@ -47,30 +56,70 @@ router = APIRouter(prefix="/students", tags=["students"])
 APPROXIMATE_POSITION_DECIMALS = 3
 
 
+def _student_read(
+    student: Student, home: StudentHome | None, rules: eligibility.Rules
+) -> StudentRead:
+    result = eligibility.eligibility_for(student, home, rules)
+    return StudentRead(
+        id=student.id,
+        full_name=student.full_name,
+        school_id=student.school_id,
+        external_id=student.external_id,
+        stop_id=student.stop_id,
+        default_ridership=student.default_ridership,
+        grade=student.grade,
+        needs_specialized_transport=student.needs_specialized_transport,
+        hazardous_route=student.hazardous_route,
+        accommodations=[QualificationRead.model_validate(q) for q in student.accommodations],
+        has_home=home is not None,
+        eligibility=EligibilityRead(
+            eligible=result.eligible,
+            reason=result.reason,
+            miles_from_school=result.miles_from_school,
+            band=result.band,
+        ),
+    )
+
+
+def _read_one(db: Session, student: Student) -> StudentRead:
+    return _student_read(student, db.get(StudentHome, student.id), eligibility.load_rules(db))
+
+
 @router.post("", response_model=StudentRead, status_code=status.HTTP_201_CREATED)
 def create_student(
     payload: StudentCreate,
     db: Session = Depends(get_db),
     _: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
-) -> Student:
+) -> StudentRead:
     student = Student(
         full_name=payload.full_name,
         school_id=payload.school_id,
         stop_id=payload.stop_id,
         default_ridership=payload.default_ridership,
+        grade=payload.grade,
+        needs_specialized_transport=payload.needs_specialized_transport,
+        hazardous_route=payload.hazardous_route,
+        accommodations=_resolve_qualifications(db, payload.accommodation_codes),
     )
     db.add(student)
     db.commit()
     db.refresh(student)
-    return student
+    return _read_one(db, student)
 
 
 @router.get("", response_model=list[StudentRead])
 def list_students(
     db: Session = Depends(get_db),
     _: User = Depends(require_role(Role.TRANSPORTATION_ADMIN, Role.DISPATCHER)),
-) -> list[Student]:
-    return list(db.query(Student).order_by(Student.id).all())
+) -> list[StudentRead]:
+    """Dispatchers see each student's eligibility and distance band, never
+    their home."""
+    rules = eligibility.load_rules(db)
+    homes = {h.student_id: h for h in db.query(StudentHome)}
+    return [
+        _student_read(s, homes.get(s.id), rules)
+        for s in db.query(Student).order_by(Student.id).all()
+    ]
 
 
 @router.patch("/{student_id}", response_model=StudentRead)
@@ -79,16 +128,17 @@ def update_student(
     payload: StudentUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
-) -> Student:
+) -> StudentRead:
     """Spec section 21 "reassign students": name, school, stop, default
-    ridership. Audited, since a school or stop change changes which bus a
-    child is expected on."""
+    ridership, plus grade, specialized transportation, the hazardous-route
+    override and accommodations (spec section 3). Audited, since each can
+    change which bus a child is expected on, or whether they get one."""
     student = db.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
     sent = payload.model_fields_set
 
-    sis_owned = {"full_name", "school_id"} & sent
+    sis_owned = {"full_name", "school_id", "grade"} & sent
     if student.external_id is not None and sis_owned:
         changed = [
             f
@@ -112,8 +162,22 @@ def update_student(
     if "full_name" in sent and payload.full_name is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="full_name is required")
 
-    fields = ("full_name", "school_id", "stop_id", "default_ridership")
-    before = {f: _plain(getattr(student, f)) for f in fields}
+    fields = (
+        "full_name",
+        "school_id",
+        "stop_id",
+        "default_ridership",
+        "grade",
+        "needs_specialized_transport",
+        "hazardous_route",
+    )
+
+    def snapshot() -> dict:
+        state = {f: _plain(getattr(student, f)) for f in fields}
+        state["accommodations"] = sorted(q.code for q in student.accommodations)
+        return state
+
+    before = snapshot()
     if "full_name" in sent and payload.full_name is not None:
         student.full_name = payload.full_name
     if "school_id" in sent and payload.school_id is not None:
@@ -122,8 +186,15 @@ def update_student(
         student.stop_id = payload.stop_id
     if "default_ridership" in sent and payload.default_ridership is not None:
         student.default_ridership = payload.default_ridership
+    if "grade" in sent:
+        student.grade = payload.grade
+    for flag in ("needs_specialized_transport", "hazardous_route"):
+        if flag in sent and getattr(payload, flag) is not None:
+            setattr(student, flag, getattr(payload, flag))
+    if "accommodation_codes" in sent and payload.accommodation_codes is not None:
+        student.accommodations = _resolve_qualifications(db, payload.accommodation_codes)
     db.flush()
-    after = {f: _plain(getattr(student, f)) for f in fields}
+    after = snapshot()
     if after != before:
         record_audit(
             db,
@@ -136,7 +207,101 @@ def update_student(
         )
     db.commit()
     db.refresh(student)
-    return student
+    return _read_one(db, student)
+
+
+# --- Home location (spec section 3): transportation admins only ------------
+
+
+def _home_audit(
+    db: Session, student: Student, action: str, actor: User, source: str | None
+) -> None:
+    # That it changed and how, never the address or the coordinates: audit
+    # rows can't be deleted, and a home address is personal data.
+    record_audit(
+        db,
+        entity_type="student_home",
+        entity_id=student.id,
+        action=action,
+        actor=actor,
+        after_state=None if source is None else {"source": source},
+    )
+
+
+@router.get("/{student_id}/home", response_model=StudentHomeRead)
+def get_student_home(
+    student_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+) -> StudentHome:
+    _student_or_404(db, student_id)
+    home = db.get(StudentHome, student_id)
+    if home is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No home on file")
+    return home
+
+
+@router.put("/{student_id}/home", response_model=StudentHomeRead)
+def set_student_home(
+    student_id: int,
+    payload: StudentHomeUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+) -> StudentHome:
+    """With just an address, looks it up with the US Census geocoder. With
+    coordinates too, uses them as placed by hand on the map (for an address
+    the Census can't find, or a match that's in the wrong place)."""
+    student = _student_or_404(db, student_id)
+    address = payload.address.strip()
+    if payload.location_lat is not None and payload.location_lon is not None:
+        lat, lon = payload.location_lat, payload.location_lon
+        source, matched = GeocodeSource.MANUAL, None
+    else:
+        try:
+            match = census_geocoder.geocode(address)
+        except census_geocoder.GeocoderUnavailable:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="The Census address lookup isn't reachable right now. "
+                "Try again, or place the home on the map.",
+            ) from None
+        if match is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="The Census geocoder couldn't find that address. "
+                "Check it, or place the home on the map.",
+            )
+        lat, lon = match.lat, match.lon
+        source, matched = GeocodeSource.CENSUS, match.matched_address
+
+    home = db.get(StudentHome, student_id)
+    if home is None:
+        home = StudentHome(student_id=student.id)
+        db.add(home)
+    home.address = address
+    home.location_lat, home.location_lon = lat, lon
+    home.source, home.matched_address = source, matched
+    db.flush()
+    _home_audit(db, student, "home_set", current_user, source.value)
+    db.commit()
+    db.refresh(home)
+    return home
+
+
+@router.delete("/{student_id}/home", status_code=status.HTTP_204_NO_CONTENT)
+def delete_student_home(
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+) -> None:
+    student = _student_or_404(db, student_id)
+    home = db.get(StudentHome, student_id)
+    if home is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No home on file")
+    db.delete(home)
+    db.flush()
+    _home_audit(db, student, "home_removed", current_user, None)
+    db.commit()
 
 
 def _plain(value: object) -> object:

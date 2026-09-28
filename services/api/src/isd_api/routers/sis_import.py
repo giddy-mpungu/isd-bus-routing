@@ -136,7 +136,12 @@ async def import_students(
             continue
 
         if existing is not None:
-            changed = existing.full_name != rs.full_name or existing.school_id != school.id
+            new_grade = rs.grade if rs.grade is not None else existing.grade
+            changed = (
+                existing.full_name != rs.full_name
+                or existing.school_id != school.id
+                or existing.grade != new_grade
+            )
             if not changed:
                 add(rs.line, rs.source_id, rs.full_name, "unchanged", None, existing.id)
                 continue
@@ -145,11 +150,18 @@ async def import_students(
                 details.append(f"name '{existing.full_name}' -> '{rs.full_name}'")
             if existing.school_id != school.id:
                 details.append(f"school {existing.school_id} -> {school.id}")
+            if existing.grade != new_grade:
+                details.append(f"grade {existing.grade or 'none'} -> {new_grade}")
             add(rs.line, rs.source_id, rs.full_name, "updated", "; ".join(details), existing.id)
             if not dry_run:
-                before = {"full_name": existing.full_name, "school_id": existing.school_id}
+                before = {
+                    "full_name": existing.full_name,
+                    "school_id": existing.school_id,
+                    "grade": existing.grade,
+                }
                 existing.full_name = rs.full_name
                 existing.school_id = school.id
+                existing.grade = new_grade
                 db.flush()
                 record_audit(
                     db,
@@ -158,7 +170,11 @@ async def import_students(
                     action="sis_import_updated",
                     actor=current_user,
                     before_state=before,
-                    after_state={"full_name": existing.full_name, "school_id": existing.school_id},
+                    after_state={
+                        "full_name": existing.full_name,
+                        "school_id": existing.school_id,
+                        "grade": existing.grade,
+                    },
                 )
             continue
 
@@ -194,6 +210,8 @@ async def import_students(
             unlinked.remove(match)
             if not dry_run:
                 match.external_id = rs.source_id
+                if rs.grade is not None:
+                    match.grade = rs.grade
                 existing_by_external_id[rs.source_id] = match
                 db.flush()
                 record_audit(
@@ -209,7 +227,12 @@ async def import_students(
 
         add(rs.line, rs.source_id, rs.full_name, "created")
         if not dry_run:
-            created = Student(full_name=rs.full_name, school_id=school.id, external_id=rs.source_id)
+            created = Student(
+                full_name=rs.full_name,
+                school_id=school.id,
+                external_id=rs.source_id,
+                grade=rs.grade,
+            )
             db.add(created)
             db.flush()
             existing_by_external_id[rs.source_id] = created
@@ -222,6 +245,7 @@ async def import_students(
                 after_state={
                     "full_name": created.full_name,
                     "school_id": created.school_id,
+                    "grade": created.grade,
                     "external_id": rs.source_id,
                 },
             )

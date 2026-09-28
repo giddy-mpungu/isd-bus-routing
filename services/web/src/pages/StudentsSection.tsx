@@ -1,8 +1,26 @@
 import { useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { Guardian, RidershipDefault, School, Stop, Student, User } from '../api/types'
+import type {
+  Guardian,
+  Qualification,
+  RidershipDefault,
+  School,
+  Stop,
+  Student,
+  User,
+} from '../api/types'
 import { Badge } from '../components/Badge'
+import { StudentHomePanel } from './StudentHomePanel'
+
+const GRADES = ['PK', 'K', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
+
+function gradeLabel(grade: string | null | undefined): string {
+  if (grade == null) return 'grade not set'
+  if (grade === 'PK') return 'Pre-K'
+  if (grade === 'K') return 'Kindergarten'
+  return `Grade ${grade}`
+}
 
 // Spec section 21 "reassign students" and section 18: which parent accounts
 // may see a child is decided here, by a transportation administrator.
@@ -130,15 +148,21 @@ export function StudentsSection({
   students,
   schools,
   stops,
+  qualifications = [],
   canEdit,
   onChanged,
 }: {
   students: Student[]
   schools: School[]
   stops: Stop[]
+  // Vehicle capabilities a student may need (spec section 3 accommodations).
+  qualifications?: Qualification[]
   canEdit: boolean
   onChanged: () => Promise<void>
 }) {
+  const accommodationOptions = qualifications.filter(
+    (q) => q.kind === 'vehicle_capability' && q.is_active !== false,
+  )
   const schoolsById = new Map(schools.map((s) => [s.id, s]))
   const stopsById = new Map(stops.map((s) => [s.id, s]))
 
@@ -147,6 +171,7 @@ export function StudentsSection({
   const [schoolId, setSchoolId] = useState('')
   const [stopId, setStopId] = useState('')
   const [defaultRidership, setDefaultRidership] = useState<RidershipDefault>('rides')
+  const [grade, setGrade] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
   const [isSavingCreate, setIsSavingCreate] = useState(false)
 
@@ -160,8 +185,10 @@ export function StudentsSection({
         school_id: Number(schoolId),
         stop_id: stopId ? Number(stopId) : undefined,
         default_ridership: defaultRidership,
+        grade: grade || null,
       })
       setName('')
+      setGrade('')
       setSchoolId('')
       setStopId('')
       setDefaultRidership('rides')
@@ -179,6 +206,10 @@ export function StudentsSection({
   const [draftSchoolId, setDraftSchoolId] = useState('')
   const [draftStopId, setDraftStopId] = useState('')
   const [draftRidership, setDraftRidership] = useState<RidershipDefault>('rides')
+  const [draftGrade, setDraftGrade] = useState('')
+  const [draftSpecialized, setDraftSpecialized] = useState(false)
+  const [draftHazardous, setDraftHazardous] = useState(false)
+  const [draftAccommodations, setDraftAccommodations] = useState<Set<string>>(new Set())
   const [rowError, setRowError] = useState<string | null>(null)
   const [isSavingEdit, setIsSavingEdit] = useState(false)
 
@@ -188,7 +219,20 @@ export function StudentsSection({
     setDraftSchoolId(String(student.school_id))
     setDraftStopId(student.stop_id != null ? String(student.stop_id) : '')
     setDraftRidership(student.default_ridership)
+    setDraftGrade(student.grade ?? '')
+    setDraftSpecialized(Boolean(student.needs_specialized_transport))
+    setDraftHazardous(Boolean(student.hazardous_route))
+    setDraftAccommodations(new Set((student.accommodations ?? []).map((q) => q.code)))
     setRowError(null)
+  }
+
+  function toggleAccommodation(code: string, on: boolean) {
+    setDraftAccommodations((prev) => {
+      const next = new Set(prev)
+      if (on) next.add(code)
+      else next.delete(code)
+      return next
+    })
   }
 
   function cancelEdit() {
@@ -203,9 +247,18 @@ export function StudentsSection({
     try {
       await api.updateStudent(student.id, {
         // SIS-imported students' name and school are owned by the SIS.
-        ...(student.external_id ? {} : { full_name: draftName, school_id: Number(draftSchoolId) }),
+        ...(student.external_id
+          ? {}
+          : {
+              full_name: draftName,
+              school_id: Number(draftSchoolId),
+              grade: draftGrade || null,
+            }),
         stop_id: draftStopId ? Number(draftStopId) : null,
         default_ridership: draftRidership,
+        needs_specialized_transport: draftSpecialized,
+        hazardous_route: draftHazardous,
+        accommodation_codes: [...draftAccommodations].sort(),
       })
       cancelEdit()
       await onChanged()
@@ -232,7 +285,8 @@ export function StudentsSection({
               <form onSubmit={(event) => void handleSaveEdit(event, s)}>
                 {fromSis && (
                   <p className="status">
-                    Name and school come from the SIS roster; change them there and re-import.
+                    Name, school and grade come from the SIS roster; change them there and
+                    re-import.
                   </p>
                 )}
                 <label htmlFor={`student-edit-name-${s.id}`}>Student&apos;s name</label>
@@ -256,6 +310,51 @@ export function StudentsSection({
                     </option>
                   ))}
                 </select>
+                <label htmlFor={`student-edit-grade-${s.id}`}>Student&apos;s grade</label>
+                <select
+                  id={`student-edit-grade-${s.id}`}
+                  value={draftGrade}
+                  onChange={(event) => setDraftGrade(event.target.value)}
+                  disabled={fromSis}
+                >
+                  <option value="">Not set</option>
+                  {GRADES.map((g) => (
+                    <option key={g} value={g}>
+                      {gradeLabel(g)}
+                    </option>
+                  ))}
+                </select>
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={draftSpecialized}
+                    onChange={(event) => setDraftSpecialized(event.target.checked)}
+                  />
+                  Receives specialized transportation
+                </label>
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={draftHazardous}
+                    onChange={(event) => setDraftHazardous(event.target.checked)}
+                  />
+                  Hazardous walking route (eligible at any distance)
+                </label>
+                {accommodationOptions.length > 0 && (
+                  <fieldset className="student-accommodations">
+                    <legend>Needs on the bus</legend>
+                    {accommodationOptions.map((q) => (
+                      <label key={q.code} className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={draftAccommodations.has(q.code)}
+                          onChange={(event) => toggleAccommodation(q.code, event.target.checked)}
+                        />
+                        {q.description || q.code}
+                      </label>
+                    ))}
+                  </fieldset>
+                )}
                 <label htmlFor={`student-edit-stop-${s.id}`}>Student&apos;s stop</label>
                 <select
                   id={`student-edit-stop-${s.id}`}
@@ -293,7 +392,22 @@ export function StudentsSection({
               {s.full_name} — {schoolsById.get(s.school_id)?.name ?? `School ${s.school_id}`}
               {s.stop_id != null && ` (${stopsById.get(s.stop_id)?.label ?? `Stop ${s.stop_id}`})`}
               {' — default: '}
-              {s.default_ridership === 'rides' ? 'rides' : 'does not ride'}{' '}
+              {s.default_ridership === 'rides' ? 'rides' : 'does not ride'}
+              {' — '}
+              {gradeLabel(s.grade)}{' '}
+              {s.eligibility && (
+                <span title={s.eligibility.reason}>
+                  <Badge tone={s.eligibility.eligible ? 'success' : 'neutral'}>
+                    {s.eligibility.eligible ? 'Eligible' : 'Not eligible'}
+                  </Badge>{' '}
+                  <span className="student-eligibility-reason">{s.eligibility.reason}</span>
+                </span>
+              )}{' '}
+              {(s.accommodations ?? []).map((q) => (
+                <Badge key={q.code} tone="info">
+                  {q.description || q.code}
+                </Badge>
+              ))}{' '}
               {fromSis && <Badge tone="info">From SIS</Badge>}
               {canEdit && (
                 <span className="students-section-actions">
@@ -305,6 +419,11 @@ export function StudentsSection({
                     Edit
                   </button>
                   <GuardiansPanel student={s} />
+                  <StudentHomePanel
+                    student={s}
+                    school={schoolsById.get(s.school_id)}
+                    onChanged={onChanged}
+                  />
                 </span>
               )}
             </li>
@@ -331,6 +450,19 @@ export function StudentsSection({
             {schools.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
+              </option>
+            ))}
+          </select>
+          <label htmlFor="student-grade">Grade (optional)</label>
+          <select
+            id="student-grade"
+            value={grade}
+            onChange={(event) => setGrade(event.target.value)}
+          >
+            <option value="">Not set</option>
+            {GRADES.map((g) => (
+              <option key={g} value={g}>
+                {gradeLabel(g)}
               </option>
             ))}
           </select>
