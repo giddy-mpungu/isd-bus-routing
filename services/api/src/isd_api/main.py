@@ -10,6 +10,7 @@ from isd_api.config import settings
 from isd_api.db import Base, engine
 from isd_api.routers import (
     absences,
+    alerts,
     announcements,
     audit_log,
     auth,
@@ -81,6 +82,7 @@ app.include_router(positions.driver_router)
 app.include_router(positions.fleet_router)
 app.include_router(field_trips.router)
 app.include_router(dispatch_tasks.router)
+app.include_router(alerts.router)
 app.include_router(destination_profiles.router)
 app.include_router(announcements.router)
 app.include_router(driver_reports.router)

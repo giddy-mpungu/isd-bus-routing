@@ -803,3 +803,22 @@ export interface DriverFieldTrip {
   special_instructions: string | null
   destination_profile: DestinationProfile | null
 }
+
+// Something on a service date that needs dispatch's attention
+// (services/api/src/isd_api/alerts.py lists what raises each kind).
+export type AlertSeverity = 'critical' | 'warning'
+
+export interface OperationalAlert {
+  kind: string
+  severity: AlertSeverity
+  message: string
+  entity_type: string
+  entity_id: number
+  minute: number | null
+}
+
+export interface DayAlerts {
+  service_date: string
+  district_time: string | null
+  alerts: OperationalAlert[]
+}

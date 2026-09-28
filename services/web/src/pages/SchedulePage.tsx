@@ -5,6 +5,7 @@ import { STATUS_LABELS, STATUS_TONES } from '../assignmentStatus'
 import { Badge } from '../components/Badge'
 import { LazyMapView } from '../components/LazyMapView'
 import type { MapMarker } from '../components/MapView'
+import { AlertsPanel } from './AlertsPanel'
 import { DispatchTasksSection } from './DispatchTasksSection'
 import type {
   Absence,
@@ -71,6 +72,8 @@ export function SchedulePage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
+  // Bumped after each full reload, so the alerts panel re-checks too.
+  const [dataVersion, setDataVersion] = useState(0)
 
   const loadAll = useCallback(async (date: string) => {
     setErrorMessage(null)
@@ -108,6 +111,7 @@ export function SchedulePage() {
       setAbsences(absencesData)
       setFleetPositions(fleetPositionsData)
       setDriverReports(driverReportsData)
+      setDataVersion((v) => v + 1)
     } catch (err) {
       setErrorMessage(err instanceof ApiError ? err.message : 'Failed to load schedule data.')
     }
@@ -542,6 +546,8 @@ export function SchedulePage() {
           {errorMessage}
         </p>
       )}
+
+      <AlertsPanel serviceDate={serviceDate} refreshToken={dataVersion} />
 
       <table>
         <thead>
