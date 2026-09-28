@@ -939,6 +939,26 @@ class DriverDispatchTaskRead(BaseModel):
     cancelled: bool
 
 
+class AlertRead(BaseModel):
+    """One thing on a service date that needs dispatch's attention; see
+    isd_api/alerts.py for what raises each kind."""
+
+    kind: str
+    severity: str  # "critical" or "warning"
+    message: str
+    entity_type: str
+    entity_id: int
+    # Minute of day the alert is about (a start or end time), if any.
+    minute: int | None
+
+
+class DayAlertsRead(BaseModel):
+    service_date: date
+    # District wall-clock time (HH:MM) when the date is today.
+    district_time: str | None
+    alerts: list[AlertRead]
+
+
 class AnnouncementCreate(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     category: AnnouncementCategory = AnnouncementCategory.GENERAL

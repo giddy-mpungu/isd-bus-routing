@@ -871,6 +871,39 @@ from the tablet (trip status stays a dispatcher action), and tasks don't
 yet reach the driver as a push notification; the tablet sees them on its
 next load.
 
+## Operational alerts (spec sections 9, 13.1, 14, 16, 18)
+
+`GET /alerts?service_date=` (transportation_admin, dispatcher) lists what
+needs attention on a date, most urgent first. `isd_api/alerts.py` derives
+it from live data on each request; nothing is stored, so an alert goes
+away as soon as its cause is fixed.
+
+| Kind | Severity | Raised when |
+|---|---|---|
+| `unassigned_run` | critical | a run has no assignment |
+| `needs_cover` | critical | an unfinished assignment's crew can't do it (`availability_issue`) |
+| `late_start` | critical | a run or task isn't under way `START_GRACE_MINUTES` (10) after its start |
+| `no_show` | critical | a run or task was marked no-show |
+| `unstaffed_trip` | critical | a field trip departs that day with no driver or no bus |
+| `incident` | critical | a driver filed an incident report that day |
+| `not_acknowledged` | warning | work is still Sent/Received within `ACK_WARNING_MINUTES` (30) of its start |
+| `overrunning` | warning | work is still under way `FINISH_GRACE_MINUTES` (15) after its planned end |
+| `no_gps` | warning | a run is under way and its bus hasn't reported for `GPS_STALE_MINUTES` (5), or ever |
+| `overdue_trip` | warning | a trip is 15 minutes past its expected return with no actual return recorded |
+| `vehicle_defect` | warning | a driver filed a vehicle defect report that day |
+
+Timing uses the district clock (`ridership_rules.district_now`, the
+district's time zone). For today it compares with the current time; a
+past day counts as over, so work that never started still shows; a
+future day gets no timing alerts. Each piece of work gets at most one
+timing alert (late start beats not acknowledged). The thresholds are
+module constants, not district settings yet.
+
+The Schedule page shows them in a "Needs attention" panel above the
+assignments, refreshed every minute and after every schedule reload.
+Not yet: acknowledging or snoozing an alert (a report stays listed all
+day), and pushing alerts to anyone who isn't looking at the page.
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)

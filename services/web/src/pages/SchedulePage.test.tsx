@@ -52,6 +52,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getObservedRunDuration: vi.fn(),
     getDriverReportsForDate: vi.fn(),
     getDispatchTasks: vi.fn(),
+    getAlerts: vi.fn(),
   }
 })
 
@@ -175,6 +176,11 @@ function mockLoad() {
   vi.mocked(api.getFleetPositions).mockResolvedValue([])
   vi.mocked(api.getDriverReportsForDate).mockResolvedValue([])
   vi.mocked(api.getDispatchTasks).mockResolvedValue([])
+  vi.mocked(api.getAlerts).mockResolvedValue({
+    service_date: '2026-01-01',
+    district_time: null,
+    alerts: [],
+  })
 }
 
 describe('SchedulePage', () => {

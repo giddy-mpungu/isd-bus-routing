@@ -26,6 +26,7 @@ import type {
   CrewTemplate,
   CrewTemplateCreate,
   CurrentUser,
+  DayAlerts,
   DestinationProfile,
   DestinationProfileCreate,
   DispatchTask,
@@ -606,4 +607,8 @@ export async function updateDispatchTaskStatus(
 
 export async function getMyFieldTrips(serviceDate: string): Promise<DriverFieldTrip[]> {
   return request<DriverFieldTrip[]>(`/field-trips/mine/${serviceDate}`)
+}
+
+export async function getAlerts(serviceDate: string): Promise<DayAlerts> {
+  return request<DayAlerts>(`/alerts?service_date=${serviceDate}`)
 }

@@ -633,6 +633,38 @@ legend {
   box-shadow: 0 0 0 10px rgba(99, 102, 241, 0.22);
 }
 
+/* Operational alerts (pages/AlertsPanel.tsx). */
+.alerts-panel {
+  margin: 0.5rem 0 1.25rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  background: white;
+}
+
+.alerts-panel h2 {
+  margin-top: 0;
+}
+
+.alerts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.alert-item {
+  padding: 0.45rem 0.6rem;
+  border-left: 4px solid var(--warning-500);
+  margin-bottom: 0.35rem;
+  background: var(--warning-50);
+  border-radius: 4px;
+}
+
+.alert-item.alert-critical {
+  border-left-color: var(--danger-600);
+  background: var(--danger-50);
+}
+
 /* An assignment whose crew became unavailable after it was made. */
 .availability-issue {
   margin-top: 0.4rem;
