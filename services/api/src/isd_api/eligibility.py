@@ -60,6 +60,7 @@ DEFAULTS = {
     "ride_minutes_middle": 60,
     "ride_minutes_high": 60,
     "ride_minutes_specialized": 60,
+    "min_stop_spacing_miles": 0.1,
 }
 _RULES_ID = 1
 
@@ -72,6 +73,7 @@ class Rules:
     eligibility_miles: float
     walk_miles: dict[str, float]
     ride_minutes: dict[str, int]
+    min_stop_spacing_miles: float
     is_default: bool
 
 
@@ -82,6 +84,7 @@ def load_rules(db: Session) -> Rules:
         eligibility_miles=float(values["eligibility_miles"]),
         walk_miles={band: float(values[f"walk_miles_{band}"]) for band in BANDS},
         ride_minutes={band: int(values[f"ride_minutes_{band}"]) for band in BANDS},
+        min_stop_spacing_miles=float(values["min_stop_spacing_miles"]),
         is_default=row is None,
     )
 

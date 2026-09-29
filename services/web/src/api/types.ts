@@ -388,6 +388,7 @@ export interface TransportationRules {
   eligibility_miles: number
   walk_miles: Record<GradeBand, number>
   ride_minutes: Record<GradeBand, number>
+  min_stop_spacing_miles: number
   band_labels: Record<GradeBand, string>
   is_default: boolean
 }
@@ -396,6 +397,47 @@ export interface TransportationRulesUpdate {
   eligibility_miles: number
   walk_miles: Record<GradeBand, number>
   ride_minutes: Record<GradeBand, number>
+  min_stop_spacing_miles?: number
+}
+
+// Spec section 3.1 stop proposals (admin only).
+export type StopProposalKind = 'new' | 'existing' | 'curb'
+export type StopProposalStatus = 'pending' | 'approved' | 'rejected'
+
+export interface StopProposalRider {
+  student_id: number
+  full_name: string
+  walk_miles: number | null
+  walk_limit_miles: number
+}
+
+export interface StopProposal {
+  id: number
+  school_id: number
+  kind: StopProposalKind
+  status: StopProposalStatus
+  stop_id: number | null
+  label: string
+  location_lat: number
+  location_lon: number
+  riders: StopProposalRider[]
+  warnings: string[]
+  created_at: string
+  decided_at: string | null
+}
+
+export interface StopProposalsGenerated {
+  proposals: StopProposal[]
+  students_considered: number
+  already_have_stop: number
+  no_home: number
+  not_eligible: number
+}
+
+export interface StopProposalUpdate {
+  label?: string
+  location_lat?: number
+  location_lon?: number
 }
 
 // Only the fields sent are changed; stop_id: null clears the stop.
