@@ -65,6 +65,8 @@ import type {
   RidershipOverrideUpdate,
   RidershipRules,
   RidershipRulesUpdate,
+  RoadClosure,
+  RoadClosureCreate,
   RoutePlan,
   RouteStop,
   RouteStopWrite,
@@ -722,4 +724,16 @@ export async function getDirections(
 ): Promise<DirectionsResult> {
   const query = from ? `?from_lat=${from.lat}&from_lon=${from.lon}` : ''
   return request<DirectionsResult>(`/schedule/assignments/${assignmentId}/directions${query}`)
+}
+
+export async function getRoadClosures(): Promise<RoadClosure[]> {
+  return request<RoadClosure[]>('/road-closures')
+}
+
+export async function createRoadClosure(payload: RoadClosureCreate): Promise<RoadClosure> {
+  return request<RoadClosure>('/road-closures', jsonInit('POST', payload))
+}
+
+export async function clearRoadClosure(id: number): Promise<RoadClosure> {
+  return request<RoadClosure>(`/road-closures/${id}/clear`, jsonInit('POST', {}))
 }

@@ -1133,6 +1133,43 @@ administrators) a planned and an expected time at the school, the delay,
 The school page shows "At school" / "Leaves school" with the expected time,
 the planned one when different, a "Running N min late" badge, and the basis.
 
+## Road closures and rerouting (spec section 10)
+
+PR #64, migration `c3f7a9d2e615`; built after the product owner revisited
+the deferral on 2026-09-29 ("do §10 now, keep §7 deferred").
+
+`RoadClosure`: kind (spec section 10's list: road closed, collision,
+construction, flooding, police activity, severe congestion, other), note,
+a point and a radius (25-3,000 m), `starts_at` (default now), an optional
+`ends_at`, and `cleared_at`. In force from its start until it ends or is
+cleared (`isd_api/closures.py`). Unlike standing district knowledge
+(`GeographicKnowledgeOverride`, spec section 8), a closure is about now.
+
+- `POST /road-closures`, `GET` (in force and upcoming, with the runs each
+  may affect today; `include_ended` for history), `PATCH` (note, radius,
+  end; a null end makes it open-ended), `POST /{id}/clear`. Transportation
+  admins and dispatchers; every change audited.
+- **Rerouting**: driver directions pass closures in force as circular
+  avoid areas (`isd_solver.directions.areas_geojson`) and the directions
+  cache key includes them, so a new closure means new directions at once.
+  The alternate keeps the heavy-vehicle profile and the bus's dimensions,
+  so it still suits a bus (spec section 10's second requirement). The
+  scheduler's ORS deadhead times avoid closures in force on the day being
+  planned.
+- **Who's affected**: a run may be affected when its trip for the day
+  passes near a closure: straight lines between the day's stops and the
+  school, with 250 m (`ROUTE_BUFFER_M`) of slack, since the route's real
+  geometry is only known when directions are asked for. A stop inside a
+  closure is worse: the bus can't reach it.
+- **Alerts**: `road_closure` (warning: the run passes near it; directions
+  avoid it) and `closure_at_stop` (critical: arrange another pick-up
+  point).
+- **Driver**: `DriverAssignmentRead.closure_notes`; the run card says "Road
+  closure near your route. Directions go around it." with the details.
+- UI: Schedule → Road closures: click the map to place it, choose what it
+  is, the area and an optional end time today; closures in force list the
+  runs they affect; "Road is open again" clears one.
+
 ## Turn-by-turn directions (spec section 9)
 
 Phase 3.7, PR #63. `isd_solver.directions.ors_directions` asks
@@ -1215,6 +1252,6 @@ otherwise it's flagged. Deterministic, and quick (400 students well under
 - Field trips (spec §12) is done end-to-end (`FieldTrip` + `/field-trips` UI, overnight trips, `DestinationProfile` §12.3, and observed-duration §20, above) — not yet: conflict-checking against training/maintenance (no such entity exists — a genuine gap, not an oversight)
 - Spec §6 is now done to the extent an external point-to-point routing API can express it: real road-network travel time, per-vehicle length/width/height/weight restrictions, and district-specific avoid-zones (§8) are all applied via `ors_deadhead_estimator`. Turn/dead-end safety costs (§7) and dynamic rerouting (§10) remain genuinely out of scope — both need a routing *graph* this system doesn't own, not just a point-to-point directions call, a different technical approach than anything built so far.
 - District-specific geographic knowledge / local roadway overrides (spec §8) — persistence done, and 7 of 8 categories now applied to routing: flooding/difficult-intersection/unsafe-turn/invalid-turnaround via always-on ORS `avoid_polygons`, congestion-window per-solve when a run's window overlaps it, vehicle-size-restriction per-vehicle via `isd_solver.SizeRestriction`, preferred-entrance by substituting a run's job location with the override's own point (`GeographicKnowledgeOverride`, above). Only `other` remains excluded, structurally rather than provisionally — it's the catch-all for knowledge that doesn't fit any other category, so by construction it has no defined routing behavior
-- Dynamic rerouting around road closures/incidents (spec §10) — Phase 6, same GIS dependency
+- Dynamic rerouting (spec §10) is done for recorded closures ("Road closures and rerouting", above). Live traffic congestion isn't: ORS has no live traffic, so severe congestion is something a dispatcher records. Turn and dead-end costs (§7) stay deferred by the product owner's decision of 2026-09-29, until a self-hosted routing engine is chosen with the production host
 - Live GPS bus location (spec §9/§18) is done for position itself (`VehiclePosition`, ADR 0009, above) — dispatcher fleet view and per-child "locate bus." Delay/substitution/route-change/general notifications (spec §18) and "messages from dispatch" (spec §9) are now done too (`Announcement`, above), with per-school scoping and one narrow auto-generated exception (a genuine, unambiguous driver/vehicle substitution) — every other notification is still exclusively dispatcher-authored, since this system has no ETA engine or general event-to-notification pipeline. Incident reporting / vehicle defect reporting (spec §9) is now done too (`DriverReport`, above). Still unbuilt: turn-by-turn navigation (spec §9 — deliberately deferred alongside §7/§10, since it needs the same routing graph this system doesn't own)
 - Historical operational data / learning-adjusted estimates (spec §20) — duration learning for `Run.duration_minutes` is done (`GET /runs/observed-duration`, above). Not yet: traffic-delay and route-deviation tracking (both need a planned route geometry and live position history this system doesn't have — ADR 0009 deliberately keeps only the latest GPS position, no breadcrumb trail) and field-trip duration learning (though `FieldTrip.actual_return_at` already captures the raw data needed, no aggregation endpoint exists for it yet, unlike regular runs)

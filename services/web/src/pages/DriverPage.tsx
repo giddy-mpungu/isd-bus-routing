@@ -481,6 +481,16 @@ export function DriverPage() {
                           </li>
                         ))}
                     </ol>
+                    {(a.closure_notes ?? []).length > 0 && (
+                      <div className="driver-closure" role="status">
+                        <strong>Road closure near your route.</strong> Directions go around it.
+                        <ul>
+                          {(a.closure_notes ?? []).map((n) => (
+                            <li key={n}>{n}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                     <DirectionsPanel assignmentId={a.id} />
                     {a.stops.some((stop) => stop.on_route === false) && (
                       <>

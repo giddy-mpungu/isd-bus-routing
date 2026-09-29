@@ -21,7 +21,9 @@ from isd_solver import (
     InfeasibleResult,
     SchedulingResult,
     SizeRestriction,
+    areas_geojson,
     avoid_polygons_geojson,
+    merge_avoid_polygons,
     ors_deadhead_estimator,
     ors_directions,
     solve_multi_school_schedule,
@@ -44,6 +46,7 @@ from isd_solver import (
 )
 from sqlalchemy.orm import Session
 
+from isd_api import closures
 from isd_api.assignment_states import driver_transition_problem, resets_on_new_driver
 from isd_api.audit import record as record_audit
 from isd_api.availability import (
@@ -65,6 +68,8 @@ from isd_api.models import (
 )
 from isd_api.models import Crew as DBCrew
 from isd_api.models import Run as DBRun
+from isd_api.ridership_rules import district_now as ridership_district_now
+from isd_api.ridership_rules import load_rules as ridership_rules_load
 from isd_api.routers.announcements import _maybe_create_substitution_announcement
 from isd_api.routers.optimization_settings import (
     load_minimum_buffer_minutes,
@@ -437,11 +442,21 @@ def run_schedule(
             .all()
         ]
         avoid_points += _congestion_avoid_points(db, unlocked_jobs)
+        # Spec section 10: temporary closures in force on this service date.
+        day_closures = closures.for_service_date(db, payload.service_date)
         estimator = ors_deadhead_estimator(
             api_key=settings.ors_api_key,
             base_url=settings.ors_base_url,
             profile=settings.ors_profile,
-            avoid_polygons=avoid_polygons_geojson(avoid_points),
+            avoid_polygons=merge_avoid_polygons(
+                avoid_polygons_geojson(avoid_points),
+                areas_geojson(
+                    [
+                        (SolverLocation(lat=c.location_lat, lon=c.location_lon), c.radius_m)
+                        for c in day_closures
+                    ]
+                ),
+            ),
             size_restrictions=_size_restrictions_for_schedule(db),
             fallback=fallback_estimator,
         )
@@ -830,6 +845,7 @@ def list_my_assignments(
                 roster_ambiguous=ambiguous,
                 stops=stops,
                 stops_ordered=ordered,
+                closure_notes=_closure_notes(db, a),
             )
         )
     return results
@@ -1000,10 +1016,13 @@ def get_directions(
         )
 
     vehicle = assignment.crew.vehicle
+    in_force = closures.active_now(db)
     key = (
         run.id,
         vehicle.id,
         tuple((round(w.lat, 4), round(w.lon, 4)) for w in waypoints),
+        # A new or cleared closure means new directions.
+        tuple((c.id, c.radius_m) for c in in_force),
     )
     now = datetime.now(UTC).timestamp()
     cached = _directions_cache.get(key)
@@ -1028,6 +1047,10 @@ def get_directions(
                 weight_kg=vehicle.weight_kg,
             ),
             avoid_points=avoid_points,
+            avoid_areas=[
+                (SolverLocation(lat=c.location_lat, lon=c.location_lon), float(c.radius_m))
+                for c in in_force
+            ],
             size_restrictions=_size_restrictions_for_schedule(db),
         )
     except DirectionsError:
@@ -1068,6 +1091,20 @@ def get_directions(
     return result
 
 
+def _closure_notes(db: Session, assignment: Assignment) -> list[str]:
+    """Closures in force now near this run's trip today (spec section 10)."""
+    rules = ridership_rules_load(db)
+    if assignment.run.service_date != ridership_district_now(rules).date():
+        return []
+    notes = []
+    for impact in closures.impacts(db, assignment, closures.active_now(db)):
+        note = closures.describe(impact.closure)
+        if impact.stop_inside is not None:
+            note += f" (the {impact.stop_inside} stop is inside it)"
+        notes.append(note)
+    return notes
+
+
 def _driver_assignment_read(db: Session, assignment: Assignment) -> DriverAssignmentRead:
     ambiguous, ordered, stops = _stop_roster_for(db, assignment.run, assignment.start_minute)
     return DriverAssignmentRead(
@@ -1083,6 +1120,7 @@ def _driver_assignment_read(db: Session, assignment: Assignment) -> DriverAssign
         roster_ambiguous=ambiguous,
         stops=stops,
         stops_ordered=ordered,
+        closure_notes=_closure_notes(db, assignment),
     )
 
 

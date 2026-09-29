@@ -128,6 +128,32 @@ describe('DriverPage', () => {
     expect(screen.getByText(/this run's route has no stop list yet/)).toBeInTheDocument()
   })
 
+  it('warns about a road closure near the route', async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([
+      {
+        ...assignment,
+        stops_ordered: true,
+        closure_notes: ['flooding: Underpass flooded (the Near stop is inside it)'],
+        stops: [
+          {
+            stop_label: 'Near',
+            student_names: ['Cy'],
+            position: 1,
+            planned_minute: 420,
+            eta_minute: 420,
+            skipped: false,
+            on_route: true,
+          },
+        ],
+      },
+    ])
+    renderPage()
+    const notice = await screen.findByText('Road closure near your route.')
+    expect(notice.closest('.driver-closure')).toHaveTextContent(
+      'flooding: Underpass flooded (the Near stop is inside it)',
+    )
+  })
+
   it("shows today's times, the planned time when it moved, and skipped stops", async () => {
     vi.mocked(api.getMyAssignments).mockResolvedValue([
       {

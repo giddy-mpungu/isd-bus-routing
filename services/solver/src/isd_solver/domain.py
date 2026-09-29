@@ -476,6 +476,12 @@ def _merge_avoid_polygons(fixed: dict | None, dynamic: dict | None) -> dict | No
     return {"type": "MultiPolygon", "coordinates": fixed["coordinates"] + dynamic["coordinates"]}
 
 
+def merge_avoid_polygons(a: dict | None, b: dict | None) -> dict | None:
+    """Two avoid-polygon GeoJSON values combined into one (either may be
+    None)."""
+    return _merge_avoid_polygons(a, b)
+
+
 def ors_deadhead_estimator(
     api_key: str,
     base_url: str = "https://api.openrouteservice.org",

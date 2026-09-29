@@ -672,6 +672,44 @@ class GeographicKnowledgeOverride(Base):
     school: Mapped[School | None] = relationship()
 
 
+class ClosureKind(enum.StrEnum):
+    """Spec section 10's list of conditions a bus must be routed around."""
+
+    ROAD_CLOSED = "road_closed"
+    COLLISION = "collision"
+    CONSTRUCTION = "construction"
+    FLOODING = "flooding"
+    POLICE_ACTIVITY = "police_activity"
+    SEVERE_CONGESTION = "severe_congestion"
+    OTHER = "other"
+
+
+class RoadClosure(Base):
+    """A temporary condition to route around (spec section 10 "dynamic
+    rerouting"): a point with a radius, active from `starts_at` until
+    `ends_at` or until someone clears it. Unlike the standing district
+    knowledge in `GeographicKnowledgeOverride` (spec section 8), a closure
+    is about today: an accident, a flooded underpass, a police scene.
+    Directions and the scheduler's travel times avoid active closures; see
+    isd_api/closures.py for which runs they affect."""
+
+    __tablename__ = "road_closures"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[ClosureKind] = mapped_column(
+        SAEnum(ClosureKind, native_enum=False, length=32), nullable=False
+    )
+    note: Mapped[str] = mapped_column(String(500), nullable=False)
+    location_lat: Mapped[float] = mapped_column(nullable=False)
+    location_lon: Mapped[float] = mapped_column(nullable=False)
+    radius_m: Mapped[int] = mapped_column(Integer, nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cleared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class RouteTemplate(Base):
     """ADR 0001's "Route": the permanent template a Run is generated from
     (spec section 11 "Permanent Assignment"). Deliberately owns no
