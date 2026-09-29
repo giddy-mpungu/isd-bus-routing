@@ -192,4 +192,27 @@ describe('FamilyPage', () => {
     expect(screen.getByRole('button', { name: 'Mark not riding AM' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Mark not riding PM' })).toBeEnabled()
   })
+
+  it("shows when the bus is due at the child's stop today, and if that moved", async () => {
+    vi.mocked(api.getMyFamily).mockResolvedValue([
+      {
+        ...child,
+        am_eta: { stop_label: 'Oak & 5th', eta_minute: 428, planned_minute: 420, changed: true },
+        pm_eta: { stop_label: 'Oak & 5th', eta_minute: 931, planned_minute: 930, changed: false },
+      },
+    ])
+    render(<FamilyPage />)
+    expect(
+      await screen.findByText('Bus due at Oak & 5th around 07:08 (changed from 07:00 today)'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Bus due at Oak & 5th around 15:31')).toBeInTheDocument()
+    expect(screen.getByText(/around 07:08/)).toHaveClass('is-changed')
+  })
+
+  it('shows no time when there is no estimate for a leg', async () => {
+    vi.mocked(api.getMyFamily).mockResolvedValue([{ ...child, am_eta: null, pm_eta: null }])
+    render(<FamilyPage />)
+    await screen.findByText('Jamie Student')
+    expect(screen.queryByText(/Bus due at/)).not.toBeInTheDocument()
+  })
 })

@@ -8,6 +8,11 @@ function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+// Minute of day as HH:MM.
+function hhmm(minute: number): string {
+  return `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`
+}
+
 export function FamilyPage() {
   const [serviceDate] = useState(today)
   const [family, setFamily] = useState<FamilyMember[]>([])
@@ -83,6 +88,7 @@ export function FamilyPage() {
   function renderLeg(member: FamilyMember, direction: RideDirection, isRiding: boolean) {
     const legKey = `${member.student_id}-${direction}`
     const closed = direction === 'am' ? member.am_changes_closed : member.pm_changes_closed
+    const eta = direction === 'am' ? member.am_eta : member.pm_eta
     const position = busPositions[legKey]
     const positionError = busPositionErrors[legKey]
     return (
@@ -107,6 +113,14 @@ export function FamilyPage() {
         >
           {locatingKey === legKey ? 'Locating…' : 'Locate bus'}
         </button>
+        {eta && (
+          <p className={`family-eta${eta.changed ? ' is-changed' : ''}`}>
+            Bus due at {eta.stop_label} around {hhmm(eta.eta_minute)}
+            {eta.changed &&
+              eta.planned_minute != null &&
+              ` (changed from ${hhmm(eta.planned_minute)} today)`}
+          </p>
+        )}
         {closed && <p className="status family-leg-closed">{closed}</p>}
         {positionError && (
           <p role="alert" className="error">

@@ -180,6 +180,10 @@ export interface AssignmentStopRoster {
   planned_minute?: number | null
   // False for riders whose stop isn't on the route.
   on_route?: boolean
+  // Today's trip: a stop nobody rides from today is skipped; the others
+  // have today's estimated arrival (minute of day).
+  skipped?: boolean
+  eta_minute?: number | null
 }
 
 export interface DriverAssignment {
@@ -487,6 +491,17 @@ export interface FamilyMember {
   // today after the district's cutoff), with the reason to show.
   am_changes_closed: string | null
   pm_changes_closed: string | null
+  // Today's estimated arrival at the child's stop, when riding that leg.
+  am_eta?: StopEta | null
+  pm_eta?: StopEta | null
+}
+
+export interface StopEta {
+  stop_label: string
+  eta_minute: number
+  planned_minute: number | null
+  // Moved materially (5+ minutes) from the plan.
+  changed: boolean
 }
 
 export type AbsenceReason =

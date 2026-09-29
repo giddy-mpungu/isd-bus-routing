@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from isd_api import eligibility
 from isd_api.audit import record as record_audit
+from isd_api.daily_trip import daily_trip
 from isd_api.db import get_db
 from isd_api.integrations import census_geocoder
 from isd_api.models import (
@@ -42,6 +43,7 @@ from isd_api.schemas import (
     GuardianRead,
     QualificationRead,
     RidershipOverrideUpdate,
+    StopEtaRead,
     StudentCreate,
     StudentHomeRead,
     StudentHomeUpdate,
@@ -428,6 +430,28 @@ def get_my_family(
     rules = load_rules(db)
     am_closed = change_closed_reason(rules, service_date, RideDirection.AM)
     pm_closed = change_closed_reason(rules, service_date, RideDirection.PM)
+
+    def riding(s: Student, direction: RideDirection) -> bool:
+        return overrides.get((s.id, direction), default_riding[s.id])
+
+    def eta(s: Student, direction: RideDirection) -> StopEtaRead | None:
+        """Today's estimated arrival at this child's stop, or None."""
+        if not riding(s, direction) or s.stop_id is None:
+            return None
+        run, ambiguous = run_for_student(db, s, service_date, direction)
+        if ambiguous or run is None or run.assignment is None:
+            return None
+        trip = daily_trip(db, run, run.assignment.start_minute)
+        stop = next((t for t in trip or [] if t.stop_id == s.stop_id), None)
+        if stop is None or stop.eta_minute is None:
+            return None
+        return StopEtaRead(
+            stop_label=stop.label,
+            eta_minute=stop.eta_minute,
+            planned_minute=stop.planned_minute,
+            changed=stop.materially_changed,
+        )
+
     return [
         FamilyMemberRead(
             student_id=s.id,
@@ -435,10 +459,12 @@ def get_my_family(
             school_name=s.school.name,
             stop_label=s.stop.label if s.stop is not None else None,
             service_date=service_date,
-            riding_am=overrides.get((s.id, RideDirection.AM), default_riding[s.id]),
-            riding_pm=overrides.get((s.id, RideDirection.PM), default_riding[s.id]),
+            riding_am=riding(s, RideDirection.AM),
+            riding_pm=riding(s, RideDirection.PM),
             am_changes_closed=am_closed,
             pm_changes_closed=pm_closed,
+            am_eta=eta(s, RideDirection.AM),
+            pm_eta=eta(s, RideDirection.PM),
         )
         for s in students
     ]

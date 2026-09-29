@@ -50,6 +50,7 @@ from isd_api.availability import (
     crew_availability,
 )
 from isd_api.config import settings
+from isd_api.daily_trip import daily_trip
 from isd_api.db import get_db
 from isd_api.models import (
     Assignment,
@@ -57,7 +58,6 @@ from isd_api.models import (
     GeographicKnowledgeCategory,
     GeographicKnowledgeOverride,
     Role,
-    RouteTemplate,
     Student,
     User,
 )
@@ -728,9 +728,10 @@ def _stop_roster_for(
 ) -> tuple[bool, bool, list[AssignmentStopRoster]]:
     """(ambiguous, ordered, stops) for the driver's roster, shared by
     list_my_assignments and the status endpoints so it looks the same
-    either way. With route stops it follows the route's order with planned
-    times, listing stops nobody rides today too; otherwise it's grouped by
-    stop. Empty when ambiguous (spec section 21: don't guess)."""
+    either way. With route stops it's today's trip (isd_api/daily_trip.py):
+    the route's order with planned times and today's estimates, and stops
+    nobody rides from today marked skipped; otherwise it's grouped by stop.
+    Empty when ambiguous (spec section 21: don't guess)."""
     riding_students, ambiguous = _resolve_riding_students(db, run)
     if ambiguous:
         return True, False, []
@@ -738,21 +739,20 @@ def _stop_roster_for(
     for s in riding_students:
         by_stop.setdefault(s.stop_id, []).append(s)
 
-    route = (
-        db.get(RouteTemplate, run.route_template_id) if run.route_template_id is not None else None
-    )
-    if route is not None and route.stops:
+    trip = daily_trip(db, run, start_minute)
+    if trip is not None:
         ordered = [
             AssignmentStopRoster(
-                stop_label=rs.stop.label,
-                student_names=sorted(s.full_name for s in by_stop.pop(rs.stop_id, [])),
-                position=index,
-                planned_minute=None
-                if rs.minutes_from_start is None
-                else start_minute + rs.minutes_from_start,
+                stop_label=stop.label,
+                student_names=[s.full_name for s in stop.riders],
+                position=stop.position,
+                planned_minute=stop.planned_minute,
+                skipped=stop.skipped,
+                eta_minute=stop.eta_minute,
             )
-            for index, rs in enumerate(route.stops, start=1)
+            for stop in trip
         ]
+        on_route = {stop.stop_id for stop in trip}
         # Riders whose stop isn't on this route (only possible when this is
         # the leg's only run): shown, flagged, after the route.
         leftovers = [
@@ -761,13 +761,14 @@ def _stop_roster_for(
                 student_names=sorted(s.full_name for s in students),
                 on_route=False,
             )
-            for _, students in sorted(
+            for stop_id, students in sorted(
                 by_stop.items(),
                 key=lambda kv: (
                     kv[1][0].stop is None,
                     kv[1][0].stop.label if kv[1][0].stop else "",
                 ),
             )
+            if stop_id not in on_route
         ]
         return False, True, ordered + leftovers
 
