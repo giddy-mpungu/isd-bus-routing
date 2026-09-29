@@ -782,6 +782,29 @@ export interface RouteStop {
   minutes_from_start: number | null
 }
 
+// A planned order and times for a route's stops (decision support).
+export interface PlannedRouteStop {
+  position: number
+  stop_id: number
+  stop_label: string
+  minutes_from_start: number
+  riders: number
+  ride_minutes: number
+  ride_limit_minutes: number | null
+}
+
+export interface RoutePlan {
+  stops: PlannedRouteStop[]
+  total_minutes: number
+  current_duration_minutes: number
+  window_minutes: number
+  fits_window: boolean
+  ride_limits_met: boolean
+  violations: string[]
+  applied: boolean
+  travel_estimate: string
+}
+
 export interface RouteStopWrite {
   stop_id: number
   minutes_from_start: number | null
