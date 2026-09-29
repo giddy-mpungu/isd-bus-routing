@@ -15,6 +15,7 @@ import { FINISHED, NEXT_STEP, STATUS_LABELS, STATUS_TONES } from '../assignmentS
 import { Badge, type BadgeTone } from '../components/Badge'
 import { TASK_KIND_LABELS } from '../dispatchTasks'
 import { buildDay, isUnderway, SLOT_LABELS, type QueueSlot } from '../driverDay'
+import { DirectionsPanel } from './DirectionsPanel'
 import { nextMoving, speedAt, type Fix } from '../motion'
 
 const ABSENCE_REASONS: AbsenceReason[] = [
@@ -480,6 +481,7 @@ export function DriverPage() {
                           </li>
                         ))}
                     </ol>
+                    <DirectionsPanel assignmentId={a.id} />
                     {a.stops.some((stop) => stop.on_route === false) && (
                       <>
                         <p className="driver-run-roster-note">

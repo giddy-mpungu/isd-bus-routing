@@ -27,6 +27,7 @@ import type {
   CrewTemplateCreate,
   CurrentUser,
   DayAlerts,
+  DirectionsResult,
   DestinationProfile,
   DestinationProfileCreate,
   DispatchTask,
@@ -711,4 +712,14 @@ export async function planRouteStops(templateId: number, apply: boolean): Promis
     `/route-templates/${templateId}/stops/plan`,
     jsonInit('POST', { apply }),
   )
+}
+
+// Directions through the run's stops today; `from` starts at the tablet's
+// position.
+export async function getDirections(
+  assignmentId: number,
+  from?: { lat: number; lon: number },
+): Promise<DirectionsResult> {
+  const query = from ? `?from_lat=${from.lat}&from_lon=${from.lon}` : ''
+  return request<DirectionsResult>(`/schedule/assignments/${assignmentId}/directions${query}`)
 }

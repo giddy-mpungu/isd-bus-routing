@@ -17,16 +17,18 @@ from isd_solver import (
     Crew as SolverCrew,
 )
 from isd_solver import (
-    Driver as SolverDriver,
-)
-from isd_solver import (
+    DirectionsError,
     InfeasibleResult,
     SchedulingResult,
     SizeRestriction,
     avoid_polygons_geojson,
     ors_deadhead_estimator,
+    ors_directions,
     solve_multi_school_schedule,
     straight_line_deadhead_estimator,
+)
+from isd_solver import (
+    Driver as SolverDriver,
 )
 from isd_solver import (
     Job as SolverJob,
@@ -74,6 +76,10 @@ from isd_api.schemas import (
     AssignmentStatusUpdate,
     AssignmentStopRoster,
     AssignmentUpdate,
+    DirectionsLeg,
+    DirectionsRead,
+    DirectionsStepRead,
+    DirectionsWaypoint,
     DriverAssignmentRead,
     ScheduleRequest,
     ScheduleResult,
@@ -928,6 +934,138 @@ def update_assignment_status(
     db.commit()
     db.refresh(assignment)
     return _driver_assignment_read(db, assignment)
+
+
+# Directions are cached per run, waypoints and vehicle for a while, so a
+# tablet re-opening them doesn't spend the district's ORS quota.
+DIRECTIONS_CACHE_SECONDS = 600
+_directions_cache: dict[tuple, tuple[float, DirectionsRead]] = {}
+
+
+@router.get("/assignments/{assignment_id}/directions", response_model=DirectionsRead)
+def get_directions(
+    assignment_id: int,
+    from_lat: float | None = None,
+    from_lon: float | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DirectionsRead:
+    """Spec section 9 "bus-specific turn-by-turn navigation": directions
+    through the run's stops today (the day's trip, skipped stops left out),
+    for its bus's dimensions, avoiding the district's hazard zones. The
+    driver may pass their position (`from_lat`, `from_lon`) to start there.
+    The driver of the run, dispatchers and transportation admins."""
+    assignment = db.get(Assignment, assignment_id)
+    if assignment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
+    is_driver = (
+        current_user.role == Role.DRIVER and assignment.crew.driver_id == current_user.driver_id
+    )
+    if not is_driver and current_user.role not in (Role.TRANSPORTATION_ADMIN, Role.DISPATCHER):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your assignment")
+    if (from_lat is None) != (from_lon is None) or (
+        from_lat is not None
+        and from_lon is not None
+        and not (-90 <= from_lat <= 90 and -180 <= from_lon <= 180)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Send both from_lat and from_lon, in range",
+        )
+
+    run = assignment.run
+    school = DirectionsWaypoint(
+        label=run.school.name, lat=run.school.location_lat, lon=run.school.location_lon
+    )
+    stops = [
+        DirectionsWaypoint(label=s.label, lat=s.lat, lon=s.lon)
+        for s in daily_trip(db, run, assignment.start_minute) or []
+        if not s.skipped
+    ]
+    waypoints = [*stops, school] if run.direction.value == "am" else [school, *stops]
+    if from_lat is not None and from_lon is not None:
+        waypoints = [
+            DirectionsWaypoint(label="Your position", lat=from_lat, lon=from_lon),
+            *waypoints,
+        ]
+    if not stops:
+        return DirectionsRead(
+            available=False, reason="This run has no stops on its route today", waypoints=waypoints
+        )
+    if not settings.ors_api_key:
+        return DirectionsRead(
+            available=False,
+            reason="Turn-by-turn directions need an OpenRouteService key (ISD_API_ORS_API_KEY).",
+            waypoints=waypoints,
+        )
+
+    vehicle = assignment.crew.vehicle
+    key = (
+        run.id,
+        vehicle.id,
+        tuple((round(w.lat, 4), round(w.lon, 4)) for w in waypoints),
+    )
+    now = datetime.now(UTC).timestamp()
+    cached = _directions_cache.get(key)
+    if cached is not None and now - cached[0] < DIRECTIONS_CACHE_SECONDS:
+        return cached[1]
+
+    avoid_points = [
+        SolverLocation(lat=o.location_lat, lon=o.location_lon)
+        for o in db.query(GeographicKnowledgeOverride).filter(
+            GeographicKnowledgeOverride.category.in_(_HARD_AVOID_CATEGORIES)
+        )
+    ]
+    try:
+        found = ors_directions(
+            settings.ors_api_key,
+            [SolverLocation(lat=w.lat, lon=w.lon) for w in waypoints],
+            SolverVehicle(
+                id=str(vehicle.id),
+                length_m=vehicle.length_m,
+                width_m=vehicle.width_m,
+                height_m=vehicle.height_m,
+                weight_kg=vehicle.weight_kg,
+            ),
+            avoid_points=avoid_points,
+            size_restrictions=_size_restrictions_for_schedule(db),
+        )
+    except DirectionsError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Directions aren't available right now. Follow the stop order and try again.",
+        ) from None
+
+    result = DirectionsRead(
+        available=True,
+        waypoints=waypoints,
+        distance_m=found.distance_m,
+        duration_s=found.duration_s,
+        coordinates=[[lat, lon] for lat, lon in found.coordinates],
+        legs=[
+            DirectionsLeg(
+                to_label=waypoints[index + 1].label,
+                distance_m=leg.distance_m,
+                duration_s=leg.duration_s,
+            )
+            for index, leg in enumerate(found.legs)
+            if index + 1 < len(waypoints)
+        ],
+        steps=[
+            DirectionsStepRead(
+                instruction=s.instruction,
+                name=s.name,
+                distance_m=s.distance_m,
+                duration_s=s.duration_s,
+                leg=s.leg,
+            )
+            for s in found.steps
+        ],
+    )
+    if len(_directions_cache) > 500:
+        _directions_cache.clear()
+    _directions_cache[key] = (now, result)
+    return result
 
 
 def _driver_assignment_read(db: Session, assignment: Assignment) -> DriverAssignmentRead:

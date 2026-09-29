@@ -537,6 +537,45 @@ class SchoolAssignmentRead(BaseModel):
     eta_basis: str | None = None
 
 
+class DirectionsWaypoint(BaseModel):
+    label: str
+    lat: float
+    lon: float
+
+
+class DirectionsLeg(BaseModel):
+    to_label: str
+    distance_m: float
+    duration_s: float
+
+
+class DirectionsStepRead(BaseModel):
+    instruction: str
+    name: str
+    distance_m: float
+    duration_s: float
+    # Index into `legs`: the step is on the way to that leg's `to_label`.
+    leg: int
+
+
+class DirectionsRead(BaseModel):
+    """Turn-by-turn directions through a run's stops today (spec section
+    9), from OpenRouteService's heavy-vehicle profile. `available` is
+    False, with `reason`, when there's no ORS key or no stops; the
+    waypoints are still listed so the tablet can show the order."""
+
+    available: bool
+    reason: str | None = None
+    waypoints: list[DirectionsWaypoint]
+    distance_m: float = 0.0
+    duration_s: float = 0.0
+    # The route line, [lat, lon] pairs in order.
+    coordinates: list[list[float]] = []
+    legs: list[DirectionsLeg] = []
+    steps: list[DirectionsStepRead] = []
+    attribution: str = "Directions © openrouteservice.org | Map data © OpenStreetMap contributors"
+
+
 class ScheduleRequest(BaseModel):
     service_date: date
     average_deadhead_speed_kmh: float = Field(
