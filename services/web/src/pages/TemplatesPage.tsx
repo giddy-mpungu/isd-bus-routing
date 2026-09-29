@@ -6,10 +6,13 @@ import type {
   Driver,
   Qualification,
   RideDirection,
+  RouteStop,
   RouteTemplate,
   School,
   Vehicle,
+  Stop,
 } from '../api/types'
+import { RouteStopsEditor } from './RouteStopsEditor'
 
 // Python weekday numbers, matching the backend: Monday=0 .. Sunday=6.
 const WEEKDAYS = [
@@ -85,18 +88,22 @@ export function TemplatesPage() {
   const [drivers, setDrivers] = useState<Driver[]>([])
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [qualifications, setQualifications] = useState<Qualification[]>([])
+  const [stops, setStops] = useState<Stop[]>([])
+  // The route template whose stop list is open for editing.
+  const [editingStopsId, setEditingStopsId] = useState<number | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoadError(null)
     try {
-      const [rt, ct, s, d, v, q] = await Promise.all([
+      const [rt, ct, s, d, v, q, st] = await Promise.all([
         api.getRouteTemplates(),
         api.getCrewTemplates(),
         api.getSchools(),
         api.getDrivers(),
         api.getVehicles(),
         api.getQualifications(),
+        api.getStops(),
       ])
       setRouteTemplates(rt)
       setCrewTemplates(ct)
@@ -104,6 +111,7 @@ export function TemplatesPage() {
       setDrivers(d)
       setVehicles(v)
       setQualifications(q)
+      setStops(st)
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : 'Failed to load templates.')
     }
@@ -252,12 +260,13 @@ export function TemplatesPage() {
                 <th>Duration + buffer</th>
                 <th>Days</th>
                 <th>Active range</th>
+                <th>Stops</th>
                 <th>Status</th>
                 <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
-              {routeTemplates.map((t) => (
+              {routeTemplates.flatMap((t) => [
                 <tr key={t.id}>
                   <td>{schoolsById.get(t.school_id)?.name ?? `School #${t.school_id}`}</td>
                   <td>{t.direction.toUpperCase()}</td>
@@ -269,14 +278,46 @@ export function TemplatesPage() {
                   </td>
                   <td>{formatDays(t.days_of_week)}</td>
                   <td>{formatRange(t.active_from, t.active_until)}</td>
+                  <td>
+                    {(t.stops ?? []).length === 0
+                      ? 'None yet'
+                      : (t.stops ?? []).map((s) => s.stop_label).join(' → ')}
+                  </td>
                   <td>{t.is_active ? 'Active' : 'Inactive'}</td>
                   <td>
+                    <button
+                      type="button"
+                      onClick={() => setEditingStopsId(editingStopsId === t.id ? null : t.id)}
+                      aria-expanded={editingStopsId === t.id}
+                    >
+                      Edit stops
+                    </button>{' '}
                     <button type="button" onClick={() => void handleToggleRoute(t)}>
                       {t.is_active ? 'Deactivate' : 'Reactivate'}
                     </button>
                   </td>
-                </tr>
-              ))}
+                </tr>,
+                ...(editingStopsId === t.id
+                  ? [
+                      <tr key={`${t.id}-stops`}>
+                        <td colSpan={9}>
+                          <RouteStopsEditor
+                            template={t}
+                            stops={stops}
+                            school={schoolsById.get(t.school_id)}
+                            onSaved={(saved: RouteStop[]) => {
+                              setRouteTemplates((prev) =>
+                                prev.map((x) => (x.id === t.id ? { ...x, stops: saved } : x)),
+                              )
+                              setEditingStopsId(null)
+                            }}
+                            onClose={() => setEditingStopsId(null)}
+                          />
+                        </td>
+                      </tr>,
+                    ]
+                  : []),
+              ])}
             </tbody>
           </table>
         )}

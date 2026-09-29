@@ -64,6 +64,8 @@ import type {
   RidershipOverrideUpdate,
   RidershipRules,
   RidershipRulesUpdate,
+  RouteStop,
+  RouteStopWrite,
   RouteTemplate,
   RouteTemplateCreate,
   Run,
@@ -658,4 +660,16 @@ export function reportCsvUrl(name: ReportName, start: string, end: string): stri
 
 export async function getCrewTrack(serviceDate: string, crewId: number): Promise<PositionSample[]> {
   return request<PositionSample[]>(`/schedule/${serviceDate}/fleet-positions/${crewId}/track`)
+}
+
+export async function getRouteStops(templateId: number): Promise<RouteStop[]> {
+  return request<RouteStop[]>(`/route-templates/${templateId}/stops`)
+}
+
+// Replaces the route's whole stop list, in visiting order.
+export async function setRouteStops(
+  templateId: number,
+  stops: RouteStopWrite[],
+): Promise<RouteStop[]> {
+  return request<RouteStop[]>(`/route-templates/${templateId}/stops`, jsonInit('PUT', { stops }))
 }

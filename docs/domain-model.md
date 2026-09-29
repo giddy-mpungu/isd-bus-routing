@@ -1012,6 +1012,44 @@ Census geocoder, and accepted the recommended limits below.
   looks addresses up and places or moves the pin on a map. Setup → Rules &
   optimization has the eligibility and limits table.
 
+## Routes with ordered stops (spec sections 3, 9)
+
+Phase 3.2, PR #58, migration `a6d2c8e4b173`. A recurring route
+(`RouteTemplate`, ADR 0001's "Route") has an ordered stop list,
+`RouteStop` (position, stop, optional `minutes_from_start`). Runs
+generated from the template use it directly; nothing is copied per day,
+so skipping empty stops on a given day (spec section 4.3, Phase 3.5) can
+be worked out rather than stored.
+
+- `GET/PUT /route-templates/{id}/stops` (admins and dispatchers, like the
+  rest of templates): `PUT` replaces the whole list in visiting order.
+  Refused (400): a stop twice, an unknown stop, planned minutes that go
+  backwards, or a stop planned after the route's duration. Audited as
+  `stops_updated` with the before and after lists. `RouteTemplateRead`
+  and `RunRead` (`route_template_id`) expose it.
+- A stop on a route can't be deleted (409), like a stop with students.
+- **Which run a student rides** (`isd_api/routes.py`): one run on the leg
+  takes every riding student of the school; with several, a student is
+  on the run whose route has their stop. No stop, a stop on no route, or
+  a stop on two of the leg's routes can't be placed (don't guess). A run
+  without route stops on a shared leg stays ambiguous, as before. This
+  feeds the expected-riders count, the driver roster, the family "Locate
+  bus" view and the full-bus check, which were all ambiguous whenever two
+  buses served one school and leg.
+- **The driver roster** follows the route: each stop in order, with its
+  planned time (the run's start plus the stop's minutes), including stops
+  nobody rides from today; riders whose stop isn't on the route (possible
+  only on a single-run leg) are listed after it, marked `on_route: false`.
+  Without route stops it's the old grouped list.
+- UI: Templates → Edit stops (add, reorder, remove, planned minutes, and
+  a map drawing the route in order: stops then school in the morning,
+  school then stops in the afternoon); the route table lists its stops.
+  The driver app shows "Stops in order" with times.
+
+Not yet: planned minutes are typed by hand; routing (Phase 3.4) will
+compute the order and times, and check them against the walk and ride
+limits.
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)

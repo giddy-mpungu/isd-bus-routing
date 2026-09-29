@@ -125,7 +125,48 @@ describe('DriverPage', () => {
     await waitFor(() => expect(screen.getByText(/Elm St/)).toBeInTheDocument())
     expect(screen.getByText('Elm St: Ana, Ben')).toBeInTheDocument()
     expect(screen.getByText('No stop assigned: Cy')).toBeInTheDocument()
-    expect(screen.getByText(/stops aren't sequenced yet/)).toBeInTheDocument()
+    expect(screen.getByText(/this run's route has no stop list yet/)).toBeInTheDocument()
+  })
+
+  it("lists the route's stops in order with planned times", async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([
+      {
+        ...assignment,
+        stops_ordered: true,
+        stops: [
+          {
+            stop_label: 'Elm St',
+            student_names: ['Ben', 'Cy'],
+            position: 1,
+            planned_minute: 360,
+            on_route: true,
+          },
+          {
+            stop_label: 'Oak St',
+            student_names: [],
+            position: 2,
+            planned_minute: null,
+            on_route: true,
+          },
+          {
+            stop_label: 'Maple',
+            student_names: ['Dee'],
+            position: null,
+            planned_minute: null,
+            on_route: false,
+          },
+        ],
+      },
+    ])
+    renderPage()
+    expect(await screen.findByRole('heading', { name: 'Stops in order' })).toBeInTheDocument()
+    const items = Array.from(document.querySelectorAll('.driver-route-stops li')).map(
+      (li) => li.textContent,
+    )
+    expect(items).toEqual(['06:00 Elm St: Ben, Cy', 'Oak St: nobody expected today'])
+    expect(screen.getByText(/Also expected, at stops not on this route/)).toBeInTheDocument()
+    expect(screen.getByText('Maple: Dee')).toBeInTheDocument()
+    expect(screen.queryByText(/Not a route order/)).not.toBeInTheDocument()
   })
 
   it('shows an ambiguous note instead of a roster when more than one bus serves the school', async () => {

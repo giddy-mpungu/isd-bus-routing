@@ -174,6 +174,12 @@ export type AssignmentStatus =
 export interface AssignmentStopRoster {
   stop_label: string | null
   student_names: string[]
+  // Set when the run's route has ordered stops: 1-based position and the
+  // planned minute of day (null when the route has no planned time).
+  position?: number | null
+  planned_minute?: number | null
+  // False for riders whose stop isn't on the route.
+  on_route?: boolean
 }
 
 export interface DriverAssignment {
@@ -188,6 +194,8 @@ export interface DriverAssignment {
   locked: boolean
   roster_ambiguous: boolean
   stops: AssignmentStopRoster[]
+  // True when `stops` is in the route's order.
+  stops_ordered?: boolean
 }
 
 export interface SchoolAssignment {
@@ -719,6 +727,22 @@ export interface RouteTemplate {
   active_until: string | null
   is_active: boolean
   required_qualifications: Qualification[]
+  // In visiting order.
+  stops?: RouteStop[]
+}
+
+export interface RouteStop {
+  position: number
+  stop_id: number
+  stop_label: string
+  location_lat: number
+  location_lon: number
+  minutes_from_start: number | null
+}
+
+export interface RouteStopWrite {
+  stop_id: number
+  minutes_from_start: number | null
 }
 
 export interface RouteTemplateCreate {

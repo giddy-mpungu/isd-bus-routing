@@ -239,6 +239,8 @@ class RunRead(BaseModel):
     buffer_minutes: int
     passenger_count: int
     required_qualifications: list[QualificationRead]
+    # The recurring route this run was generated from, if any.
+    route_template_id: int | None = None
 
 
 class RunUpdate(BaseModel):
@@ -273,6 +275,28 @@ class RouteTemplateCreate(BaseModel):
         return _validate_days_of_week(value)
 
 
+class RouteStopRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    position: int
+    stop_id: int
+    stop_label: str
+    location_lat: float
+    location_lon: float
+    minutes_from_start: int | None
+
+
+class RouteStopWrite(BaseModel):
+    stop_id: int
+    minutes_from_start: int | None = Field(default=None, ge=0, lt=1440)
+
+
+class RouteStopsUpdate(BaseModel):
+    """The route's whole stop list, in visiting order (replaces the old
+    one, so reordering is one request)."""
+
+    stops: list[RouteStopWrite] = Field(max_length=200)
+
+
 class RouteTemplateRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -287,6 +311,7 @@ class RouteTemplateRead(BaseModel):
     active_until: date | None
     is_active: bool
     required_qualifications: list[QualificationRead]
+    stops: list[RouteStopRead] = []
 
 
 class CrewTemplateCreate(BaseModel):
@@ -403,15 +428,19 @@ class AssignmentStatusUpdate(BaseModel):
 
 class AssignmentStopRoster(BaseModel):
     """One stop's worth of expected riders for a driver's assignment
-    (spec section 9: "Stops", "Authorized student information").
-    Deliberately an UNORDERED grouping, not a sequenced/optimized stop
-    order — this system has no stop-sequence model (see
-    docs/domain-model.md's "Not yet implemented", spec section 4.3's
-    same scope boundary). `stop_label` is None for students with no
-    `stop_id` set, grouped together rather than dropped."""
+    (spec section 9: "Stops", "Authorized student information"). When the
+    run's route has ordered stops, the list is in that order: `position`
+    is 1-based and `planned_minute` is the planned time (the run's start
+    plus the stop's minutes from start), and a stop with nobody riding
+    today is still listed. Otherwise it's an unordered grouping and both
+    are None. `stop_label` is None for students with no stop, and
+    `on_route` is False for riders whose stop isn't on the route."""
 
     stop_label: str | None
     student_names: list[str]
+    position: int | None = None
+    planned_minute: int | None = None
+    on_route: bool = True
 
 
 class DriverAssignmentRead(BaseModel):
@@ -436,6 +465,8 @@ class DriverAssignmentRead(BaseModel):
     # possibly-wrong roster.
     roster_ambiguous: bool
     stops: list[AssignmentStopRoster]
+    # True when `stops` follows the route's order.
+    stops_ordered: bool = False
 
 
 class SchoolAssignmentRead(BaseModel):

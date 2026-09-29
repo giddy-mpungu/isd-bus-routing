@@ -444,11 +444,52 @@ export function DriverPage() {
                   </p>
                 ) : a.stops.length === 0 ? (
                   <p>No riders expected today.</p>
+                ) : a.stops_ordered ? (
+                  <>
+                    <h3>Stops in order</h3>
+                    <ol className="driver-route-stops">
+                      {a.stops
+                        .filter((stop) => stop.on_route !== false)
+                        .map((stop) => (
+                          <li key={`${stop.position}-${stop.stop_label}`}>
+                            {stop.planned_minute != null && (
+                              <>
+                                <span className="driver-stop-time">
+                                  {formatMinuteOfDay(stop.planned_minute)}
+                                </span>{' '}
+                              </>
+                            )}
+                            <strong>{stop.stop_label}</strong>
+                            {': '}
+                            {stop.student_names.length > 0
+                              ? stop.student_names.join(', ')
+                              : 'nobody expected today'}
+                          </li>
+                        ))}
+                    </ol>
+                    {a.stops.some((stop) => stop.on_route === false) && (
+                      <>
+                        <p className="driver-run-roster-note">
+                          Also expected, at stops not on this route:
+                        </p>
+                        <ul>
+                          {a.stops
+                            .filter((stop) => stop.on_route === false)
+                            .map((stop) => (
+                              <li key={`off-${stop.stop_label ?? '__no_stop__'}`}>
+                                {stop.stop_label ?? 'No stop assigned'}:{' '}
+                                {stop.student_names.join(', ')}
+                              </li>
+                            ))}
+                        </ul>
+                      </>
+                    )}
+                  </>
                 ) : (
                   <>
                     <h3>Expected riders by stop</h3>
                     <p className="driver-run-roster-note">
-                      Not a route order — stops aren't sequenced yet.
+                      Not a route order: this run's route has no stop list yet.
                     </p>
                     <ul>
                       {a.stops.map((stop) => (

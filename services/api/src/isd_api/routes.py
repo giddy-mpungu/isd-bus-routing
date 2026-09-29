@@ -1,0 +1,95 @@
+"""Which run a student rides, and who rides a run (spec sections 3, 4, 9).
+
+A student belongs to a school; each school day has one or more runs per
+leg (AM or PM). Which of several runs a student rides is decided by their
+stop: the run whose recurring route (`RouteTemplate.stops`) includes it.
+
+  - One run on the leg: every riding student of the school is on it.
+  - Several runs: a student is on the run whose route includes their
+    stop. With no stop, a stop on no route, or a stop on more than one of
+    the leg's routes, they can't be placed (spec section 21: don't guess).
+  - A run with no route stops, on a leg with other runs, can't claim
+    anyone, so its rider list stays ambiguous (the behaviour before routes
+    existed).
+
+Riding means the student's default ridership, or that day's override.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+
+from sqlalchemy.orm import Session
+
+from isd_api.models import RideDirection, RidershipOverride, RouteStop, Run, Student
+
+
+def leg_runs(
+    db: Session, school_id: int, service_date: date, direction: RideDirection
+) -> list[Run]:
+    return (
+        db.query(Run)
+        .filter(
+            Run.school_id == school_id,
+            Run.service_date == service_date,
+            Run.direction == direction,
+        )
+        .order_by(Run.id)
+        .all()
+    )
+
+
+def route_stop_ids(db: Session, run: Run) -> set[int]:
+    if run.route_template_id is None:
+        return set()
+    return {
+        stop_id
+        for (stop_id,) in db.query(RouteStop.stop_id).filter(
+            RouteStop.route_template_id == run.route_template_id
+        )
+    }
+
+
+def run_for_student(
+    db: Session, student: Student, service_date: date, direction: RideDirection
+) -> tuple[Run | None, bool]:
+    """(the run this student rides, whether that's ambiguous)."""
+    runs = leg_runs(db, student.school_id, service_date, direction)
+    if not runs:
+        return None, False
+    if len(runs) == 1:
+        return runs[0], False
+    if student.stop_id is None:
+        return None, True
+    serving = [r for r in runs if student.stop_id in route_stop_ids(db, r)]
+    if len(serving) == 1:
+        return serving[0], False
+    return None, True
+
+
+def _riding(db: Session, students: list[Student], run: Run) -> list[Student]:
+    overrides = {
+        o.student_id: o.is_riding
+        for o in db.query(RidershipOverride).filter(
+            RidershipOverride.student_id.in_([s.id for s in students]),
+            RidershipOverride.service_date == run.service_date,
+            RidershipOverride.direction == run.direction,
+        )
+    }
+    return [s for s in students if overrides.get(s.id, s.default_ridership.value == "rides")]
+
+
+def riders_for_run(db: Session, run: Run) -> tuple[list[Student], bool]:
+    """(riding students on this run, whether the list is ambiguous).
+    Callers must not use the list when it's ambiguous."""
+    runs = leg_runs(db, run.school_id, run.service_date, run.direction)
+    students = db.query(Student).filter(Student.school_id == run.school_id).all()
+    if len(runs) <= 1:
+        return _riding(db, students, run), False
+    mine = route_stop_ids(db, run)
+    if not mine:
+        return [], True
+    others = set().union(*(route_stop_ids(db, r) for r in runs if r.id != run.id))
+    # A stop on this route and no other of the leg's routes.
+    placed = [s for s in students if s.stop_id in mine and s.stop_id not in others]
+    return _riding(db, placed, run), False

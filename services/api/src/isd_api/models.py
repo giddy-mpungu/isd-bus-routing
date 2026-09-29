@@ -649,6 +649,47 @@ class RouteTemplate(Base):
     required_qualifications: Mapped[list[Qualification]] = relationship(
         secondary=route_template_required_qualifications
     )
+    # The route's stops in the order the bus visits them (AM: stops, then
+    # school; PM: school, then stops). Runs generated from this template
+    # use it; see isd_api/routes.py.
+    stops: Mapped[list[RouteStop]] = relationship(
+        order_by="RouteStop.position", cascade="all, delete-orphan"
+    )
+
+
+class RouteStop(Base):
+    """One stop on a recurring route (spec sections 3, 9 "Stops"), at a
+    position in the route's order. `minutes_from_start` is the planned
+    time after the run starts (optional until routing computes it, Phase
+    3.4). A stop appears on a route at most once."""
+
+    __tablename__ = "route_stops"
+    __table_args__ = (
+        UniqueConstraint("route_template_id", "position", name="uq_route_stop_position"),
+        UniqueConstraint("route_template_id", "stop_id", name="uq_route_stop_once"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    route_template_id: Mapped[int] = mapped_column(
+        ForeignKey("route_templates.id"), nullable=False, index=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    stop_id: Mapped[int] = mapped_column(ForeignKey("stops.id"), nullable=False, index=True)
+    minutes_from_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    stop: Mapped[Stop] = relationship()
+
+    @property
+    def stop_label(self) -> str:
+        return self.stop.label
+
+    @property
+    def location_lat(self) -> float:
+        return self.stop.location_lat
+
+    @property
+    def location_lon(self) -> float:
+        return self.stop.location_lon
 
 
 class CrewTemplate(Base):

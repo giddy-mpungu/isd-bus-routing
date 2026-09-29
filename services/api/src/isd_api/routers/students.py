@@ -23,7 +23,6 @@ from isd_api.models import (
     RideDirection,
     RidershipOverride,
     Role,
-    Run,
     School,
     Stop,
     Student,
@@ -34,6 +33,7 @@ from isd_api.models import (
 from isd_api.ridership_rules import change_closed_reason, load_rules
 from isd_api.routers.runs import _resolve_riding_students
 from isd_api.routers.vehicles import _resolve_qualifications
+from isd_api.routes import run_for_student
 from isd_api.schemas import (
     BusPositionRead,
     EligibilityRead,
@@ -468,21 +468,15 @@ def get_bus_position(
             detail="You can only view your own family's bus position",
         )
 
-    runs = (
-        db.query(Run)
-        .filter(
-            Run.school_id == student.school_id,
-            Run.service_date == service_date,
-            Run.direction == direction,
-        )
-        .all()
-    )
-    if len(runs) == 0:
-        return BusPositionRead(available=False, ambiguous=False)
-    if len(runs) > 1:
+    # With several runs on this leg, the one whose route has the child's
+    # stop (isd_api/routes.py); still never a guess.
+    run, ambiguous = run_for_student(db, student, service_date, direction)
+    if ambiguous:
         return BusPositionRead(available=False, ambiguous=True)
+    if run is None:
+        return BusPositionRead(available=False, ambiguous=False)
 
-    assignment = db.query(Assignment).filter(Assignment.run_id == runs[0].id).one_or_none()
+    assignment = db.query(Assignment).filter(Assignment.run_id == run.id).one_or_none()
     if assignment is None:
         return BusPositionRead(available=False, ambiguous=False)
     position = (
@@ -510,24 +504,16 @@ def _bus_full_reason(
     db: Session, student: Student, service_date: date, direction: RideDirection
 ) -> str | None:
     """Spec section 4.5: a request to ride needs room on the bus. Checked
-    only when exactly one run serves this school, date and leg and it has
-    a bus assigned; with several runs the rider can't be attributed to one
-    bus (the same "don't guess" rule as the expected-riders count)."""
-    runs = (
-        db.query(Run)
-        .filter(
-            Run.school_id == student.school_id,
-            Run.service_date == service_date,
-            Run.direction == direction,
-        )
-        .all()
-    )
-    if len(runs) != 1 or runs[0].assignment is None:
+    when the student's run is known (one run on the leg, or the one whose
+    route has their stop) and it has a bus assigned; otherwise the rider
+    can't be attributed to one bus (the "don't guess" rule)."""
+    run, ambiguous = run_for_student(db, student, service_date, direction)
+    if ambiguous or run is None or run.assignment is None:
         return None
-    riders, ambiguous = _resolve_riding_students(db, runs[0])
+    riders, ambiguous = _resolve_riding_students(db, run)
     if ambiguous or student in riders:
         return None
-    capacity = runs[0].assignment.crew.vehicle.allowable_capacity()
+    capacity = run.assignment.crew.vehicle.allowable_capacity()
     if capacity is None or len(riders) < capacity:
         return None
     return (

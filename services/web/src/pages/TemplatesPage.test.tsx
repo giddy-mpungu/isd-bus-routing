@@ -23,6 +23,8 @@ vi.mock('../api/client', async (importOriginal) => {
     getDrivers: vi.fn(),
     getVehicles: vi.fn(),
     getQualifications: vi.fn(),
+    getStops: vi.fn(),
+    setRouteStops: vi.fn(),
     createRouteTemplate: vi.fn(),
     createCrewTemplate: vi.fn(),
     setRouteTemplateActive: vi.fn(),
@@ -93,6 +95,7 @@ function mockLoad() {
   vi.mocked(api.getDrivers).mockResolvedValue([driver])
   vi.mocked(api.getVehicles).mockResolvedValue([vehicle])
   vi.mocked(api.getQualifications).mockResolvedValue([lift])
+  vi.mocked(api.getStops).mockResolvedValue([])
 }
 
 describe('TemplatesPage', () => {
@@ -227,5 +230,36 @@ describe('TemplatesPage', () => {
     vi.mocked(api.getRouteTemplates).mockRejectedValue(new ApiError(403, 'Forbidden'))
     render(<TemplatesPage />)
     expect(await screen.findByRole('alert')).toHaveTextContent('Forbidden')
+  })
+
+  it("shows each route's stops and opens the stop editor", async () => {
+    vi.mocked(api.getRouteTemplates).mockResolvedValue([
+      {
+        ...(await api.getRouteTemplates())[0],
+        stops: [
+          {
+            position: 1,
+            stop_id: 5,
+            stop_label: 'Elm',
+            location_lat: 29.71,
+            location_lon: -95.41,
+            minutes_from_start: 0,
+          },
+          {
+            position: 2,
+            stop_id: 6,
+            stop_label: 'Oak',
+            location_lat: 29.72,
+            location_lon: -95.42,
+            minutes_from_start: 6,
+          },
+        ],
+      },
+    ])
+    render(<TemplatesPage />)
+    expect(await screen.findByText('Elm → Oak')).toBeInTheDocument()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Edit stops' }))
+    expect(await screen.findByRole('heading', { name: /Stops in order/ })).toBeInTheDocument()
   })
 })

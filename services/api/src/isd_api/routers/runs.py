@@ -12,7 +12,6 @@ from isd_api.models import (
     AssignmentStatus,
     AuditLogEntry,
     RideDirection,
-    RidershipOverride,
     Role,
     Run,
     School,
@@ -20,6 +19,7 @@ from isd_api.models import (
     User,
 )
 from isd_api.routers.vehicles import _resolve_qualifications
+from isd_api.routes import riders_for_run
 from isd_api.schemas import (
     ExpectedRidersRead,
     ObservedRunDurationRead,
@@ -211,42 +211,12 @@ def update_run(
 
 
 def _resolve_riding_students(db: Session, run: Run) -> tuple[list[Student], bool]:
-    """The override-with-default-fallback resolution shared by
-    GET /runs/{id}/expected-riders and the driver-app roster
-    (routers/schedule.py's list_my_assignments) — mirrors
-    routers/students.py's get_my_family exactly. Returns the riding
-    students and whether the result is ambiguous: True when more than
-    one Run exists for this run's (school_id, service_date, direction)
-    — this system has no student-to-specific-run assignment, so
-    ridership can't be correctly attributed to just one of several runs
-    serving the same school/leg that day (spec section 21: don't guess).
-    Callers must not use the students list when ambiguous is True."""
-    other_runs_same_leg = (
-        db.query(Run)
-        .filter(
-            Run.school_id == run.school_id,
-            Run.service_date == run.service_date,
-            Run.direction == run.direction,
-            Run.id != run.id,
-        )
-        .count()
-    )
-
-    students = db.query(Student).filter(Student.school_id == run.school_id).all()
-    overrides = {
-        o.student_id: o.is_riding
-        for o in db.query(RidershipOverride)
-        .filter(
-            RidershipOverride.student_id.in_([s.id for s in students]),
-            RidershipOverride.service_date == run.service_date,
-            RidershipOverride.direction == run.direction,
-        )
-        .all()
-    }
-    riding_students = [
-        s for s in students if overrides.get(s.id, s.default_ridership.value == "rides")
-    ]
-    return riding_students, other_runs_same_leg > 0
+    """Riding students on this run and whether that's ambiguous, shared by
+    GET /runs/{id}/expected-riders, the driver roster and the family
+    views. See isd_api/routes.py: with several runs on a leg, a student is
+    attributed by their stop being on exactly one run's route. Callers
+    must not use the students list when ambiguous is True."""
+    return riders_for_run(db, run)
 
 
 @router.get("/{run_id}/expected-riders", response_model=ExpectedRidersRead)
