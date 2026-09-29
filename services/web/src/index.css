@@ -806,6 +806,26 @@ fieldset.motion-lockable:disabled {
   font-variant-numeric: tabular-nums;
 }
 
+/* Today's trip (spec section 4.3): skipped stops and moved times. */
+.driver-route-stops li.is-skipped {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.driver-stop-planned {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.family-eta {
+  margin: 0.3rem 0;
+  font-weight: 600;
+}
+
+.family-eta.is-changed {
+  color: var(--warning-700);
+}
+
 /* An assignment whose crew became unavailable after it was made. */
 .availability-issue {
   margin-top: 0.4rem;

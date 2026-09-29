@@ -1082,6 +1082,33 @@ after the cheapest-arc first solution).
   the current duration and window, warnings, the estimate note, and
   **Apply this plan**.
 
+## The day's trip: skipped stops and arrival times (spec sections 4.3, 4.4, 18)
+
+Phase 3.5, PR #61. `isd_api/daily_trip.py` works out a run's trip for its
+day whenever it's read, from that day's ridership (defaults plus
+overrides), so a family's "not riding" takes effect at once and nothing is
+stored.
+
+- The route's planned order is kept (spec section 4.4: no last-minute
+  restructuring); a stop where nobody is riding that day is **skipped**.
+- **Arrival estimates**, with route planning's travel and loading model:
+  a morning trip counts back from reaching school at the planned time (the
+  run's start plus its duration), so skipping a stop can only make pickups
+  later, never earlier, and nobody misses the bus because someone else
+  isn't riding; an afternoon trip counts forward from leaving school, so
+  skipping earlier drop-offs brings later ones forward.
+- **Driver**: the ordered roster (`AssignmentStopRoster`) has `skipped` and
+  `eta_minute`; the tablet shows today's time, the planned time when it
+  differs, and "skip, nobody riding today".
+- **Families** (`FamilyMemberRead.am_eta` / `pm_eta`): today's estimated
+  time at the child's stop for each leg they ride, `changed` when it's 5+
+  minutes (`MATERIAL_CHANGE_MINUTES`) from the plan; the family page says
+  "Bus due at Oak & 5th around 07:08 (changed from 07:00 today)".
+- Not yet: pushing that change to families (spec section 4.3 "notify"),
+  which waits on the product owner's choice of channel (email/SMS/push);
+  re-sequencing a trip on the day (deliberately not done, section 4.4);
+  and section 4.4's route-lock settings.
+
 ## Stop proposals (spec section 3.1)
 
 Phase 3.3, PR #59, migration `b8e1f4a7c352`. `isd_api/stop_proposals.py`
@@ -1130,7 +1157,7 @@ otherwise it's flagged. Deterministic, and quick (400 students well under
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
 - Road-aware stop generation (spec §3.1's road width, traffic, speed limits, visibility, crossings): needs road-network data (PostGIS is deferred, ADR 0006). Walk-limit, spacing and hazard-aware proposals with staff approval are done ("Stop proposals", above)
-- Spec §4.3's actual behavior — stop-sequence route shortening ("if all riders at a stop don't ride, remove that stop, recalculate sequence/ETAs") — needs a `Route`/stop-sequence model this system has never built (ADR 0001 named the intent, never built). What *is* done: `GET /runs/{id}/expected-riders` computes a real rider count from `Student`/`RidershipOverride` as decision support for `Run.passenger_count` (see "Phase 6 entities" above) — closer to reality than the fully-manual guess it replaced, but not the stop-shortening optimization spec §4.3 describes
+- Spec §4.3's stop skipping and recalculated ETAs are done ("The day's trip", above); notifying families of a changed ETA waits on the notification channel decision
 - Ridership reporting cutoff / route-lock configuration (spec §4.4)
 - ~~A recurring `route` (template) table~~ — **built** as `RouteTemplate` (below, "Recurring templates"). Still true: there is no stop-sequence model, so spec §4.3's stop-shortening remains out of scope, and observed-run-duration (§20, above) still approximates route identity via (school_id, direction); `Run.route_template_id` now exists, so a future slice *could* key learning on the real template instead
 - Field trips (spec §12) is done end-to-end (`FieldTrip` + `/field-trips` UI, overnight trips, `DestinationProfile` §12.3, and observed-duration §20, above) — not yet: conflict-checking against training/maintenance (no such entity exists — a genuine gap, not an oversight)

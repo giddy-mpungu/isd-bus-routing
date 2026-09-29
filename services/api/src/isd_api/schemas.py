@@ -477,6 +477,10 @@ class AssignmentStopRoster(BaseModel):
     position: int | None = None
     planned_minute: int | None = None
     on_route: bool = True
+    # Today's trip (spec section 4.3): a route stop nobody rides from today
+    # is skipped; the others have an estimated arrival (minute of day).
+    skipped: bool = False
+    eta_minute: int | None = None
 
 
 class DriverAssignmentRead(BaseModel):
@@ -782,6 +786,17 @@ class RidershipOverrideUpdate(BaseModel):
     is_riding: bool
 
 
+class StopEtaRead(BaseModel):
+    """When the bus should reach a child's stop today (spec sections 4.3,
+    18 "ETA"): an estimate, flagged when it's moved materially from the
+    plan (isd_api/daily_trip.py)."""
+
+    stop_label: str
+    eta_minute: int
+    planned_minute: int | None
+    changed: bool
+
+
 class FamilyMemberRead(BaseModel):
     """Denormalized view of one linked child for a student/parent's own
     'my family' read — resolved names instead of raw ids, mirroring
@@ -800,6 +815,10 @@ class FamilyMemberRead(BaseModel):
     # (a past day, or today after the district's cutoff), with the reason.
     am_changes_closed: str | None = None
     pm_changes_closed: str | None = None
+    # Today's estimated arrival at the child's stop, per leg, when the
+    # child is riding and their run has a route with stops.
+    am_eta: StopEtaRead | None = None
+    pm_eta: StopEtaRead | None = None
 
 
 class AbsenceCreate(BaseModel):

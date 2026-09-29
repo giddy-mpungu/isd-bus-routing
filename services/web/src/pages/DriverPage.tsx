@@ -451,19 +451,32 @@ export function DriverPage() {
                       {a.stops
                         .filter((stop) => stop.on_route !== false)
                         .map((stop) => (
-                          <li key={`${stop.position}-${stop.stop_label}`}>
-                            {stop.planned_minute != null && (
+                          <li
+                            key={`${stop.position}-${stop.stop_label}`}
+                            className={stop.skipped ? 'is-skipped' : undefined}
+                          >
+                            {!stop.skipped && (stop.eta_minute ?? stop.planned_minute) != null && (
                               <>
                                 <span className="driver-stop-time">
-                                  {formatMinuteOfDay(stop.planned_minute)}
+                                  {formatMinuteOfDay((stop.eta_minute ?? stop.planned_minute)!)}
                                 </span>{' '}
                               </>
                             )}
                             <strong>{stop.stop_label}</strong>
                             {': '}
-                            {stop.student_names.length > 0
-                              ? stop.student_names.join(', ')
-                              : 'nobody expected today'}
+                            {stop.skipped
+                              ? 'skip, nobody riding today'
+                              : stop.student_names.length > 0
+                                ? stop.student_names.join(', ')
+                                : 'nobody expected today'}
+                            {stop.eta_minute != null &&
+                              stop.planned_minute != null &&
+                              stop.eta_minute !== stop.planned_minute && (
+                                <span className="driver-stop-planned">
+                                  {' '}
+                                  (planned {formatMinuteOfDay(stop.planned_minute)})
+                                </span>
+                              )}
                           </li>
                         ))}
                     </ol>

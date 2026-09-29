@@ -353,5 +353,7 @@ def test_status_update_response_also_includes_the_roster(client, admin_headers, 
             "position": None,
             "planned_minute": None,
             "on_route": True,
+            "skipped": False,
+            "eta_minute": None,
         }
     ]

@@ -128,6 +128,53 @@ describe('DriverPage', () => {
     expect(screen.getByText(/this run's route has no stop list yet/)).toBeInTheDocument()
   })
 
+  it("shows today's times, the planned time when it moved, and skipped stops", async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([
+      {
+        ...assignment,
+        stops_ordered: true,
+        stops: [
+          {
+            stop_label: 'Far',
+            student_names: ['Ana'],
+            position: 1,
+            planned_minute: 420,
+            eta_minute: 428,
+            skipped: false,
+            on_route: true,
+          },
+          {
+            stop_label: 'Mid',
+            student_names: [],
+            position: 2,
+            planned_minute: 430,
+            eta_minute: null,
+            skipped: true,
+            on_route: true,
+          },
+          {
+            stop_label: 'Near',
+            student_names: ['Cy'],
+            position: 3,
+            planned_minute: 436,
+            eta_minute: 436,
+            skipped: false,
+            on_route: true,
+          },
+        ],
+      },
+    ])
+    renderPage()
+    await screen.findByRole('heading', { name: 'Stops in order' })
+    const items = Array.from(document.querySelectorAll('.driver-route-stops li'))
+    expect(items.map((li) => li.textContent)).toEqual([
+      '07:08 Far: Ana (planned 07:00)',
+      'Mid: skip, nobody riding today',
+      '07:16 Near: Cy',
+    ])
+    expect(items[1]).toHaveClass('is-skipped')
+  })
+
   it("lists the route's stops in order with planned times", async () => {
     vi.mocked(api.getMyAssignments).mockResolvedValue([
       {
