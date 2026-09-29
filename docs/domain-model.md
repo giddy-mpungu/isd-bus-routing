@@ -1050,9 +1050,54 @@ Not yet: planned minutes are typed by hand; routing (Phase 3.4) will
 compute the order and times, and check them against the walk and ride
 limits.
 
+## Stop proposals (spec section 3.1)
+
+Phase 3.3, PR #59, migration `b8e1f4a7c352`. `isd_api/stop_proposals.py`
+proposes stops for a school's eligible students who have a home on file
+and no stop yet; staff approve, reject or relocate each one. Transportation
+admins only (`/stop-proposals`), since a proposal shows where students
+live; stop *labels* are generic ("Proposed stop 3", "Curb stop 1"), never a
+student's name, because drivers and families see them.
+
+What it accounts for: each student's walk limit by grade band (no grade:
+the strictest non-specialized limit), `TransportationRules.min_stop_spacing_miles`
+(new, default 0.1 mi, editable on the Rules tab), reusing existing stops,
+curb-to-curb stops for specialized transportation, and warnings within
+0.1 mi of a reported flooding, difficult-intersection, unsafe-turn,
+bad-turnaround or other hazard (spec section 8). What it can't: road
+width, traffic, speed limits, visibility, curves, hills, railroad
+crossings and safe crossings, which need road data the system doesn't
+have. Distances are straight-line, which never overstates a walk, and
+proposals aren't snapped to streets: staff check each on the map.
+
+Steps: curb stops; the nearest existing stop within each student's limit;
+then greedy grouping (the home from which the most remaining students are
+within their own limits, stop at the group's centre when everyone can
+still reach it, else at that home); a new stop closer than the minimum
+spacing to another new one joins it when all its students can walk there,
+otherwise it's flagged. Deterministic, and quick (400 students well under
+5 s in tests).
+
+- `POST /stop-proposals/generate {school_id}` replaces the school's
+  pending proposals (decided ones stay as history) and reports who was
+  left out: already have a stop, no home, not eligible. Audited.
+- `GET /stop-proposals?school_id=`: pending first. Each proposal's riders
+  have their walk and limit, and warnings (a walk over the limit, closer
+  than the minimum spacing to an existing stop, nearby hazards) are
+  worked out on read, so a relocated proposal is judged where it now is.
+- `PATCH /stop-proposals/{id}` relocates or renames a pending one (not an
+  existing-stop one: relocate that stop under Stops).
+- `POST .../approve` creates the stop (unless it's an existing one) and
+  gives it to each of the students who still has no stop; `.../reject`.
+  Both 409 once decided. Audited.
+- UI: Setup → Schools & students → Stop proposals: pick a school,
+  Propose stops, then each proposal with its students, walks and
+  warnings, Approve / Reject / Move on map, on a map with the school and
+  existing stops; decided ones under "Decided".
+
 ## Not yet implemented (later phases, listed so Phase 1 doesn't silently drop them)
 
-- Automated bus-stop generation from walking-distance/road-safety constraints (spec §3.1) — Phase 6, needs GIS/road-network data (PostGIS is deferred, ADR 0006)
+- Road-aware stop generation (spec §3.1's road width, traffic, speed limits, visibility, crossings): needs road-network data (PostGIS is deferred, ADR 0006). Walk-limit, spacing and hazard-aware proposals with staff approval are done ("Stop proposals", above)
 - Spec §4.3's actual behavior — stop-sequence route shortening ("if all riders at a stop don't ride, remove that stop, recalculate sequence/ETAs") — needs a `Route`/stop-sequence model this system has never built (ADR 0001 named the intent, never built). What *is* done: `GET /runs/{id}/expected-riders` computes a real rider count from `Student`/`RidershipOverride` as decision support for `Run.passenger_count` (see "Phase 6 entities" above) — closer to reality than the fully-manual guess it replaced, but not the stop-shortening optimization spec §4.3 describes
 - Ridership reporting cutoff / route-lock configuration (spec §4.4)
 - ~~A recurring `route` (template) table~~ — **built** as `RouteTemplate` (below, "Recurring templates"). Still true: there is no stop-sequence model, so spec §4.3's stop-shortening remains out of scope, and observed-run-duration (§20, above) still approximates route identity via (school_id, direction); `Run.route_template_id` now exists, so a future slice *could* key learning on the real template instead

@@ -15,6 +15,7 @@ export function TransportationRulesSection({ canEdit }: { canEdit: boolean }) {
   const [eligibility, setEligibility] = useState('')
   const [walk, setWalk] = useState<Record<string, string>>({})
   const [ride, setRide] = useState<Record<string, string>>({})
+  const [spacing, setSpacing] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -24,6 +25,7 @@ export function TransportationRulesSection({ canEdit }: { canEdit: boolean }) {
     setEligibility(String(r.eligibility_miles))
     setWalk(Object.fromEntries(BANDS.map((b) => [b, String(r.walk_miles[b])])))
     setRide(Object.fromEntries(BANDS.map((b) => [b, String(r.ride_minutes[b])])))
+    setSpacing(String(r.min_stop_spacing_miles))
   }
 
   useEffect(() => {
@@ -60,6 +62,7 @@ export function TransportationRulesSection({ canEdit }: { canEdit: boolean }) {
             GradeBand,
             number
           >,
+          min_stop_spacing_miles: Number(spacing),
         }),
       )
       setSaved(true)
@@ -93,6 +96,18 @@ export function TransportationRulesSection({ canEdit }: { canEdit: boolean }) {
             value={eligibility}
             disabled={!canEdit}
             onChange={(event) => setEligibility(event.target.value)}
+            required
+          />
+          <label htmlFor="rules-spacing">Minimum spacing between stops (miles)</label>
+          <input
+            id="rules-spacing"
+            type="number"
+            min="0"
+            max="2"
+            step="0.05"
+            value={spacing}
+            disabled={!canEdit}
+            onChange={(event) => setSpacing(event.target.value)}
             required
           />
           <table className="rules-table">

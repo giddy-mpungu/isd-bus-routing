@@ -20,6 +20,8 @@ from isd_api.models import (
     RideDirection,
     RidershipDefault,
     Role,
+    StopProposalKind,
+    StopProposalStatus,
     TripStatus,
 )
 
@@ -698,6 +700,7 @@ class TransportationRulesRead(BaseModel):
     eligibility_miles: float
     walk_miles: dict[str, float]
     ride_minutes: dict[str, int]
+    min_stop_spacing_miles: float
     band_labels: dict[str, str]
     is_default: bool
 
@@ -706,6 +709,8 @@ class TransportationRulesUpdate(BaseModel):
     eligibility_miles: float = Field(ge=0, le=25)
     walk_miles: dict[str, float]
     ride_minutes: dict[str, int]
+    # Optional for older clients; unchanged when left out.
+    min_stop_spacing_miles: float | None = Field(default=None, ge=0, le=2)
 
     @model_validator(mode="after")
     def _every_band(self) -> TransportationRulesUpdate:
@@ -1107,6 +1112,57 @@ class ReportRead(BaseModel):
     rows: list[list[str | int | float | None]]
     total_rows: int
     summary: dict[str, str | int | float | None]
+
+
+class GenerateStopProposals(BaseModel):
+    school_id: int
+
+
+class StopProposalRider(BaseModel):
+    student_id: int
+    full_name: str
+    # Straight-line miles from home to the proposed stop.
+    walk_miles: float | None
+    walk_limit_miles: float
+
+
+class StopProposalRead(BaseModel):
+    """A proposed stop with its students and live warnings (walks over the
+    limit, spacing, nearby reported hazards). Admin only."""
+
+    id: int
+    school_id: int
+    kind: StopProposalKind
+    status: StopProposalStatus
+    stop_id: int | None
+    label: str
+    location_lat: float
+    location_lon: float
+    riders: list[StopProposalRider]
+    warnings: list[str]
+    created_at: datetime
+    decided_at: datetime | None
+
+
+class StopProposalsGenerated(BaseModel):
+    proposals: list[StopProposalRead]
+    students_considered: int
+    # Students left out, and why.
+    already_have_stop: int
+    no_home: int
+    not_eligible: int
+
+
+class StopProposalUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=255)
+    location_lat: float | None = Field(default=None, ge=-90, le=90)
+    location_lon: float | None = Field(default=None, ge=-180, le=180)
+
+    @model_validator(mode="after")
+    def _both_or_neither(self) -> StopProposalUpdate:
+        if (self.location_lat is None) != (self.location_lon is None):
+            raise ValueError("send both location_lat and location_lon, or neither")
+        return self
 
 
 class AnnouncementCreate(BaseModel):

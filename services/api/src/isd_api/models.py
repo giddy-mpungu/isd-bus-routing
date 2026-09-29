@@ -382,9 +382,61 @@ class TransportationRules(Base):
     ride_minutes_middle: Mapped[int] = mapped_column(Integer, nullable=False)
     ride_minutes_high: Mapped[int] = mapped_column(Integer, nullable=False)
     ride_minutes_specialized: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Spec section 3.1 "minimum preferred spacing between stops".
+    min_stop_spacing_miles: Mapped[float] = mapped_column(nullable=False, default=0.1)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
+
+
+class StopProposalKind(enum.StrEnum):
+    # A new stop for a group of students.
+    NEW = "new"
+    # Students within walking distance of a stop that already exists.
+    EXISTING = "existing"
+    # A curb-to-curb stop at the home of a student with specialized
+    # transportation.
+    CURB = "curb"
+
+
+class StopProposalStatus(enum.StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class StopProposal(Base):
+    """A proposed stop (spec section 3.1) for transportation staff to
+    approve, reject or relocate; see isd_api/stop_proposals.py for how
+    they're made. Transportation admins only: a proposal is placed from
+    students' homes, so it shows where they live. Walking distances and
+    warnings are worked out when read, so a relocated proposal is judged
+    where it now is."""
+
+    __tablename__ = "stop_proposals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    school_id: Mapped[int] = mapped_column(ForeignKey("schools.id"), nullable=False, index=True)
+    kind: Mapped[StopProposalKind] = mapped_column(
+        SAEnum(StopProposalKind, native_enum=False, length=16), nullable=False
+    )
+    status: Mapped[StopProposalStatus] = mapped_column(
+        SAEnum(StopProposalStatus, native_enum=False, length=16),
+        nullable=False,
+        default=StopProposalStatus.PENDING,
+    )
+    # The existing stop (kind EXISTING), or the stop approval created.
+    stop_id: Mapped[int | None] = mapped_column(ForeignKey("stops.id"), nullable=True)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    location_lat: Mapped[float] = mapped_column(nullable=False)
+    location_lon: Mapped[float] = mapped_column(nullable=False)
+    student_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    school: Mapped[School] = relationship()
+    stop: Mapped[Stop | None] = relationship()
 
 
 # A parent/guardian's access to a student's data (spec section 17) —

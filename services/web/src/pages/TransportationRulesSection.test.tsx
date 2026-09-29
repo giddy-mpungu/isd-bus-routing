@@ -15,6 +15,7 @@ const defaults: TransportationRules = {
   eligibility_miles: 2,
   walk_miles: { prek: 0.25, elementary: 0.25, middle: 0.5, high: 0.5, specialized: 0 },
   ride_minutes: { prek: 45, elementary: 45, middle: 60, high: 60, specialized: 60 },
+  min_stop_spacing_miles: 0.1,
   band_labels: {
     prek: 'Pre-K',
     elementary: 'Elementary (K-5)',
@@ -41,6 +42,10 @@ describe('TransportationRulesSection', () => {
     const ride = screen.getByLabelText('Elementary (K-5) ride (minutes)')
     await user.clear(ride)
     await user.type(ride, '40')
+    const spacing = screen.getByLabelText('Minimum spacing between stops (miles)')
+    expect(spacing).toHaveValue(0.1)
+    await user.clear(spacing)
+    await user.type(spacing, '0.2')
     await user.click(screen.getByRole('button', { name: 'Save limits' }))
 
     await waitFor(() =>
@@ -48,6 +53,7 @@ describe('TransportationRulesSection', () => {
         eligibility_miles: 2,
         walk_miles: defaults.walk_miles,
         ride_minutes: { ...defaults.ride_minutes, elementary: 40 },
+        min_stop_spacing_miles: 0.2,
       }),
     )
     expect(await screen.findByText('Rules saved.')).toBeInTheDocument()

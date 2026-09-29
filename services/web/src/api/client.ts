@@ -79,6 +79,9 @@ import type {
   SisImportResult,
   Stop,
   StopCreate,
+  StopProposal,
+  StopProposalsGenerated,
+  StopProposalUpdate,
   StopUpdate,
   Student,
   StudentCreate,
@@ -672,4 +675,30 @@ export async function setRouteStops(
   stops: RouteStopWrite[],
 ): Promise<RouteStop[]> {
   return request<RouteStop[]>(`/route-templates/${templateId}/stops`, jsonInit('PUT', { stops }))
+}
+
+export async function generateStopProposals(schoolId: number): Promise<StopProposalsGenerated> {
+  return request<StopProposalsGenerated>(
+    '/stop-proposals/generate',
+    jsonInit('POST', { school_id: schoolId }),
+  )
+}
+
+export async function getStopProposals(schoolId: number): Promise<StopProposal[]> {
+  return request<StopProposal[]>(`/stop-proposals?school_id=${schoolId}`)
+}
+
+export async function updateStopProposal(
+  id: number,
+  patch: StopProposalUpdate,
+): Promise<StopProposal> {
+  return request<StopProposal>(`/stop-proposals/${id}`, jsonInit('PATCH', patch))
+}
+
+export async function approveStopProposal(id: number): Promise<StopProposal> {
+  return request<StopProposal>(`/stop-proposals/${id}/approve`, jsonInit('POST', {}))
+}
+
+export async function rejectStopProposal(id: number): Promise<StopProposal> {
+  return request<StopProposal>(`/stop-proposals/${id}/reject`, jsonInit('POST', {}))
 }

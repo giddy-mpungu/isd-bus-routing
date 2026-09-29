@@ -25,6 +25,7 @@ import { QualificationsSection } from './QualificationsSection'
 import { RidershipRulesSection } from './RidershipRulesSection'
 import { SchoolsSection } from './SchoolsSection'
 import { SisImportSection } from './SisImportSection'
+import { StopProposalsSection } from './StopProposalsSection'
 import { StopsSection } from './StopsSection'
 import { StudentsSection } from './StudentsSection'
 import { TransportationRulesSection } from './TransportationRulesSection'
@@ -344,6 +345,8 @@ export function SetupPage() {
           canEdit={canCreate}
           onChanged={loadAll}
         />
+
+        {canCreate && <StopProposalsSection schools={schools} stops={stops} onChanged={loadAll} />}
       </TabPanel>
 
       <TabPanel id="fleet" activeId={activeTab} idPrefix={TAB_PREFIX}>

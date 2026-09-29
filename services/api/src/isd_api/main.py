@@ -30,6 +30,7 @@ from isd_api.routers import (
     schedule,
     schools,
     sis_import,
+    stop_proposals,
     stops,
     students,
     templates,
@@ -76,6 +77,7 @@ app.include_router(crews.router)
 app.include_router(runs.router)
 app.include_router(schedule.router)
 app.include_router(stops.router)
+app.include_router(stop_proposals.router)
 app.include_router(students.router)
 app.include_router(absences.router)
 app.include_router(absences.all_absences_router)
