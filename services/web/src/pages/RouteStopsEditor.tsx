@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { RouteStop, RouteTemplate, School, Stop } from '../api/types'
+import type { RoutePlan, RouteStop, RouteTemplate, School, Stop } from '../api/types'
 import { LazyMapView } from '../components/LazyMapView'
 import type { MapMarker, MapTrack } from '../components/mapTypes'
 
@@ -26,7 +26,8 @@ export function RouteStopsEditor({
   template: RouteTemplate
   stops: Stop[]
   school: School | undefined
-  onSaved: (stops: RouteStop[]) => void
+  // The route's new duration too, when a plan was applied.
+  onSaved: (stops: RouteStop[], durationMinutes?: number) => void
   onClose: () => void
 }) {
   const [draft, setDraft] = useState<Draft[]>(() =>
@@ -38,8 +39,39 @@ export function RouteStopsEditor({
   const [toAdd, setToAdd] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [plan, setPlan] = useState<RoutePlan | null>(null)
+  const [isPlanning, setIsPlanning] = useState(false)
 
   const stopsById = useMemo(() => new Map(stops.map((s) => [s.id, s])), [stops])
+  // Planning works on the saved stops, so unsaved edits come first.
+  const saved = (template.stops ?? []).map((s) => `${s.stop_id}:${s.minutes_from_start ?? ''}`)
+  const dirty = draft.map((d) => `${d.stop_id}:${d.minutes}`).join(',') !== saved.join(',')
+
+  async function runPlan(apply: boolean) {
+    setError(null)
+    setIsPlanning(true)
+    try {
+      const result = await api.planRouteStops(template.id, apply)
+      setPlan(result)
+      if (apply) {
+        onSaved(
+          result.stops.map((s) => ({
+            position: s.position,
+            stop_id: s.stop_id,
+            stop_label: s.stop_label,
+            location_lat: stopsById.get(s.stop_id)?.location_lat ?? 0,
+            location_lon: stopsById.get(s.stop_id)?.location_lon ?? 0,
+            minutes_from_start: s.minutes_from_start,
+          })),
+          result.total_minutes,
+        )
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to plan the route.')
+    } finally {
+      setIsPlanning(false)
+    }
+  }
   const available = stops.filter((s) => !draft.some((d) => d.stop_id === s.id))
 
   function move(index: number, by: number) {
@@ -191,6 +223,59 @@ export function RouteStopsEditor({
         label={`Route map for template ${template.id}`}
         height={260}
       />
+      <div className="route-plan">
+        <button
+          type="button"
+          onClick={() => void runPlan(false)}
+          disabled={isPlanning || dirty || draft.length === 0}
+          title={dirty ? 'Save your changes first' : undefined}
+        >
+          {isPlanning ? 'Planning…' : 'Plan order and times'}
+        </button>
+        {dirty && draft.length > 0 && (
+          <span className="status"> Save your changes to plan them.</span>
+        )}
+        {plan && (
+          <div className="route-plan-result">
+            <h5>Planned route</h5>
+            <ol>
+              {plan.stops.map((s) => (
+                <li key={s.stop_id}>
+                  +{s.minutes_from_start} min <strong>{s.stop_label}</strong> ({s.riders} rider
+                  {s.riders === 1 ? '' : 's'}
+                  {s.ride_limit_minutes != null &&
+                    `, ${s.ride_minutes}-min ride, limit ${s.ride_limit_minutes}`}
+                  )
+                </li>
+              ))}
+            </ol>
+            <p>
+              Takes {plan.total_minutes} min (route now set to {plan.current_duration_minutes} min,
+              window {plan.window_minutes} min).
+            </p>
+            {!plan.fits_window && (
+              <p className="stop-proposal-warning">
+                ⚠ Too long for this route&apos;s window: widen the window or split the route.
+              </p>
+            )}
+            {plan.violations.map((v) => (
+              <p key={v} className="stop-proposal-warning">
+                ⚠ Over the ride limit: {v}
+              </p>
+            ))}
+            <p className="status">{plan.travel_estimate}</p>
+            {!plan.applied && (
+              <button
+                type="button"
+                onClick={() => void runPlan(true)}
+                disabled={isPlanning || !plan.fits_window}
+              >
+                Apply this plan
+              </button>
+            )}
+          </div>
+        )}
+      </div>
       <button type="button" onClick={() => void save()} disabled={isSaving}>
         {isSaving ? 'Saving…' : 'Save stops'}
       </button>

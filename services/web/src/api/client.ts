@@ -64,6 +64,7 @@ import type {
   RidershipOverrideUpdate,
   RidershipRules,
   RidershipRulesUpdate,
+  RoutePlan,
   RouteStop,
   RouteStopWrite,
   RouteTemplate,
@@ -701,4 +702,13 @@ export async function approveStopProposal(id: number): Promise<StopProposal> {
 
 export async function rejectStopProposal(id: number): Promise<StopProposal> {
   return request<StopProposal>(`/stop-proposals/${id}/reject`, jsonInit('POST', {}))
+}
+
+// Plans the saved stops' order and times; with apply, saves them and the
+// route's duration.
+export async function planRouteStops(templateId: number, apply: boolean): Promise<RoutePlan> {
+  return request<RoutePlan>(
+    `/route-templates/${templateId}/stops/plan`,
+    jsonInit('POST', { apply }),
+  )
 }

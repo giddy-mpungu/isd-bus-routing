@@ -316,6 +316,40 @@ class RouteTemplateRead(BaseModel):
     stops: list[RouteStopRead] = []
 
 
+class RoutePlanRequest(BaseModel):
+    # False: just show the plan. True: save its stop order and times, and
+    # set the route's duration to the plan's total.
+    apply: bool = False
+
+
+class PlannedRouteStop(BaseModel):
+    position: int
+    stop_id: int
+    stop_label: str
+    minutes_from_start: int
+    riders: int
+    ride_minutes: int
+    ride_limit_minutes: int | None
+
+
+class RoutePlanRead(BaseModel):
+    """A planned order and times for a route's stops (isd_solver.routing):
+    decision support, saved only when asked (spec section 21)."""
+
+    stops: list[PlannedRouteStop]
+    total_minutes: int
+    current_duration_minutes: int
+    # The route's window, and whether the planned total plus the route's
+    # buffer fits in it (a plan that doesn't can't be applied).
+    window_minutes: int
+    fits_window: bool
+    ride_limits_met: bool
+    violations: list[str]
+    applied: bool
+    # How travel time was estimated, so nobody mistakes it for road data.
+    travel_estimate: str
+
+
 class CrewTemplateCreate(BaseModel):
     driver_id: int
     vehicle_id: int

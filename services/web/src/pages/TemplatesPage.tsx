@@ -305,9 +305,17 @@ export function TemplatesPage() {
                             template={t}
                             stops={stops}
                             school={schoolsById.get(t.school_id)}
-                            onSaved={(saved: RouteStop[]) => {
+                            onSaved={(saved: RouteStop[], durationMinutes?: number) => {
                               setRouteTemplates((prev) =>
-                                prev.map((x) => (x.id === t.id ? { ...x, stops: saved } : x)),
+                                prev.map((x) =>
+                                  x.id === t.id
+                                    ? {
+                                        ...x,
+                                        stops: saved,
+                                        duration_minutes: durationMinutes ?? x.duration_minutes,
+                                      }
+                                    : x,
+                                ),
                               )
                               setEditingStopsId(null)
                             }}

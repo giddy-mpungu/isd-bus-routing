@@ -1046,9 +1046,41 @@ be worked out rather than stored.
   school then stops in the afternoon); the route table lists its stops.
   The driver app shows "Stops in order" with times.
 
-Not yet: planned minutes are typed by hand; routing (Phase 3.4) will
-compute the order and times, and check them against the walk and ride
-limits.
+Planned minutes can be typed by hand, or planned (Phase 3.4, below).
+
+## Route planning: stop order and times (spec sections 2, 3.1, 16)
+
+Phase 3.4, PR #60. `isd_solver.routing.plan_route` uses OR-Tools'
+vehicle-routing solver on one route: it visits every stop once, a morning
+route ending at the school and an afternoon route starting there, in the
+order that takes least time, with a hard constraint that each stop's
+students stay within their ride limit (in the morning from reaching their
+stop to reaching school; in the afternoon from leaving school to finishing
+their stop). With no order that meets every limit, it returns the fastest
+order and names the stops that break it. Deterministic (greedy descent
+after the cheapest-arc first solution).
+
+- Time at a stop (spec section 16): 60 s, plus 15 s per student, plus
+  180 s per student with an accommodation (a lift, an aide).
+- Travel: `straight_line_travel_seconds`, straight-line x 1.3 for roads
+  at 30 km/h (the solver's documented suburban default), in seconds so
+  short hops don't round to zero. Every response says so
+  (`travel_estimate`); road-network times need a travel-time matrix
+  (ORS matrix, later) rather than a directions call per pair of stops.
+- `POST /route-templates/{id}/stops/plan {apply}` (admins and dispatchers):
+  riders are the school's students assigned to the route's stops; each
+  stop's limit is the strictest of its students' bands (no grade: the
+  strictest non-specialized). Without `apply` nothing changes (spec
+  section 21: decision support). With it, the stop order, minutes from
+  start and the route's `duration_minutes` (the planned total) are saved
+  and audited as `stops_planned`; runs already generated keep their
+  duration. A plan whose total plus the route's buffer doesn't fit its
+  window is shown (`fits_window: false`) but refused on apply (409).
+- UI: Templates → Edit stops → **Plan order and times** (disabled while
+  the list has unsaved edits, since it plans the saved list): the planned
+  order with minutes, riders and rides against limits, the total against
+  the current duration and window, warnings, the estimate note, and
+  **Apply this plan**.
 
 ## Stop proposals (spec section 3.1)
 

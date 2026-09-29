@@ -12,8 +12,10 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from isd_solver import Location, StopDemand, plan_route
 from sqlalchemy.orm import Session
 
+from isd_api import eligibility
 from isd_api.audit import record as record_audit
 from isd_api.availability import resource_unavailable_reason
 from isd_api.db import get_db
@@ -29,6 +31,7 @@ from isd_api.models import (
     Run,
     School,
     Stop,
+    Student,
     User,
     Vehicle,
 )
@@ -37,6 +40,9 @@ from isd_api.schemas import (
     CrewTemplateCreate,
     CrewTemplateRead,
     GenerateFromTemplatesRead,
+    PlannedRouteStop,
+    RoutePlanRead,
+    RoutePlanRequest,
     RouteStopRead,
     RouteStopsUpdate,
     RouteTemplateCreate,
@@ -230,6 +236,149 @@ def set_route_stops(
     db.commit()
     db.refresh(template)
     return list(template.stops)
+
+
+TRAVEL_ESTIMATE = (
+    "Straight-line distance x 1.3 for roads, at 30 km/h, plus loading time at each stop. "
+    "An estimate for ordering stops, not road-network travel times."
+)
+
+
+@route_router.post("/{template_id}/stops/plan", response_model=RoutePlanRead)
+def plan_route_stops(
+    template_id: int,
+    payload: RoutePlanRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(*_WRITE_ROLES)),
+) -> RoutePlanRead:
+    """Spec sections 2, 3.1 and 16: puts the route's stops in the order that
+    takes least time, within the ride limit of the students at each stop,
+    and plans the minutes from start. Morning routes end at school,
+    afternoon routes start there. With `apply`, saves the order and times
+    and sets the route's duration to the plan's total (runs already
+    generated keep theirs)."""
+    template = _route_or_404(db, template_id)
+    if not template.stops:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Add stops to the route first"
+        )
+    rules = eligibility.load_rules(db)
+    fallback_ride = min(
+        v for band, v in rules.ride_minutes.items() if band != eligibility.SPECIALIZED
+    )
+    stop_ids = [rs.stop_id for rs in template.stops]
+    students = (
+        db.query(Student)
+        .filter(Student.school_id == template.school_id, Student.stop_id.in_(stop_ids))
+        .all()
+    )
+    by_stop: dict[int, list[Student]] = {}
+    for student in students:
+        by_stop.setdefault(student.stop_id or 0, []).append(student)
+
+    def ride_limit(student: Student) -> int:
+        band = eligibility.band_for(student)
+        return fallback_ride if band is None else rules.ride_minutes[band]
+
+    demands = []
+    for rs in template.stops:
+        riders = by_stop.get(rs.stop_id, [])
+        demands.append(
+            StopDemand(
+                stop_id=rs.stop_id,
+                location=Location(rs.stop.location_lat, rs.stop.location_lon),
+                riders=len(riders),
+                accommodation_riders=sum(1 for s in riders if s.accommodations),
+                max_ride_minutes=min((ride_limit(s) for s in riders), default=None),
+            )
+        )
+    plan = plan_route(
+        Location(template.school.location_lat, template.school.location_lon),
+        demands,
+        direction=template.direction.value,
+    )
+
+    labels = {rs.stop_id: rs.stop.label for rs in template.stops}
+    riders_at = {d.stop_id: d.riders for d in demands}
+    planned = [
+        PlannedRouteStop(
+            position=position,
+            stop_id=p.stop_id,
+            stop_label=labels[p.stop_id],
+            minutes_from_start=p.minutes_from_start,
+            riders=riders_at[p.stop_id],
+            ride_minutes=p.ride_minutes,
+            ride_limit_minutes=p.max_ride_minutes,
+        )
+        for position, p in enumerate(plan.stops, start=1)
+    ]
+    violations = [
+        f"{s.stop_label}: {s.ride_minutes}-minute ride (limit {s.ride_limit_minutes} min)"
+        for s in planned
+        if s.ride_limit_minutes is not None and s.ride_minutes > s.ride_limit_minutes
+    ]
+    current_duration = template.duration_minutes
+    window = template.window_latest - template.window_earliest
+    fits = plan.total_minutes + template.buffer_minutes <= window
+
+    if payload.apply and not fits:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"The planned route takes {plan.total_minutes} min, which with its "
+                f"{template.buffer_minutes}-min buffer doesn't fit its {window}-min window. "
+                "Widen the window or split the route."
+            ),
+        )
+    if payload.apply:
+        before = {
+            "stops": [
+                {"stop_id": rs.stop_id, "minutes_from_start": rs.minutes_from_start}
+                for rs in template.stops
+            ],
+            "duration_minutes": template.duration_minutes,
+        }
+        template.stops.clear()
+        db.flush()
+        for s in planned:
+            template.stops.append(
+                RouteStop(
+                    position=s.position,
+                    stop_id=s.stop_id,
+                    minutes_from_start=s.minutes_from_start,
+                )
+            )
+        template.duration_minutes = max(1, plan.total_minutes)
+        db.flush()
+        record_audit(
+            db,
+            entity_type="route_template",
+            entity_id=template.id,
+            action="stops_planned",
+            actor=current_user,
+            before_state=before,
+            after_state={
+                "stops": [
+                    {"stop_id": s.stop_id, "minutes_from_start": s.minutes_from_start}
+                    for s in planned
+                ],
+                "duration_minutes": template.duration_minutes,
+                "ride_limits_met": not violations,
+            },
+        )
+        db.commit()
+
+    return RoutePlanRead(
+        stops=planned,
+        total_minutes=plan.total_minutes,
+        current_duration_minutes=current_duration,
+        window_minutes=window,
+        fits_window=fits,
+        ride_limits_met=not violations,
+        violations=violations,
+        applied=payload.apply,
+        travel_estimate=TRAVEL_ESTIMATE,
+    )
 
 
 def _route_or_404(db: Session, template_id: int) -> RouteTemplate:

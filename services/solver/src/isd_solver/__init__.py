@@ -25,6 +25,13 @@ from isd_solver.domain import (
     osrm_deadhead_estimator,
     straight_line_deadhead_estimator,
 )
+from isd_solver.routing import (
+    PlannedStop,
+    RoutePlan,
+    StopDemand,
+    plan_route,
+    straight_line_travel_seconds,
+)
 from isd_solver.scheduler import (
     Assignment,
     Explanation,
@@ -55,4 +62,9 @@ __all__ = [
     "ObjectiveWeights",
     "SchedulingResult",
     "solve_multi_school_schedule",
+    "PlannedStop",
+    "RoutePlan",
+    "StopDemand",
+    "plan_route",
+    "straight_line_travel_seconds",
 ]
