@@ -836,6 +836,47 @@ fieldset.motion-lockable:disabled {
   font-size: 0.85rem;
 }
 
+/* Turn-by-turn directions on the driver's tablet (pages/DirectionsPanel.tsx). */
+.directions-panel {
+  margin: 0.6rem 0;
+}
+
+.directions-body {
+  margin-top: 0.5rem;
+}
+
+.directions-leg {
+  font-size: 1.2rem;
+  margin: 0.4rem 0;
+}
+
+.directions-steps {
+  font-size: 1.15rem;
+  padding-left: 1.4rem;
+}
+
+.directions-steps li {
+  margin-bottom: 0.4rem;
+}
+
+.directions-distance {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.directions-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.directions-attribution,
+.directions-summary {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 /* An assignment whose crew became unavailable after it was made. */
 .availability-issue {
   margin-top: 0.4rem;

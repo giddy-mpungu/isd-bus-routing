@@ -236,6 +236,16 @@ subdomain placeholder becomes a `*.` wildcard, e.g.
 `https://*.tiles.example.com`. A value that isn't an absolute http(s)
 URL or a same-origin `/path` fails the image build.
 
+## OpenRouteService key (optional)
+
+`ISD_API_ORS_API_KEY` in `.env` turns on road-network deadhead times for
+scheduling and turn-by-turn directions on the driver app. Without it the
+scheduler uses straight-line estimates and the driver app shows the stop
+order with a link to open each stop in the tablet's maps app. ORS's free
+tier allows about 2,000 directions requests a day; directions are cached
+for 10 minutes per run, so a fleet of a few dozen buses fits comfortably.
+The key stays on the server; tablets never see it.
+
 ## Address lookup (US Census geocoder)
 
 Transportation admins can look up student home addresses (Setup →

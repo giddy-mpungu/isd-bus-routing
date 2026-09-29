@@ -1,4 +1,4 @@
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 import { afterEach } from 'vitest'
 import '@testing-library/jest-dom/vitest'
 
@@ -10,3 +10,9 @@ import '@testing-library/jest-dom/vitest'
 afterEach(() => {
   cleanup()
 })
+
+// Maps load lazily (components/LazyMapView.tsx), and the first import of
+// Leaflet in a test file can take over the default 1 s under a full-suite
+// load. A longer wait for findBy*/waitFor keeps those tests from flaking;
+// it only matters when something is genuinely slow.
+configure({ asyncUtilTimeout: 5000 })

@@ -1133,6 +1133,34 @@ administrators) a planned and an expected time at the school, the delay,
 The school page shows "At school" / "Leaves school" with the expected time,
 the planned one when different, a "Running N min late" badge, and the basis.
 
+## Turn-by-turn directions (spec section 9)
+
+Phase 3.7, PR #63. `isd_solver.directions.ors_directions` asks
+OpenRouteService's `driving-hgv` profile for directions through a list of
+waypoints, with the bus's length, width, height and weight as
+restrictions, the district's hazard zones (the scheduler's
+`_HARD_AVOID_CATEGORIES`) and the size-restricted zones this bus exceeds as
+`avoid_polygons`, and `continue_straight` so the bus isn't sent to turn
+round at a stop. It returns the route line, the legs and the steps.
+
+- `GET /schedule/assignments/{id}/directions` (the run's driver,
+  dispatchers, transportation admins): waypoints are the day's trip
+  (skipped stops left out) then school in the morning, or school then the
+  stops in the afternoon; `from_lat`/`from_lon` starts at the tablet's
+  position. The ORS key never leaves the server. Results are cached for 10
+  minutes per run, waypoints and bus. Without a key, `available: false`
+  with the reason and the waypoints; an ORS failure is a 502 telling the
+  driver to follow the stop order.
+- Driver app: a **Directions** panel on each run with a route: one leg at
+  a time ("To Oak & 5th, 1.2 mi, 4 min") with its steps in large text,
+  Read aloud, Previous/Next stop, Route from my position, the route on a
+  map, ORS attribution, and an "Open … in the maps app" `geo:` link for
+  the next stop (which also works without a key).
+- Not covered (spec section 7, deferred): turn costs (preferring rights,
+  avoiding unprotected lefts), dead ends and approved turnarounds. ORS
+  doesn't take custom turn costs; that needs a routing engine the district
+  runs itself (for example OSRM with a bus profile).
+
 ## Stop proposals (spec section 3.1)
 
 Phase 3.3, PR #59, migration `b8e1f4a7c352`. `isd_api/stop_proposals.py`

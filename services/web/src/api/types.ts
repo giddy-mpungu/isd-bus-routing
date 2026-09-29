@@ -1012,3 +1012,29 @@ export interface PositionSample {
   location_lon: number
   recorded_at: string
 }
+
+// Turn-by-turn directions through a run's stops today.
+export interface DirectionsWaypoint {
+  label: string
+  lat: number
+  lon: number
+}
+
+export interface DirectionsResult {
+  available: boolean
+  reason: string | null
+  waypoints: DirectionsWaypoint[]
+  distance_m: number
+  duration_s: number
+  // [lat, lon] pairs along the route.
+  coordinates: [number, number][]
+  legs: { to_label: string; distance_m: number; duration_s: number }[]
+  steps: {
+    instruction: string
+    name: string
+    distance_m: number
+    duration_s: number
+    leg: number
+  }[]
+  attribution: string
+}

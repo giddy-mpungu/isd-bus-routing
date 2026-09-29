@@ -9,6 +9,13 @@ See docs/adr/ and docs/domain-model.md at the repo root for the
 reasoning behind the structure here.
 """
 
+from isd_solver.directions import (
+    Directions,
+    DirectionsError,
+    DirectionStep,
+    Leg,
+    ors_directions,
+)
 from isd_solver.domain import (
     Crew,
     DeadheadEstimationError,
@@ -67,4 +74,9 @@ __all__ = [
     "StopDemand",
     "plan_route",
     "straight_line_travel_seconds",
+    "DirectionStep",
+    "Directions",
+    "DirectionsError",
+    "Leg",
+    "ors_directions",
 ]
