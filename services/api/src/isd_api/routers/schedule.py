@@ -79,6 +79,7 @@ from isd_api.schemas import (
     ScheduleResult,
     SchoolAssignmentRead,
 )
+from isd_api.school_etas import LATE_MINUTES, school_eta
 from isd_api.security import get_current_user, require_role
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
@@ -869,9 +870,21 @@ def list_school_assignments(
             end_minute=a.end_minute,
             status=a.status,
             locked=a.locked,
+            **_school_eta_fields(db, a),
         )
         for a in assignments
     ]
+
+
+def _school_eta_fields(db: Session, assignment: Assignment) -> dict:
+    eta = school_eta(db, assignment)
+    return {
+        "planned_school_minute": eta.planned_minute,
+        "expected_school_minute": eta.expected_minute,
+        "delay_minutes": eta.delay_minutes,
+        "running_late": eta.delay_minutes >= LATE_MINUTES,
+        "eta_basis": eta.basis,
+    }
 
 
 @router.patch("/assignments/{assignment_id}/status", response_model=DriverAssignmentRead)

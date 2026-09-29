@@ -82,6 +82,16 @@ export function SchoolAdminPage() {
             <div className="school-admin-assignment-status">
               Status: <Badge tone={STATUS_TONES[a.status]}>{STATUS_LABELS[a.status]}</Badge>
             </div>
+            {a.expected_school_minute != null && a.planned_school_minute != null && (
+              <div className="school-admin-assignment-eta">
+                {a.direction === 'am' ? 'At school' : 'Leaves school'}:{' '}
+                <strong>{formatMinuteOfDay(a.expected_school_minute)}</strong>
+                {a.expected_school_minute !== a.planned_school_minute &&
+                  ` (planned ${formatMinuteOfDay(a.planned_school_minute)})`}{' '}
+                {a.running_late && <Badge tone="warning">Running {a.delay_minutes} min late</Badge>}{' '}
+                {a.eta_basis && <span className="school-admin-eta-basis">{a.eta_basis}</span>}
+              </div>
+            )}
           </li>
         ))}
       </ul>

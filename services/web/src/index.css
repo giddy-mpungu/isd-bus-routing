@@ -826,6 +826,16 @@ fieldset.motion-lockable:disabled {
   color: var(--warning-700);
 }
 
+/* When a bus is expected at the school (pages/SchoolAdminPage.tsx). */
+.school-admin-assignment-eta {
+  margin-top: 0.35rem;
+}
+
+.school-admin-eta-basis {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 /* An assignment whose crew became unavailable after it was made. */
 .availability-issue {
   margin-top: 0.4rem;

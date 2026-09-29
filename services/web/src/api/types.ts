@@ -215,6 +215,12 @@ export interface SchoolAssignment {
   end_minute: number
   status: AssignmentStatus
   locked: boolean
+  // At the school: arriving in the morning, leaving in the afternoon.
+  planned_school_minute?: number | null
+  expected_school_minute?: number | null
+  delay_minutes?: number
+  running_late?: boolean
+  eta_basis?: string | null
 }
 
 export interface SchoolUpdate {
