@@ -1109,6 +1109,30 @@ stored.
   re-sequencing a trip on the day (deliberately not done, section 4.4);
   and section 4.4's route-lock settings.
 
+## When buses are expected at school (spec section 17)
+
+Phase 3.6, PR #62. `isd_api/school_etas.py` gives each of a school's
+assignments (`GET /schedule/{date}/school-assignments`, school
+administrators) a planned and an expected time at the school, the delay,
+`running_late` (5+ minutes, `LATE_MINUTES`) and the basis, in words:
+
+- Morning is arriving at school (planned: start + run duration);
+  afternoon is leaving school for dismissal (planned: the start).
+- Live only for the district's today; another day shows "Planned".
+- "Arrived": a completed morning run, at its completion time.
+  "Left school": an afternoon run under way or done.
+- "Live GPS" (morning, under way, position no older than 5 minutes): now,
+  plus the drive from the bus through the stops still ahead to school.
+  Stops ahead are judged by where the bus is, not the clock: from the day's
+  active stop nearest the bus onwards, leaving it out when the bus is
+  already closer to school (a live check caught the clock-based version
+  treating every stop of a late bus as already passed).
+- "Not started yet": not under way after its start: late by the time since.
+- Otherwise "On plan". The expected time is never earlier than planned.
+
+The school page shows "At school" / "Leaves school" with the expected time,
+the planned one when different, a "Running N min late" badge, and the basis.
+
 ## Stop proposals (spec section 3.1)
 
 Phase 3.3, PR #59, migration `b8e1f4a7c352`. `isd_api/stop_proposals.py`

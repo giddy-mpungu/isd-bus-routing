@@ -44,6 +44,8 @@ class TripStop:
     # when the route has them) and today's estimate (None when skipped).
     planned_minute: int | None
     eta_minute: int | None
+    lat: float = 0.0
+    lon: float = 0.0
 
     @property
     def materially_changed(self) -> bool:
@@ -81,6 +83,8 @@ def daily_trip(db: Session, run: Run, start_minute: int) -> list[TripStop] | Non
             if rs.minutes_from_start is None
             else start_minute + rs.minutes_from_start,
             eta_minute=None,
+            lat=rs.stop.location_lat,
+            lon=rs.stop.location_lon,
         )
         for index, rs in enumerate(route.stops, start=1)
     ]

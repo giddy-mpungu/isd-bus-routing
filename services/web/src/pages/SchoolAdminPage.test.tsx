@@ -113,4 +113,33 @@ describe('SchoolAdminPage', () => {
       ),
     )
   })
+
+  it('shows when a bus is due at school and flags it running late', async () => {
+    vi.mocked(api.getSchoolAssignments).mockResolvedValue([
+      {
+        ...assignment,
+        planned_school_minute: 410,
+        expected_school_minute: 421,
+        delay_minutes: 11,
+        running_late: true,
+        eta_basis: 'Live GPS',
+      },
+      {
+        ...assignment,
+        id: 101,
+        direction: 'pm',
+        planned_school_minute: 900,
+        expected_school_minute: 900,
+        delay_minutes: 0,
+        running_late: false,
+        eta_basis: 'On plan',
+      },
+    ])
+    renderPage()
+    const late = await screen.findByText(/At school:/)
+    expect(late).toHaveTextContent('At school: 07:01 (planned 06:50) Running 11 min late Live GPS')
+    const onTime = screen.getByText(/Leaves school:/)
+    expect(onTime).toHaveTextContent('Leaves school: 15:00 On plan')
+    expect(onTime).not.toHaveTextContent('late')
+  })
 })

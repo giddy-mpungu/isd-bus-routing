@@ -528,6 +528,13 @@ class SchoolAssignmentRead(BaseModel):
     end_minute: int
     status: AssignmentStatus
     locked: bool
+    # At the school (isd_api/school_etas.py): arriving in the morning,
+    # leaving in the afternoon. Minutes of day.
+    planned_school_minute: int | None = None
+    expected_school_minute: int | None = None
+    delay_minutes: int = 0
+    running_late: bool = False
+    eta_basis: str | None = None
 
 
 class ScheduleRequest(BaseModel):
