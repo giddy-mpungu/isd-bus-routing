@@ -764,6 +764,48 @@ fieldset.motion-lockable:disabled {
   opacity: 0.55;
 }
 
+/* Route stops (pages/RouteStopsEditor.tsx) and the driver's ordered stops. */
+.route-stops-editor ol {
+  margin: 0.4rem 0 0.6rem;
+  padding-left: 1.4rem;
+}
+
+.route-stops-editor li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.route-stops-editor li label {
+  margin-top: 0;
+  font-size: 0.8rem;
+}
+
+.route-stops-editor li input {
+  width: 5rem;
+}
+
+.route-stop-label {
+  font-weight: 600;
+  min-width: 8rem;
+}
+
+.driver-route-stops {
+  padding-left: 1.4rem;
+  font-size: 1.05rem;
+}
+
+.driver-route-stops li {
+  margin-bottom: 0.35rem;
+}
+
+.driver-stop-time {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 /* An assignment whose crew became unavailable after it was made. */
 .availability-issue {
   margin-top: 0.4rem;

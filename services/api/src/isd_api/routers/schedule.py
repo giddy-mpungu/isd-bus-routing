@@ -57,6 +57,8 @@ from isd_api.models import (
     GeographicKnowledgeCategory,
     GeographicKnowledgeOverride,
     Role,
+    RouteTemplate,
+    Student,
     User,
 )
 from isd_api.models import Crew as DBCrew
@@ -721,24 +723,62 @@ def _assignment_read(db: Session, assignment: Assignment) -> AssignmentRead:
     return read
 
 
-def _stop_roster_for(db: Session, run: DBRun) -> tuple[bool, list[AssignmentStopRoster]]:
-    """Shared by list_my_assignments and update_assignment_status so a
-    driver's roster looks the same whether they just loaded their day
-    or just updated a status. Grouped by stop, not sequenced/ordered —
-    see AssignmentStopRoster's own docstring for why. Empty when
-    ambiguous (spec section 21: don't guess)."""
+def _stop_roster_for(
+    db: Session, run: DBRun, start_minute: int
+) -> tuple[bool, bool, list[AssignmentStopRoster]]:
+    """(ambiguous, ordered, stops) for the driver's roster, shared by
+    list_my_assignments and the status endpoints so it looks the same
+    either way. With route stops it follows the route's order with planned
+    times, listing stops nobody rides today too; otherwise it's grouped by
+    stop. Empty when ambiguous (spec section 21: don't guess)."""
     riding_students, ambiguous = _resolve_riding_students(db, run)
     if ambiguous:
-        return True, []
-    by_stop: dict[str | None, list[str]] = {}
+        return True, False, []
+    by_stop: dict[int | None, list[Student]] = {}
     for s in riding_students:
-        label = s.stop.label if s.stop is not None else None
-        by_stop.setdefault(label, []).append(s.full_name)
+        by_stop.setdefault(s.stop_id, []).append(s)
+
+    route = (
+        db.get(RouteTemplate, run.route_template_id) if run.route_template_id is not None else None
+    )
+    if route is not None and route.stops:
+        ordered = [
+            AssignmentStopRoster(
+                stop_label=rs.stop.label,
+                student_names=sorted(s.full_name for s in by_stop.pop(rs.stop_id, [])),
+                position=index,
+                planned_minute=None
+                if rs.minutes_from_start is None
+                else start_minute + rs.minutes_from_start,
+            )
+            for index, rs in enumerate(route.stops, start=1)
+        ]
+        # Riders whose stop isn't on this route (only possible when this is
+        # the leg's only run): shown, flagged, after the route.
+        leftovers = [
+            AssignmentStopRoster(
+                stop_label=students[0].stop.label if students[0].stop is not None else None,
+                student_names=sorted(s.full_name for s in students),
+                on_route=False,
+            )
+            for _, students in sorted(
+                by_stop.items(),
+                key=lambda kv: (
+                    kv[1][0].stop is None,
+                    kv[1][0].stop.label if kv[1][0].stop else "",
+                ),
+            )
+        ]
+        return False, True, ordered + leftovers
+
+    grouped: dict[str | None, list[str]] = {}
+    for s in riding_students:
+        grouped.setdefault(s.stop.label if s.stop is not None else None, []).append(s.full_name)
     stops = [
         AssignmentStopRoster(stop_label=label, student_names=sorted(names))
-        for label, names in sorted(by_stop.items(), key=lambda kv: (kv[0] is None, kv[0]))
+        for label, names in sorted(grouped.items(), key=lambda kv: (kv[0] is None, kv[0]))
     ]
-    return False, stops
+    return False, False, stops
 
 
 @router.get("/{service_date}/my-assignments", response_model=list[DriverAssignmentRead])
@@ -767,7 +807,7 @@ def list_my_assignments(
     )
     results = []
     for a in assignments:
-        ambiguous, stops = _stop_roster_for(db, a.run)
+        ambiguous, ordered, stops = _stop_roster_for(db, a.run, a.start_minute)
         results.append(
             DriverAssignmentRead(
                 id=a.id,
@@ -781,6 +821,7 @@ def list_my_assignments(
                 locked=a.locked,
                 roster_ambiguous=ambiguous,
                 stops=stops,
+                stops_ordered=ordered,
             )
         )
     return results
@@ -876,7 +917,7 @@ def update_assignment_status(
 
 
 def _driver_assignment_read(db: Session, assignment: Assignment) -> DriverAssignmentRead:
-    ambiguous, stops = _stop_roster_for(db, assignment.run)
+    ambiguous, ordered, stops = _stop_roster_for(db, assignment.run, assignment.start_minute)
     return DriverAssignmentRead(
         id=assignment.id,
         run_id=assignment.run_id,
@@ -889,6 +930,7 @@ def _driver_assignment_read(db: Session, assignment: Assignment) -> DriverAssign
         locked=assignment.locked,
         roster_ambiguous=ambiguous,
         stops=stops,
+        stops_ordered=ordered,
     )
 
 

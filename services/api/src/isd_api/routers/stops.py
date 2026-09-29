@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from isd_api.audit import record as record_audit
 from isd_api.db import get_db
-from isd_api.models import Role, Stop, Student, User
+from isd_api.models import Role, RouteStop, Stop, Student, User
 from isd_api.schemas import StopCreate, StopRead, StopUpdate
 from isd_api.security import require_role
 
@@ -109,6 +109,12 @@ def delete_stop(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"{in_use} student(s) are still assigned to this stop — reassign them first",
+        )
+    on_routes = db.query(RouteStop).filter(RouteStop.stop_id == stop_id).count()
+    if on_routes:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This stop is on {on_routes} route(s) — take it off them first",
         )
 
     record_audit(

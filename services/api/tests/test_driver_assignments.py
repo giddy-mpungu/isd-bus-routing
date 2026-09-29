@@ -346,4 +346,12 @@ def test_status_update_response_also_includes_the_roster(client, admin_headers, 
         json={"status": "in_progress"},
     )
     assert response.status_code == 200, response.text
-    assert response.json()["stops"] == [{"stop_label": "Elm St", "student_names": ["Ana"]}]
+    assert response.json()["stops"] == [
+        {
+            "stop_label": "Elm St",
+            "student_names": ["Ana"],
+            "position": None,
+            "planned_minute": None,
+            "on_route": True,
+        }
+    ]

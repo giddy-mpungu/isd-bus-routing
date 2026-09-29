@@ -24,9 +24,11 @@ from isd_api.models import (
     Driver,
     DriverAbsence,
     Role,
+    RouteStop,
     RouteTemplate,
     Run,
     School,
+    Stop,
     User,
     Vehicle,
 )
@@ -35,6 +37,8 @@ from isd_api.schemas import (
     CrewTemplateCreate,
     CrewTemplateRead,
     GenerateFromTemplatesRead,
+    RouteStopRead,
+    RouteStopsUpdate,
     RouteTemplateCreate,
     RouteTemplateRead,
     TemplateUpdate,
@@ -152,6 +156,88 @@ def update_route_template(
     )
     db.commit()
     db.refresh(template)
+    return template
+
+
+@route_router.get("/{template_id}/stops", response_model=list[RouteStopRead])
+def get_route_stops(
+    template_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role(*_WRITE_ROLES)),
+) -> list[RouteStop]:
+    return list(_route_or_404(db, template_id).stops)
+
+
+@route_router.put("/{template_id}/stops", response_model=list[RouteStopRead])
+def set_route_stops(
+    template_id: int,
+    payload: RouteStopsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(*_WRITE_ROLES)),
+) -> list[RouteStop]:
+    """Spec sections 3 and 9: the route's stops, in the order the bus
+    visits them. Replaces the whole list. Planned minutes from start, where
+    given, must not go backwards and must fit in the route's duration."""
+    template = _route_or_404(db, template_id)
+    ids = [s.stop_id for s in payload.stops]
+    if len(set(ids)) != len(ids):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="A stop can appear on a route only once"
+        )
+    found = {s.id for s in db.query(Stop).filter(Stop.id.in_(ids))} if ids else set()
+    missing = [i for i in ids if i not in found]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown stop id(s): {missing}"
+        )
+    times = [s.minutes_from_start for s in payload.stops if s.minutes_from_start is not None]
+    if any(later < earlier for earlier, later in zip(times, times[1:], strict=False)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Planned minutes from start can't go backwards along the route",
+        )
+    if times and times[-1] > template.duration_minutes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"A stop is planned after the route's {template.duration_minutes}-minute duration"
+            ),
+        )
+
+    before = [
+        {"stop_id": s.stop_id, "minutes_from_start": s.minutes_from_start} for s in template.stops
+    ]
+    template.stops.clear()
+    db.flush()
+    for position, item in enumerate(payload.stops, start=1):
+        template.stops.append(
+            RouteStop(
+                position=position,
+                stop_id=item.stop_id,
+                minutes_from_start=item.minutes_from_start,
+            )
+        )
+    db.flush()
+    record_audit(
+        db,
+        entity_type="route_template",
+        entity_id=template.id,
+        action="stops_updated",
+        actor=current_user,
+        before_state={"stops": before},
+        after_state={"stops": [s.model_dump() for s in payload.stops]},
+    )
+    db.commit()
+    db.refresh(template)
+    return list(template.stops)
+
+
+def _route_or_404(db: Session, template_id: int) -> RouteTemplate:
+    template = db.get(RouteTemplate, template_id)
+    if template is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Route template not found"
+        )
     return template
 
 
