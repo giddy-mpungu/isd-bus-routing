@@ -1,7 +1,7 @@
 // Map data shapes, kept apart from MapView so pages can use them without
 // pulling Leaflet into the main bundle (MapView loads lazily).
 
-export type MarkerTone = 'bus' | 'school' | 'stop' | 'pick' | 'approx'
+export type MarkerTone = 'bus' | 'school' | 'stop' | 'pick' | 'approx' | 'closure'
 
 // A line through points in order, e.g. a bus's GPS track for the day.
 export interface MapTrack {

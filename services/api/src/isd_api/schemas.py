@@ -10,6 +10,7 @@ from isd_api.models import (
     AnnouncementAudience,
     AnnouncementCategory,
     AssignmentStatus,
+    ClosureKind,
     DispatchTaskKind,
     DriverReportType,
     GeocodeSource,
@@ -507,6 +508,9 @@ class DriverAssignmentRead(BaseModel):
     stops: list[AssignmentStopRoster]
     # True when `stops` follows the route's order.
     stops_ordered: bool = False
+    # Road closures in force near today's trip (spec section 10); the
+    # directions already route around them.
+    closure_notes: list[str] = []
 
 
 class SchoolAssignmentRead(BaseModel):
@@ -574,6 +578,46 @@ class DirectionsRead(BaseModel):
     legs: list[DirectionsLeg] = []
     steps: list[DirectionsStepRead] = []
     attribution: str = "Directions © openrouteservice.org | Map data © OpenStreetMap contributors"
+
+
+class RoadClosureCreate(BaseModel):
+    kind: ClosureKind
+    note: str = Field(min_length=1, max_length=500)
+    location_lat: float = Field(ge=-90, le=90)
+    location_lon: float = Field(ge=-180, le=180)
+    radius_m: int = Field(default=150, ge=25, le=3000)
+    # Defaults to now; no end means until cleared.
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+
+
+class RoadClosureUpdate(BaseModel):
+    note: str | None = Field(default=None, min_length=1, max_length=500)
+    radius_m: int | None = Field(default=None, ge=25, le=3000)
+    # An explicit null makes it open-ended.
+    ends_at: datetime | None = None
+
+
+class ClosureImpactRead(BaseModel):
+    assignment_id: int
+    description: str
+    # A stop of the run's trip that's inside the closure, if any.
+    stop_inside: str | None
+
+
+class RoadClosureRead(BaseModel):
+    id: int
+    kind: ClosureKind
+    note: str
+    location_lat: float
+    location_lon: float
+    radius_m: int
+    starts_at: datetime
+    ends_at: datetime | None
+    cleared: bool
+    active: bool
+    # Today's runs whose trip passes near it (only while it's active).
+    affected_runs: list[ClosureImpactRead] = []
 
 
 class ScheduleRequest(BaseModel):

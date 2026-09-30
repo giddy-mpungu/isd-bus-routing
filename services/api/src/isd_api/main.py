@@ -26,6 +26,7 @@ from isd_api.routers import (
     qualifications,
     reports,
     ridership_rules,
+    road_closures,
     runs,
     schedule,
     schools,
@@ -96,6 +97,7 @@ app.include_router(audit_log.router)
 app.include_router(sis_import.router)
 app.include_router(optimization_settings.router)
 app.include_router(ridership_rules.router)
+app.include_router(road_closures.router)
 app.include_router(transportation_rules.router)
 app.include_router(templates.route_router)
 app.include_router(templates.crew_router)

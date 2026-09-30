@@ -7,6 +7,7 @@ import { LazyMapView } from '../components/LazyMapView'
 import { NO_TRACKS, type MapMarker, type MapTrack } from '../components/mapTypes'
 import { AlertsPanel } from './AlertsPanel'
 import { DispatchTasksSection } from './DispatchTasksSection'
+import { RoadClosuresSection } from './RoadClosuresSection'
 import type {
   Absence,
   AbsenceReason,
@@ -997,6 +998,8 @@ export function SchedulePage() {
           </form>
         </div>
       </section>
+
+      <RoadClosuresSection schools={schools} />
 
       <DispatchTasksSection
         serviceDate={serviceDate}

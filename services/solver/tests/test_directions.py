@@ -141,3 +141,33 @@ def test_waypoints_and_key_are_checked_before_calling():
     with pytest.raises(ValueError):
         ors_directions("key", [A] * 51, Vehicle(id=1), http_post=post)
     assert calls == []
+
+
+def test_a_closure_becomes_a_ring_of_its_radius_around_its_centre():
+    from isd_solver import area_polygon
+
+    centre = Location(29.72, -95.40)
+    ring = area_polygon(centre, 500, sides=12)
+    assert len(ring) == 13 and ring[0] == ring[-1]
+    # Every corner about 500 m from the centre.
+    for lon, lat in ring[:-1]:
+        dy = (lat - centre.lat) * 111_320
+        dx = (lon - centre.lon) * 111_320 * 0.8686  # cos(29.72 degrees)
+        assert abs((dx * dx + dy * dy) ** 0.5 - 500) < 5
+    with pytest.raises(ValueError):
+        area_polygon(centre, 0)
+
+
+def test_closures_are_sent_as_areas_to_avoid():
+    post, calls = fake()
+    ors_directions(
+        "key",
+        [A, C],
+        Vehicle(id="1"),
+        avoid_points=[Location(29.705, -95.40)],
+        avoid_areas=[(Location(29.72, -95.40), 300.0), (Location(29.73, -95.41), 150.0)],
+        http_post=post,
+    )
+    polygons = calls[0]["body"]["options"]["avoid_polygons"]
+    # The standing hazard plus the two closures.
+    assert polygons["type"] == "MultiPolygon" and len(polygons["coordinates"]) == 3

@@ -10,13 +10,15 @@ Critical:
   - a run or dispatch task not started `START_GRACE_MINUTES` after its
     start time, or marked no-show,
   - a field trip departing that day with no driver or no bus,
-  - an incident report.
+  - an incident report,
+  - a stop of a run's trip inside a road closure in force (spec section 10).
 Warning:
   - work not yet acknowledged within `ACK_WARNING_MINUTES` of its start,
   - work still under way `FINISH_GRACE_MINUTES` after its planned end,
   - no GPS for `GPS_STALE_MINUTES` from a bus whose run is under way,
   - a field trip past its expected return with no return recorded,
-  - a vehicle defect report.
+  - a vehicle defect report,
+  - a run's trip passing near a road closure in force (its directions avoid it).
 
 Time-based checks use the district's clock (`ridership_rules`). For
 today they compare with the current time. A past day is treated as over,
@@ -31,7 +33,7 @@ from datetime import UTC, date, datetime
 
 from sqlalchemy.orm import Session
 
-from isd_api import ridership_rules
+from isd_api import closures, ridership_rules
 from isd_api.assignment_states import LABELS, TERMINAL, UNDERWAY
 from isd_api.availability import assignment_availability_issue, trip_return, trip_windows
 from isd_api.models import (
@@ -313,6 +315,40 @@ def day_alerts(db: Session, service_date: date, now: datetime | None = None) -> 
                     today_window[1],
                 )
             )
+
+    # Spec section 10: runs whose trip passes near a closure in force. Only
+    # for today: that's what "in force" is about.
+    if is_today:
+        in_force = closures.active_now(db, now)
+        for a in assignments:
+            if a.status in TERMINAL:
+                continue
+            for impact in closures.impacts(db, a, in_force):
+                label = f"{_run_label(a.run)} on {a.crew.vehicle.label}"
+                what = closures.describe(impact.closure)
+                if impact.stop_inside is not None:
+                    alerts.append(
+                        Alert(
+                            "closure_at_stop",
+                            CRITICAL,
+                            f"The {impact.stop_inside} stop of {label} is inside a closure "
+                            f"({what}): arrange another pick-up point",
+                            "assignment",
+                            a.id,
+                            a.start_minute,
+                        )
+                    )
+                else:
+                    alerts.append(
+                        Alert(
+                            "road_closure",
+                            WARNING,
+                            f"{label} passes near a closure ({what}); its directions avoid it",
+                            "assignment",
+                            a.id,
+                            a.start_minute,
+                        )
+                    )
 
     for report in (
         db.query(DriverReport)

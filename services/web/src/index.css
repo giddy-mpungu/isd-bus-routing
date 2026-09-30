@@ -877,6 +877,27 @@ fieldset.motion-lockable:disabled {
   font-size: 0.85rem;
 }
 
+/* Road closures (spec section 10). */
+.map-pin-closure .map-pin-dot {
+  background: var(--danger-600);
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+
+.driver-closure {
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.85rem;
+  border: 2px solid var(--danger-600);
+  border-radius: var(--radius-sm);
+  background: var(--danger-50);
+  font-size: 1.05rem;
+}
+
+.driver-closure ul {
+  margin: 0.3rem 0 0;
+  padding-left: 1.2rem;
+}
+
 /* An assignment whose crew became unavailable after it was made. */
 .availability-issue {
   margin-top: 0.4rem;

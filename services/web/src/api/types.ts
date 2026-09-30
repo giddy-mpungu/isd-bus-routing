@@ -200,6 +200,8 @@ export interface DriverAssignment {
   stops: AssignmentStopRoster[]
   // True when `stops` is in the route's order.
   stops_ordered?: boolean
+  // Road closures in force near today's trip; directions avoid them.
+  closure_notes?: string[]
 }
 
 export interface SchoolAssignment {
@@ -1037,4 +1039,38 @@ export interface DirectionsResult {
     leg: number
   }[]
   attribution: string
+}
+
+// Spec section 10: temporary road closures to route around.
+export type ClosureKind =
+  | 'road_closed'
+  | 'collision'
+  | 'construction'
+  | 'flooding'
+  | 'police_activity'
+  | 'severe_congestion'
+  | 'other'
+
+export interface RoadClosure {
+  id: number
+  kind: ClosureKind
+  note: string
+  location_lat: number
+  location_lon: number
+  radius_m: number
+  starts_at: string
+  ends_at: string | null
+  cleared: boolean
+  active: boolean
+  affected_runs: { assignment_id: number; description: string; stop_inside: string | null }[]
+}
+
+export interface RoadClosureCreate {
+  kind: ClosureKind
+  note: string
+  location_lat: number
+  location_lon: number
+  radius_m: number
+  starts_at?: string | null
+  ends_at?: string | null
 }

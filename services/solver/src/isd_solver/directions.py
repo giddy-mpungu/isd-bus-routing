@@ -5,14 +5,18 @@ heavy-goods-vehicle profile.
 The same bus-specific inputs as deadhead estimates (spec sections 6, 8):
 the vehicle's length, width, height and weight as ORS restrictions, and
 the district's hazard zones and the size-restricted zones this vehicle
-exceeds as areas to avoid. `continue_straight` asks ORS not to turn round
-at a stop (part of spec section 7's "prohibit or heavily penalize
+exceeds as areas to avoid. `avoid_areas` are temporary closures (spec
+section 10: a crash, a flooded road), each a centre and radius; the
+alternate route ORS finds keeps the heavy-vehicle profile and the bus's
+dimensions, so it still suits a bus. `continue_straight` asks ORS not to
+turn round at a stop (part of spec section 7's "prohibit or heavily penalize
 U-turns"; a full turn-cost model needs a routing graph this system
 doesn't own).
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -59,6 +63,34 @@ class Directions:
     steps: list[DirectionStep]
 
 
+def area_polygon(center: Location, radius_m: float, sides: int = 12) -> list[list[float]]:
+    """A closed GeoJSON ring ([lon, lat] pairs) approximating a circle of
+    `radius_m` around `center`: how a temporary closure (spec section 10)
+    becomes an area for ORS to avoid."""
+    if radius_m <= 0:
+        raise ValueError("radius_m must be > 0")
+    lat_deg = radius_m / 111_320.0
+    lon_deg = radius_m / (111_320.0 * max(math.cos(math.radians(center.lat)), 1e-6))
+    ring = [
+        [
+            round(center.lon + lon_deg * math.cos(2 * math.pi * i / sides), 7),
+            round(center.lat + lat_deg * math.sin(2 * math.pi * i / sides), 7),
+        ]
+        for i in range(sides)
+    ]
+    return [*ring, ring[0]]
+
+
+def areas_geojson(areas: list[tuple[Location, float]]) -> dict | None:
+    """A MultiPolygon of the given (center, radius_m) areas, or None."""
+    if not areas:
+        return None
+    return {
+        "type": "MultiPolygon",
+        "coordinates": [[area_polygon(center, radius)] for center, radius in areas],
+    }
+
+
 def vehicle_restrictions(vehicle: Vehicle) -> dict:
     """ORS `profile_params.restrictions` for the vehicle's dimensions."""
     restrictions: dict = {}
@@ -79,6 +111,7 @@ def ors_directions(
     vehicle: Vehicle,
     *,
     avoid_points: list[Location] | None = None,
+    avoid_areas: list[tuple[Location, float]] | None = None,
     size_restrictions: tuple[SizeRestriction, ...] = (),
     base_url: str = "https://api.openrouteservice.org",
     profile: str = "driving-hgv",
@@ -94,8 +127,11 @@ def ors_directions(
 
     violated = [z.location for z in size_restrictions if z.violated_by(vehicle)]
     avoid = _merge_avoid_polygons(
-        avoid_polygons_geojson(list(avoid_points or [])) if avoid_points else None,
-        avoid_polygons_geojson(violated) if violated else None,
+        _merge_avoid_polygons(
+            avoid_polygons_geojson(list(avoid_points or [])) if avoid_points else None,
+            avoid_polygons_geojson(violated) if violated else None,
+        ),
+        areas_geojson(list(avoid_areas or [])),
     )
     body: dict = {
         "coordinates": [[w.lon, w.lat] for w in waypoints],

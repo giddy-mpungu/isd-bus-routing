@@ -14,6 +14,8 @@ from isd_solver.directions import (
     DirectionsError,
     DirectionStep,
     Leg,
+    area_polygon,
+    areas_geojson,
     ors_directions,
 )
 from isd_solver.domain import (
@@ -28,6 +30,7 @@ from isd_solver.domain import (
     TimeWindow,
     Vehicle,
     avoid_polygons_geojson,
+    merge_avoid_polygons,
     ors_deadhead_estimator,
     osrm_deadhead_estimator,
     straight_line_deadhead_estimator,
@@ -60,6 +63,7 @@ __all__ = [
     "TimeWindow",
     "Vehicle",
     "avoid_polygons_geojson",
+    "merge_avoid_polygons",
     "ors_deadhead_estimator",
     "osrm_deadhead_estimator",
     "straight_line_deadhead_estimator",
@@ -79,4 +83,6 @@ __all__ = [
     "DirectionsError",
     "Leg",
     "ors_directions",
+    "area_polygon",
+    "areas_geojson",
 ]
