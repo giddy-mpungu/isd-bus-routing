@@ -10,7 +10,7 @@ from tests.conftest import auth_headers, login, make_user
 def _create_user(client, admin_headers, **overrides):
     payload = {
         "email": "new@example.org",
-        "password": "password123",
+        "password": "route-pass-123",
         "full_name": "New Person",
         "role": "dispatcher",
     }
@@ -33,7 +33,7 @@ def test_update_user_changes_role_and_audits(client, admin_headers, db_session):
 
 def test_deactivating_a_user_blocks_them_immediately(client, admin_headers):
     user = _create_user(client, admin_headers, email="deactivate-me@example.org")
-    token = login(client, email="deactivate-me@example.org")
+    token = login(client, email="deactivate-me@example.org", password="route-pass-123")
     assert client.get("/users/me", headers=auth_headers(token)).status_code == 200
 
     deactivated = client.patch(
@@ -54,7 +54,7 @@ def test_reactivating_a_user_restores_access(client, admin_headers):
         f"/users/{user['id']}", headers=admin_headers, json={"is_active": True}
     )
     assert reactivated.json()["is_active"] is True
-    token = login(client, email="restore-me@example.org")
+    token = login(client, email="restore-me@example.org", password="route-pass-123")
     assert client.get("/users/me", headers=auth_headers(token)).status_code == 200
 
 
@@ -138,7 +138,7 @@ def test_create_user_validates_driver_school_student_ids(client, admin_headers):
         headers=admin_headers,
         json={
             "email": "a@example.org",
-            "password": "password123",
+            "password": "route-pass-123",
             "full_name": "A",
             "role": "driver",
             "driver_id": 999999,

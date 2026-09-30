@@ -246,6 +246,12 @@ class User(Base):
         ForeignKey("students.id"), unique=True, nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    # Bumped whenever the password changes: every token carries the value
+    # it was issued under (claim "tv"), so a change or reset signs the
+    # account out everywhere else (security.get_current_user).
+    token_version: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
 
     driver: Mapped[Driver | None] = relationship(back_populates="user")
     guardian_of: Mapped[list[Student]] = relationship(
@@ -1184,6 +1190,22 @@ class AuditLogEntry(Base):
     before_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     after_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class PasswordResetToken(Base):
+    """A one-time link to set a new password (Phase 5.1). Only the token's
+    SHA-256 hash is kept; see isd_api/passwords.py."""
+
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The admin who issued it; None once self-service email resets exist.
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
 class RevokedToken(Base):

@@ -34,12 +34,31 @@ class Token(BaseModel):
 
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
+    # Checked against isd_api.passwords.policy_problem by the router.
+    password: str
     full_name: str
     role: Role
     driver_id: int | None = None
     school_id: int | None = None
     student_id: int | None = None
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class PasswordReset(BaseModel):
+    token: str = Field(min_length=1, max_length=200)
+    new_password: str
+
+
+class ResetLinkRead(BaseModel):
+    """A one-time link to set a new password. The token is in the URL
+    fragment, which browsers never send to a server or in a Referer."""
+
+    reset_path: str
+    expires_at: datetime
 
 
 class UserRead(BaseModel):
@@ -57,12 +76,9 @@ class UserRead(BaseModel):
 
 class UserUpdate(BaseModel):
     """spec section 17: "user permissions" — role reassignment and
-    deactivation. Deliberately does NOT cover email or password: this
-    system has no password-reset flow, and changing another user's
-    email/password is a materially more security-sensitive action than
-    anything else this endpoint does; a user's own credentials stay
-    self-service (there is none yet) or an admin re-creates the
-    account, not silently overwritten here."""
+    deactivation. Deliberately does NOT cover email or password: an admin
+    never sets someone else's password; they issue a one-time reset link
+    (POST /users/{id}/reset-link) and the person chooses their own."""
 
     role: Role | None = None
     is_active: bool | None = None

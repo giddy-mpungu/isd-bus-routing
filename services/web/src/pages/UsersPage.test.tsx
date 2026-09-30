@@ -15,6 +15,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getUsers: vi.fn(),
     createUser: vi.fn(),
     updateUser: vi.fn(),
+    issueResetLink: vi.fn(),
     getDrivers: vi.fn(),
     getSchools: vi.fn(),
     getStudents: vi.fn(),
@@ -205,5 +206,37 @@ describe('UsersPage', () => {
     vi.mocked(api.getUsers).mockRejectedValue(new ApiError(403, 'Forbidden'))
     renderPage()
     expect(await screen.findByRole('alert')).toHaveTextContent('Forbidden')
+  })
+
+  it('creates a one-time reset link to pass on, shown once', async () => {
+    vi.mocked(api.issueResetLink).mockResolvedValue({
+      reset_path: '/reset-password#token=abc123',
+      expires_at: '2026-10-01T15:00:00Z',
+    })
+    renderPage()
+    const user = userEvent.setup()
+    const row = (await screen.findByText('drv@example.org')).closest('tr') as HTMLElement
+    await user.click(within(row).getByRole('button', { name: 'Reset link' }))
+
+    expect(api.issueResetLink).toHaveBeenCalledWith(3)
+    const panel = await screen.findByRole('region', { name: 'Reset link' })
+    expect(panel).toHaveTextContent('Reset link for Jordan Login')
+    expect(panel).toHaveTextContent("It won't be shown again.")
+    const url = `${window.location.origin}/reset-password#token=abc123`
+    expect(within(panel).getByLabelText('Reset link address')).toHaveValue(url)
+    await user.click(within(panel).getByRole('button', { name: 'Copy' }))
+    // user-event provides the clipboard stub.
+    expect(await navigator.clipboard.readText()).toBe(url)
+    expect(within(panel).getByRole('button', { name: 'Copied' })).toBeInTheDocument()
+
+    await user.click(within(panel).getByRole('button', { name: 'Done' }))
+    expect(screen.queryByRole('region', { name: 'Reset link' })).not.toBeInTheDocument()
+  })
+
+  it('offers no reset link for an inactive account', async () => {
+    mockLoad([{ ...driverUser, is_active: false }])
+    renderPage()
+    const row = (await screen.findByText('drv@example.org')).closest('tr') as HTMLElement
+    expect(within(row).queryByRole('button', { name: 'Reset link' })).not.toBeInTheDocument()
   })
 })

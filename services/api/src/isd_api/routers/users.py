@@ -4,10 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from isd_api import passwords
 from isd_api.audit import record as record_audit
 from isd_api.db import get_db
 from isd_api.models import Driver, Role, School, Student, User
-from isd_api.schemas import UserCreate, UserRead, UserUpdate
+from isd_api.schemas import ResetLinkRead, UserCreate, UserRead, UserUpdate
 from isd_api.security import get_current_user, hash_password, require_role
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -23,6 +24,9 @@ def create_user(
     Administrator responsibility."""
     if db.query(User).filter(User.email == payload.email).one_or_none() is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+    problem = passwords.policy_problem(payload.password, payload.email)
+    if problem is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=problem)
     if payload.driver_id is not None and db.get(Driver, payload.driver_id) is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown driver_id")
     if payload.school_id is not None and db.get(School, payload.school_id) is None:
@@ -145,3 +149,34 @@ def update_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.post("/{user_id}/reset-link", response_model=ResetLinkRead)
+def issue_reset_link(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+) -> ResetLinkRead:
+    """A one-time link the admin passes on privately, so the person sets
+    their own password; the admin never knows it. Shown once: only a
+    hash of the token is kept (isd_api/passwords.py)."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Reactivate the account first"
+        )
+    row, plain = passwords.issue_reset_token(db, user, current_user)
+    # Read before commit: SQLite hands the value back without its time zone.
+    expires_at = row.expires_at
+    record_audit(
+        db,
+        entity_type="user",
+        entity_id=user.id,
+        action="reset_link_issued",
+        actor=current_user,
+        after_state={"expires_at": expires_at.isoformat()},
+    )
+    db.commit()
+    return ResetLinkRead(reset_path=f"/reset-password#token={plain}", expires_at=expires_at)

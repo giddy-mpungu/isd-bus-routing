@@ -41,23 +41,38 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
-def create_access_token(*, user_id: int, role: Role, expires_delta: timedelta | None = None) -> str:
+def create_access_token(
+    *,
+    user_id: int,
+    role: Role,
+    token_version: int = 0,
+    expires_delta: timedelta | None = None,
+) -> str:
     delta = expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
     expire = datetime.now(UTC) + delta
     # jti (JWT ID): a unique identifier for this specific token, distinct
     # from its content — lets revoke_token() invalidate one issued token
     # by identity rather than needing to enumerate/compare its claims.
-    payload = {"sub": str(user_id), "role": role.value, "exp": expire, "jti": str(uuid.uuid4())}
+    # tv: the account's token_version when issued; a password change
+    # bumps it, which ends every older session (get_current_user).
+    payload = {
+        "sub": str(user_id),
+        "role": role.value,
+        "exp": expire,
+        "jti": str(uuid.uuid4()),
+        "tv": token_version,
+    }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-def create_session_token(*, user_id: int, role: Role) -> str:
+def create_session_token(*, user_id: int, role: Role, token_version: int = 0) -> str:
     """A longer-lived token for the browser session cookie (Phase 3).
     Its exp is the absolute session ceiling — unaffected by the sliding
     Max-Age renewal set_session_cookie performs on each request."""
     return create_access_token(
         user_id=user_id,
         role=role,
+        token_version=token_version,
         expires_delta=timedelta(hours=settings.session_absolute_max_hours),
     )
 
@@ -129,7 +144,13 @@ class LoginRateLimiter:
     and X-Forwarded-For handling — out of scope until that's real.
     """
 
-    def __init__(self, max_attempts: int, window_seconds: int) -> None:
+    def __init__(
+        self,
+        max_attempts: int,
+        window_seconds: int,
+        message: str = "Too many login attempts. Try again later.",
+    ) -> None:
+        self._message = message
         self._max_attempts = max_attempts
         self._window = timedelta(seconds=window_seconds)
         self._attempts: dict[str, list[datetime]] = defaultdict(list)
@@ -143,7 +164,7 @@ class LoginRateLimiter:
                 self._attempts[key] = recent
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Too many login attempts. Try again later.",
+                    detail=self._message,
                 )
             recent.append(now)
             self._attempts[key] = recent
@@ -159,6 +180,24 @@ login_rate_limiter = LoginRateLimiter(
     max_attempts=settings.login_rate_limit_attempts,
     window_seconds=settings.login_rate_limit_window_seconds,
 )
+
+# Changing or resetting a password: same budget, a separate count, keyed
+# per account for a change and per address for a reset link.
+password_rate_limiter = LoginRateLimiter(
+    max_attempts=settings.login_rate_limit_attempts,
+    window_seconds=settings.login_rate_limit_window_seconds,
+    message="Too many password attempts. Try again later.",
+)
+
+
+def issue_tokens(response: Response, user: User) -> str:
+    """Sets a fresh session cookie for `user` and returns a bearer token,
+    both under the account's current token_version."""
+    set_session_cookie(
+        response,
+        create_session_token(user_id=user.id, role=user.role, token_version=user.token_version),
+    )
+    return create_access_token(user_id=user.id, role=user.role, token_version=user.token_version)
 
 
 def get_current_user(
@@ -203,6 +242,12 @@ def get_current_user(
     if user is None or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or inactive user"
+        )
+    # Tokens from before this claim existed count as version 0.
+    if payload.get("tv", 0) != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Your password was changed. Sign in again.",
         )
     if authenticated_via_cookie:
         set_session_cookie(response, token)

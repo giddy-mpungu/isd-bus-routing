@@ -65,6 +65,7 @@ import type {
   RidershipOverrideUpdate,
   RidershipRules,
   RidershipRulesUpdate,
+  ResetLink,
   RoadClosure,
   RoadClosureCreate,
   RoutePlan,
@@ -163,6 +164,25 @@ export async function logout(): Promise<void> {
 
 export async function getCurrentUser(): Promise<CurrentUser> {
   return request<CurrentUser>('/users/me')
+}
+
+// Ends the account's other sessions; the response renews this one's cookie.
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await request<unknown>(
+    '/auth/change-password',
+    jsonInit('POST', { current_password: currentPassword, new_password: newPassword }),
+  )
+}
+
+export async function resetPassword(token: string, newPassword: string): Promise<void> {
+  await request<void>(
+    '/auth/reset-password',
+    jsonInit('POST', { token, new_password: newPassword }),
+  )
+}
+
+export async function issueResetLink(userId: number): Promise<ResetLink> {
+  return request<ResetLink>(`/users/${userId}/reset-link`, jsonInit('POST', {}))
 }
 
 export async function getUsers(): Promise<User[]> {

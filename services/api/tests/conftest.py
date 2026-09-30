@@ -110,7 +110,8 @@ def _reset_login_rate_limiter():
     request.client.host == 'testclient', so without a reset between
     tests, attempts would accumulate across unrelated tests and cause
     spurious 429s."""
-    from isd_api.security import login_rate_limiter
+    from isd_api.security import login_rate_limiter, password_rate_limiter
 
     login_rate_limiter.reset()
+    password_rate_limiter.reset()
     yield

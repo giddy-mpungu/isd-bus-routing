@@ -2,11 +2,13 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AppLayout } from './layout/AppLayout'
+import { AccountPage } from './pages/AccountPage'
 import { DriverPage } from './pages/DriverPage'
 import { FamilyPage } from './pages/FamilyPage'
 import { FieldTripsPage } from './pages/FieldTripsPage'
 import { LoginPage } from './pages/LoginPage'
 import { ReportsPage } from './pages/ReportsPage'
+import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { SchedulePage } from './pages/SchedulePage'
 import { SchoolAdminPage } from './pages/SchoolAdminPage'
 import { SetupPage } from './pages/SetupPage'
@@ -39,6 +41,24 @@ function App() {
       <AppLayout>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route
+            path="/account"
+            element={
+              <ProtectedRoute
+                allowedRoles={[
+                  'driver',
+                  'student',
+                  'parent',
+                  'school_admin',
+                  'dispatcher',
+                  'transportation_admin',
+                ]}
+              >
+                <AccountPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/schedule"
             element={

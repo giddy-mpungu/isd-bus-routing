@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     login_rate_limit_attempts: int = 10
     login_rate_limit_window_seconds: int = 300
 
+    # Passwords (Phase 5.1, isd_api/passwords.py). The minimum applies to
+    # new and changed passwords only; reset links work once, for this long.
+    password_min_length: int = 8
+    password_reset_link_hours: int = 24
+
     # OpenRouteService (spec section 6, Phase 6 GIS slice 1). Unset by
     # default — a schedule solve falls back to the straight-line
     # estimator when no key is configured, so CI/tests/local dev work
