@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import timedelta
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from isd_api import passwords
+from isd_api import account_emails, mailer, passwords
 from isd_api.audit import record as record_audit
+from isd_api.config import settings
 from isd_api.db import get_db
 from isd_api.models import Driver, Role, School, Student, User
 from isd_api.schemas import ResetLinkRead, UserCreate, UserRead, UserUpdate
-from isd_api.security import get_current_user, hash_password, require_role
+from isd_api.security import UNUSABLE_PASSWORD, get_current_user, hash_password, require_role
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -17,16 +20,26 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def create_user(
     payload: UserCreate,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
 ) -> User:
     """spec section 17: user permissions are a Transportation
-    Administrator responsibility."""
+    Administrator responsibility. Without a password, the person is
+    emailed a link to choose their own (Phase 5.2), so the admin never
+    knows it."""
     if db.query(User).filter(User.email == payload.email).one_or_none() is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
-    problem = passwords.policy_problem(payload.password, payload.email)
-    if problem is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=problem)
+    if payload.password is None:
+        if not mailer.is_configured():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email isn't set up here, so enter a password for the account",
+            )
+    else:
+        problem = passwords.policy_problem(payload.password, payload.email)
+        if problem is not None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=problem)
     if payload.driver_id is not None and db.get(Driver, payload.driver_id) is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown driver_id")
     if payload.school_id is not None and db.get(School, payload.school_id) is None:
@@ -36,7 +49,9 @@ def create_user(
 
     user = User(
         email=payload.email,
-        hashed_password=hash_password(payload.password),
+        hashed_password=(
+            UNUSABLE_PASSWORD if payload.password is None else hash_password(payload.password)
+        ),
         full_name=payload.full_name,
         role=payload.role,
         driver_id=payload.driver_id,
@@ -58,10 +73,21 @@ def create_user(
         entity_id=user.id,
         action="created",
         actor=current_user,
-        after_state={"email": user.email, "role": user.role.value},
+        after_state={
+            "email": user.email,
+            "role": user.role.value,
+            "setup_email": payload.password is None,
+        },
     )
+    setup = None
+    if payload.password is None:
+        lifetime = timedelta(hours=settings.account_setup_link_hours)
+        _, plain = passwords.issue_reset_token(db, user, current_user, lifetime)
+        setup = account_emails.setup_email(user, plain, lifetime)
     db.commit()
     db.refresh(user)
+    if setup is not None:
+        background.add_task(mailer.send_quietly, setup)
     return user
 
 

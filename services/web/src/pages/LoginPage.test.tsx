@@ -10,7 +10,7 @@ import { LoginPage } from './LoginPage'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
-  return { ...actual, login: vi.fn(), getCurrentUser: vi.fn() }
+  return { ...actual, login: vi.fn(), getCurrentUser: vi.fn(), getAuthOptions: vi.fn() }
 })
 
 function renderLoginPage() {
@@ -44,6 +44,7 @@ const dispatcherUser: CurrentUser = {
 describe('LoginPage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    vi.mocked(api.getAuthOptions).mockResolvedValue({ email_enabled: false })
     // AuthProvider's initial mount check — no session yet.
     vi.mocked(api.getCurrentUser).mockRejectedValue(new Error('not logged in'))
   })
@@ -74,6 +75,26 @@ describe('LoginPage', () => {
 
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('Incorrect email or password'),
+    )
+  })
+
+  it('offers "Forgot your password?" only when email is set up', async () => {
+    vi.mocked(api.getCurrentUser).mockRejectedValue(new ApiError(401, 'Not authenticated'))
+    renderLoginPage()
+    expect(
+      await screen.findByText(
+        'Forgot your password? Ask your transportation office for a reset link.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('links to the forgot-password page when email is on', async () => {
+    vi.mocked(api.getCurrentUser).mockRejectedValue(new ApiError(401, 'Not authenticated'))
+    vi.mocked(api.getAuthOptions).mockResolvedValue({ email_enabled: true })
+    renderLoginPage()
+    expect(await screen.findByRole('link', { name: 'Forgot your password?' })).toHaveAttribute(
+      'href',
+      '/forgot-password',
     )
   })
 })

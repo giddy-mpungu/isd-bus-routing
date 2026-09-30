@@ -67,6 +67,14 @@ services:
       ISD_API_JWT_SECRET_KEY: ${ISD_API_JWT_SECRET_KEY:?set a real random secret in .env — see docs/deployment.md}
       ISD_API_CORS_ALLOWED_ORIGINS: ${ISD_API_CORS_ALLOWED_ORIGINS:?set the real public web origin(s) as a JSON list in .env, e.g. ["https://bus.yourdistrict.example.org"]}
       ISD_API_ORS_API_KEY: ${ISD_API_ORS_API_KEY:-}
+      # Email (optional; docs/deployment.md, "Email"). Blank host = no email.
+      ISD_API_SMTP_HOST: ${ISD_API_SMTP_HOST:-}
+      ISD_API_SMTP_PORT: ${ISD_API_SMTP_PORT:-587}
+      ISD_API_SMTP_SECURITY: ${ISD_API_SMTP_SECURITY:-starttls}
+      ISD_API_SMTP_USERNAME: ${ISD_API_SMTP_USERNAME:-}
+      ISD_API_SMTP_PASSWORD: ${ISD_API_SMTP_PASSWORD:-}
+      ISD_API_MAIL_FROM: ${ISD_API_MAIL_FROM:-}
+      ISD_API_PUBLIC_WEB_URL: ${ISD_API_PUBLIC_WEB_URL:-}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 10s

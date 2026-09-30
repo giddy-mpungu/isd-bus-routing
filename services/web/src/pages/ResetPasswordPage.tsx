@@ -47,7 +47,7 @@ export function ResetPasswordPage() {
   return (
     <main className="login-page">
       <form onSubmit={(event) => void handleSubmit(event)}>
-        <h1>Set a new password</h1>
+        <h1>Choose a password</h1>
         {done ? (
           <p role="status">
             Your password is set. <Link to="/login">Sign in</Link> with it.

@@ -110,7 +110,7 @@ def _hash_token(token: str) -> str:
 
 
 def issue_reset_token(
-    db: Session, user: User, issued_by: User | None
+    db: Session, user: User, issued_by: User | None, lifetime: timedelta | None = None
 ) -> tuple[PasswordResetToken, str]:
     """A new single-use token for `user`: the row and the plain token,
     which is never stored. Earlier unused ones are removed. The caller
@@ -124,7 +124,7 @@ def issue_reset_token(
         user_id=user.id,
         token_hash=_hash_token(plain),
         created_at=now,
-        expires_at=now + timedelta(hours=settings.password_reset_link_hours),
+        expires_at=now + (lifetime or timedelta(hours=settings.password_reset_link_hours)),
         created_by_user_id=issued_by.id if issued_by else None,
     )
     db.add(row)

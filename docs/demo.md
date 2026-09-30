@@ -36,6 +36,11 @@ builds the api and web images. After that, `up` takes seconds. When it
 finishes, it prints:
 
 - the address, **http://localhost:8080**, which only this computer can reach;
+- the test inbox, **http://localhost:8025**: every email the demo sends
+  (password resets, set-up emails for accounts you add) lands there
+  instead of reaching anyone. Also this computer only. While sharing,
+  the links in them say `http://localhost:8080`; swap in the tunnel
+  address before passing one to a tester;
 - one login per role, each with its own randomly generated password.
   They're saved to `secrets\demo-credentials.json` (gitignored), and
   `scripts\demo.cmd credentials` prints them again at any time.

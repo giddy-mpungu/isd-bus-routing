@@ -119,6 +119,22 @@ export function UsersPage() {
   const [schools, setSchools] = useState<School[]>([])
   const [students, setStudents] = useState<Student[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [emailEnabled, setEmailEnabled] = useState(false)
+
+  useEffect(() => {
+    let current = true
+    api.getAuthOptions().then(
+      (options) => {
+        if (current) setEmailEnabled(options.email_enabled)
+      },
+      () => {
+        // Without it, admins type a password, as before email existed.
+      },
+    )
+    return () => {
+      current = false
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -162,22 +178,31 @@ export function UsersPage() {
   const [role, setRole] = useState<Role>('dispatcher')
   const [links, setLinks] = useState<LinkFields>(emptyLinks())
   const [createError, setCreateError] = useState<string | null>(null)
+  const [sendSetup, setSendSetup] = useState(true)
+  const [createdNotice, setCreatedNotice] = useState<string | null>(null)
+  const setupByEmail = emailEnabled && sendSetup
   const [isSavingCreate, setIsSavingCreate] = useState(false)
 
   async function handleCreate(event: FormEvent) {
     event.preventDefault()
     setCreateError(null)
+    setCreatedNotice(null)
     setIsSavingCreate(true)
     try {
       await api.createUser({
         email,
-        password,
+        password: setupByEmail ? undefined : password,
         full_name: fullName,
         role,
         driver_id: links.driver_id ? Number(links.driver_id) : undefined,
         school_id: links.school_id ? Number(links.school_id) : undefined,
         student_id: links.student_id ? Number(links.student_id) : undefined,
       })
+      setCreatedNotice(
+        setupByEmail
+          ? `Account created. ${email} has been emailed a link to choose a password.`
+          : `Account created for ${email}.`,
+      )
       setEmail('')
       setPassword('')
       setFullName('')
@@ -415,15 +440,30 @@ export function UsersPage() {
           onChange={(event) => setEmail(event.target.value)}
           required
         />
-        <label htmlFor="user-password">Password</label>
-        <input
-          id="user-password"
-          type="password"
-          minLength={8}
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          required
-        />
+        {emailEnabled && (
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={sendSetup}
+              onChange={(event) => setSendSetup(event.target.checked)}
+            />{' '}
+            Email them a link to choose their own password
+          </label>
+        )}
+        {!setupByEmail && (
+          <>
+            <label htmlFor="user-password">Password</label>
+            <input
+              id="user-password"
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+          </>
+        )}
         <label htmlFor="user-full-name">Full name</label>
         <input
           id="user-full-name"
@@ -458,6 +498,11 @@ export function UsersPage() {
         {createError && (
           <p role="alert" className="error">
             {createError}
+          </p>
+        )}
+        {createdNotice && (
+          <p role="status" className="status">
+            {createdNotice}
           </p>
         )}
         <button type="submit" disabled={isSavingCreate}>

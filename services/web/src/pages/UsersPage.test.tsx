@@ -16,6 +16,7 @@ vi.mock('../api/client', async (importOriginal) => {
     createUser: vi.fn(),
     updateUser: vi.fn(),
     issueResetLink: vi.fn(),
+    getAuthOptions: vi.fn(),
     getDrivers: vi.fn(),
     getSchools: vi.fn(),
     getStudents: vi.fn(),
@@ -77,6 +78,7 @@ function mockLoad(users: User[] = [dispatcherUser, driverUser]) {
   vi.mocked(api.getDrivers).mockResolvedValue([driverRecord])
   vi.mocked(api.getSchools).mockResolvedValue([school])
   vi.mocked(api.getStudents).mockResolvedValue([] as Student[])
+  vi.mocked(api.getAuthOptions).mockResolvedValue({ email_enabled: false })
 }
 
 function renderPage() {
@@ -238,5 +240,27 @@ describe('UsersPage', () => {
     renderPage()
     const row = (await screen.findByText('drv@example.org')).closest('tr') as HTMLElement
     expect(within(row).queryByRole('button', { name: 'Reset link' })).not.toBeInTheDocument()
+  })
+
+  it('emails a set-up link instead of asking for a password when email is on', async () => {
+    vi.mocked(api.getAuthOptions).mockResolvedValue({ email_enabled: true })
+    vi.mocked(api.createUser).mockResolvedValue(driverUser)
+    renderPage()
+    const user = userEvent.setup()
+    const checkbox = await screen.findByLabelText('Email them a link to choose their own password')
+    expect(checkbox).toBeChecked()
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Email'), 'new@example.org')
+    await user.type(screen.getByLabelText('Full name'), 'New Person')
+    await user.click(screen.getByRole('button', { name: 'Add user' }))
+    await waitFor(() => expect(api.createUser).toHaveBeenCalled())
+    expect(vi.mocked(api.createUser).mock.calls[0][0].password).toBeUndefined()
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Account created. new@example.org has been emailed a link to choose a password.',
+    )
+
+    await user.click(checkbox)
+    expect(screen.getByLabelText('Password')).toBeInTheDocument()
   })
 })

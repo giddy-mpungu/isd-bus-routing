@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
+import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 
@@ -10,6 +11,22 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [emailEnabled, setEmailEnabled] = useState(false)
+
+  useEffect(() => {
+    let current = true
+    api.getAuthOptions().then(
+      (options) => {
+        if (current) setEmailEnabled(options.email_enabled)
+      },
+      () => {
+        // Keep the "ask your transportation office" hint.
+      },
+    )
+    return () => {
+      current = false
+    }
+  }, [])
 
   if (user) {
     // Let the "/" route's role-aware redirect decide the destination
@@ -68,7 +85,11 @@ export function LoginPage() {
           {isSubmitting ? 'Signing in…' : 'Sign in'}
         </button>
         <p className="login-help">
-          Forgot your password? Ask your transportation office for a reset link.
+          {emailEnabled ? (
+            <Link to="/forgot-password">Forgot your password?</Link>
+          ) : (
+            'Forgot your password? Ask your transportation office for a reset link.'
+          )}
         </p>
       </form>
     </main>

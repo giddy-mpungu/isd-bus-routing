@@ -35,7 +35,8 @@ class Token(BaseModel):
 class UserCreate(BaseModel):
     email: EmailStr
     # Checked against isd_api.passwords.policy_problem by the router.
-    password: str
+    # Leave it out to email the person a link to choose their own.
+    password: str | None = None
     full_name: str
     role: Role
     driver_id: int | None = None
@@ -46,6 +47,16 @@ class UserCreate(BaseModel):
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str
+
+
+class ForgotPassword(BaseModel):
+    email: str = Field(max_length=255)
+
+
+class AuthOptions(BaseModel):
+    """What the sign-in page can offer, before anyone signs in."""
+
+    email_enabled: bool
 
 
 class PasswordReset(BaseModel):
