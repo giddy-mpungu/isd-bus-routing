@@ -127,7 +127,7 @@ function Initialize-Secrets {
 }
 
 function Add-MfaKey {
-    # Demos made before two-step sign-in (PR #67) have no key yet; add one
+    # Demos made before two-step sign-in (PR #68) have no key yet; add one
     # without touching anything else in .env.demo.
     $current = [System.IO.File]::ReadAllText($EnvFile)
     if ($current -match '(?m)^ISD_API_MFA_ENCRYPTION_KEY=') { return }

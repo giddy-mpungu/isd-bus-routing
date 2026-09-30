@@ -1169,7 +1169,7 @@ password" email once email exists (5.2); minimum length 8; links last
 
 ## Two-step sign-in (Phase 5.3)
 
-PR #67, migration `e5b9c3d7f124`, new dependency `cryptography`
+PR #68, migration `e5b9c3d7f124`, new dependency `cryptography`
 (web: `qrcode-generator`, lazy-loaded). Decisions by the product owner
 on 2026-09-30: TOTP authenticator apps; **required** for
 `ISD_API_MFA_REQUIRED_ROLES` (transportation admins and dispatchers),
