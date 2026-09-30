@@ -10,7 +10,7 @@ def test_non_admin_cannot_create_user(client, db_session):
         headers=auth_headers(token),
         json={
             "email": "x@example.org",
-            "password": "password123",
+            "password": "route-pass-123",
             "full_name": "X",
             "role": "driver",
         },
@@ -24,7 +24,7 @@ def test_admin_can_create_user(client, admin_headers):
         headers=admin_headers,
         json={
             "email": "new@example.org",
-            "password": "password123",
+            "password": "route-pass-123",
             "full_name": "New Person",
             "role": "dispatcher",
         },
@@ -36,7 +36,7 @@ def test_admin_can_create_user(client, admin_headers):
 def test_creating_duplicate_email_conflicts(client, admin_headers):
     payload = {
         "email": "dup@example.org",
-        "password": "password123",
+        "password": "route-pass-123",
         "full_name": "Dup",
         "role": "driver",
     }

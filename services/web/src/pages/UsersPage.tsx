@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
-import type { Driver, Role, School, Student, User } from '../api/types'
+import type { Driver, ResetLink, Role, School, Student, User } from '../api/types'
 import { Badge } from '../components/Badge'
 
 // spec section 17: "User permissions" is a Transportation Administrator
@@ -232,6 +232,35 @@ export function UsersPage() {
     }
   }
 
+  // --- Reset links ---
+  const [resetFor, setResetFor] = useState<{ user: User; link: ResetLink } | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [issuingId, setIssuingId] = useState<number | null>(null)
+
+  async function handleIssueResetLink(u: User) {
+    setRowError(null)
+    setCopied(false)
+    setIssuingId(u.id)
+    try {
+      setResetFor({ user: u, link: await api.issueResetLink(u.id) })
+    } catch (err) {
+      setRowError(err instanceof ApiError ? err.message : 'Failed to create a reset link.')
+    } finally {
+      setIssuingId(null)
+    }
+  }
+
+  const resetUrl = resetFor ? `${window.location.origin}${resetFor.link.reset_path}` : ''
+
+  async function copyResetUrl() {
+    try {
+      await navigator.clipboard.writeText(resetUrl)
+      setCopied(true)
+    } catch {
+      setRowError('Copying failed. Select the link and copy it.')
+    }
+  }
+
   async function handleToggleActive(u: User) {
     setRowError(null)
     setTogglingId(u.id)
@@ -249,9 +278,8 @@ export function UsersPage() {
     <main className="users-page">
       <h1>Users</h1>
       <p>
-        Create accounts and manage role/permissions (spec section 17). Email and password aren't
-        editable here — this system has no password-reset flow yet; re-create the account if a
-        password needs to change.
+        Create accounts and manage role/permissions (spec section 17). You never set someone
+        else&apos;s password: for a forgotten one, create a reset link and pass it on privately.
       </p>
       {loadError && (
         <p role="alert" className="error">
@@ -262,6 +290,28 @@ export function UsersPage() {
         <p role="alert" className="error">
           {rowError}
         </p>
+      )}
+
+      {resetFor && (
+        <div className="reset-link-panel" role="region" aria-label="Reset link">
+          <p>
+            <strong>Reset link for {resetFor.user.full_name}</strong>: works once, until{' '}
+            {new Date(resetFor.link.expires_at).toLocaleString()}. Share it privately: whoever has
+            it can set this account&apos;s password. It won&apos;t be shown again.
+          </p>
+          <input
+            readOnly
+            aria-label="Reset link address"
+            value={resetUrl}
+            onFocus={(event) => event.target.select()}
+          />
+          <button type="button" onClick={() => void copyResetUrl()}>
+            {copied ? 'Copied' : 'Copy'}
+          </button>{' '}
+          <button type="button" onClick={() => setResetFor(null)}>
+            Done
+          </button>
+        </div>
       )}
 
       <table>
@@ -329,6 +379,17 @@ export function UsersPage() {
                   <button type="button" onClick={() => startEdit(u)}>
                     Edit
                   </button>{' '}
+                  {u.is_active && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void handleIssueResetLink(u)}
+                        disabled={issuingId === u.id}
+                      >
+                        Reset link
+                      </button>{' '}
+                    </>
+                  )}
                   <button
                     type="button"
                     onClick={() => void handleToggleActive(u)}

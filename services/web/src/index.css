@@ -877,6 +877,28 @@ fieldset.motion-lockable:disabled {
   font-size: 0.85rem;
 }
 
+/* Passwords (Phase 5.1). */
+.reset-link-panel {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--warning-500);
+  border-radius: var(--radius-sm);
+  background: var(--warning-50);
+}
+
+.reset-link-panel input {
+  width: min(100%, 40rem);
+  margin: 0 0.5rem 0.5rem 0;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+
+.login-help {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
 /* Road closures (spec section 10). */
 .map-pin-closure .map-pin-dot {
   background: var(--danger-600);

@@ -39,6 +39,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <span>
               {user.full_name} ({user.role})
             </span>
+            <NavLink to="/account">Account</NavLink>
             <button type="button" onClick={() => void logout()}>
               Log out
             </button>

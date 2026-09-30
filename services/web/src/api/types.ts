@@ -1074,3 +1074,10 @@ export interface RoadClosureCreate {
   starts_at?: string | null
   ends_at?: string | null
 }
+
+// Phase 5.1: a one-time link to set a new password. The token is in the
+// fragment (after #), which browsers never send to a server.
+export interface ResetLink {
+  reset_path: string
+  expires_at: string
+}

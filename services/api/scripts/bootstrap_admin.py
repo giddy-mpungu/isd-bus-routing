@@ -23,6 +23,7 @@ from sqlalchemy.exc import OperationalError
 
 from isd_api.db import SessionLocal
 from isd_api.models import Role, User
+from isd_api.passwords import policy_problem
 from isd_api.security import hash_password
 
 
@@ -38,8 +39,9 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    if len(password) < 8:
-        print("ISD_API_BOOTSTRAP_PASSWORD must be at least 8 characters.", file=sys.stderr)
+    problem = policy_problem(password, email)
+    if problem is not None:
+        print(f"ISD_API_BOOTSTRAP_PASSWORD: {problem}.", file=sys.stderr)
         return 1
 
     db = SessionLocal()

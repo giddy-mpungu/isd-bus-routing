@@ -67,6 +67,9 @@ export function LoginPage() {
         <button type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Signing in…' : 'Sign in'}
         </button>
+        <p className="login-help">
+          Forgot your password? Ask your transportation office for a reset link.
+        </p>
       </form>
     </main>
   )

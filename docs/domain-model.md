@@ -578,10 +578,9 @@ master-data lifecycle gap above.
   same as `POST`; a duplicate link -- e.g. a `driver_id` another user
   already has -- is a 409, `Driver.user_id`/`Student.user_id` are
   effectively unique via the FK's own `unique=True`), and/or flips
-  `is_active`. Deliberately does NOT cover email or password -- this
-  system has no password-reset flow, and changing another user's
-  credentials is a materially more sensitive action than role/linkage
-  management; re-create the account instead.
+  `is_active`. Deliberately does NOT cover email or password: an admin
+  never sets someone else's password; they issue a one-time reset link
+  instead ("Passwords", below).
 - **Deactivation takes effect immediately, not on next login** --
   `get_current_user` (`security.py`) already checked `User.is_active`
   on every request for the existing account-disable path; `PATCH`
@@ -1132,6 +1131,41 @@ administrators) a planned and an expected time at the school, the delay,
 
 The school page shows "At school" / "Leaves school" with the expected time,
 the planned one when different, a "Running N min late" badge, and the basis.
+
+## Passwords (Phase 5.1)
+
+PR #65, migration `d4a8b2c6e913`. Decisions by the product owner on
+2026-09-30: admin-issued reset links now, a self-service "Forgot
+password" email once email exists (5.2); minimum length 8; links last
+24 hours.
+
+- **Rules** (`isd_api/passwords.py`, `policy_problem`): at least
+  `ISD_API_PASSWORD_MIN_LENGTH` characters (8), at most 72 bytes (bcrypt
+  reads no more), not one of the most-used breached passwords, and not
+  the account's email or the part before the @. Applied to new and
+  changed passwords (`POST /users`, change, reset, the bootstrap
+  script); existing ones keep working.
+- **Change** (`POST /auth/change-password`, any signed-in user, with the
+  current password): other sessions end and this one gets fresh tokens.
+  Rate-limited per account.
+- **Reset link** (`POST /users/{id}/reset-link`, transportation admins,
+  active accounts only): returns `/reset-password#token=...` and its
+  expiry. The token sits in the URL fragment, which browsers never send
+  to a server or in a Referer, and the page removes it from the address
+  bar on arrival. Only its SHA-256 is stored (`PasswordResetToken`), it
+  works once, for `ISD_API_PASSWORD_RESET_LINK_HOURS` (24), and a new
+  link cancels the old one. The admin passes it on privately and never
+  knows the password. `POST /auth/reset-password` (no sign-in,
+  rate-limited per address) redeems it.
+- **Signing out everywhere**: `User.token_version` is bumped by a change
+  or reset; every token carries the version it was issued under (claim
+  `tv`, 0 for older tokens), and `get_current_user` refuses a mismatch
+  ("Your password was changed. Sign in again.").
+- Audited: `password_changed`, `reset_link_issued` (expiry only),
+  `password_reset`. No password or token is ever logged.
+- UI: Account (header link, every role) to change it; Users → "Reset
+  link" shows the link once with Copy; `/reset-password`; the sign-in
+  page says to ask the transportation office.
 
 ## Road closures and rerouting (spec section 10)
 
