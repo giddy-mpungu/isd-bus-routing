@@ -22,7 +22,8 @@ export interface User extends CurrentUser {
 
 export interface UserCreate {
   email: string
-  password: string
+  // Left out: the person is emailed a link to choose their own.
+  password?: string
   full_name: string
   role: Role
   driver_id?: number
@@ -1073,6 +1074,11 @@ export interface RoadClosureCreate {
   radius_m: number
   starts_at?: string | null
   ends_at?: string | null
+}
+
+// Phase 5.2: what the sign-in page can offer.
+export interface AuthOptions {
+  email_enabled: boolean
 }
 
 // Phase 5.1: a one-time link to set a new password. The token is in the

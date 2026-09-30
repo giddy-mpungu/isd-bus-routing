@@ -9,7 +9,7 @@
 # migrations, ISD_API_ENVIRONMENT=production, Secure session cookies,
 # Caddy in front) so what testers see is what a real server runs, and
 # moving to a VPS later is just the prod file on its own with a real
-# .env (docs/deployment.md). Only three things differ here:
+# .env (docs/deployment.md). Only four things differ here:
 
 name: isd-demo
 
@@ -37,6 +37,28 @@ services:
     command: tunnel --no-autoupdate --url http://caddy:8080
     depends_on:
       - caddy
+
+  # 4. Email goes to a local test inbox, never to real people: Mailpit
+  #    catches every message the demo sends and shows it at
+  #    http://localhost:8025 (this computer only). Its SMTP port isn't
+  #    published at all; only the api reaches it, inside Docker.
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: 500
+    ports:
+      - "127.0.0.1:8025:8025"
+
+  api:
+    environment:
+      ISD_API_SMTP_HOST: mailpit
+      ISD_API_SMTP_PORT: 1025
+      ISD_API_SMTP_SECURITY: none
+      ISD_API_MAIL_FROM: isd-bus-routing demo <no-reply@demo.invalid>
+    depends_on:
+      mailpit:
+        condition: service_started
 
 # 3. A demo-only database password file, so a demo never shares a
 #    secret with a real deployment's ./secrets/postgres_password.txt.

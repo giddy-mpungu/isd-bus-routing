@@ -65,6 +65,7 @@ import type {
   RidershipOverrideUpdate,
   RidershipRules,
   RidershipRulesUpdate,
+  AuthOptions,
   ResetLink,
   RoadClosure,
   RoadClosureCreate,
@@ -179,6 +180,19 @@ export async function resetPassword(token: string, newPassword: string): Promise
     '/auth/reset-password',
     jsonInit('POST', { token, new_password: newPassword }),
   )
+}
+
+export async function getAuthOptions(): Promise<AuthOptions> {
+  return request<AuthOptions>('/auth/options')
+}
+
+// The reply is the same whether or not the address has an account.
+export async function forgotPassword(email: string): Promise<string> {
+  const body = await request<{ detail: string }>(
+    '/auth/forgot-password',
+    jsonInit('POST', { email }),
+  )
+  return body.detail
 }
 
 export async function issueResetLink(userId: number): Promise<ResetLink> {

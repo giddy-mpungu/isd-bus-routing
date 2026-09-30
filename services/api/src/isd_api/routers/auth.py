@@ -1,16 +1,27 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Cookie,
+    Depends,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from isd_api import passwords
+from isd_api import account_emails, mailer, passwords
 from isd_api.audit import record as record_audit
+from isd_api.config import settings
 from isd_api.db import get_db
 from isd_api.models import PasswordResetToken, User
-from isd_api.schemas import PasswordChange, PasswordReset, Token
+from isd_api.schemas import AuthOptions, ForgotPassword, PasswordChange, PasswordReset, Token
 from isd_api.security import (
     SESSION_COOKIE_NAME,
     clear_session_cookie,
@@ -20,6 +31,7 @@ from isd_api.security import (
     login_rate_limiter,
     oauth2_scheme,
     password_rate_limiter,
+    reset_email_limiter,
     revoke_token,
     verify_password,
 )
@@ -63,10 +75,54 @@ def _set_password(user: User, new_password: str) -> None:
     user.token_version += 1
 
 
+@router.get("/options", response_model=AuthOptions)
+def auth_options() -> AuthOptions:
+    return AuthOptions(email_enabled=mailer.is_configured())
+
+
+FORGOT_REPLY = "If that email has an account, a link to reset its password is on its way."
+
+
+@router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED)
+def forgot_password(
+    payload: ForgotPassword,
+    request: Request,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Emails a one-time reset link (Phase 5.2). The reply is the same
+    whether or not the address has an account, and the email goes out in
+    the background, so neither the answer nor its timing tells anyone who
+    has an account."""
+    if not mailer.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Email isn't set up here. Ask your transportation office for a reset link.",
+        )
+    password_rate_limiter.check(f"forgot:{request.client.host if request.client else 'unknown'}")
+    email = payload.email.strip().lower()
+    user = db.query(User).filter(func.lower(User.email) == email).first()
+    if user is not None and user.is_active and reset_email_limiter.allow(email):
+        lifetime = timedelta(minutes=settings.password_reset_email_minutes)
+        _, plain = passwords.issue_reset_token(db, user, None, lifetime)
+        record_audit(
+            db, entity_type="user", entity_id=user.id, action="reset_email_sent", actor=None
+        )
+        db.commit()
+        background.add_task(mailer.send_quietly, account_emails.reset_email(user, plain, lifetime))
+    return {"detail": FORGOT_REPLY}
+
+
+def _notify_password_changed(background: BackgroundTasks, user: User) -> None:
+    if mailer.is_configured():
+        background.add_task(mailer.send_quietly, account_emails.password_changed_email(user))
+
+
 @router.post("/change-password", response_model=Token)
 def change_password(
     payload: PasswordChange,
     response: Response,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Token:
@@ -92,6 +148,7 @@ def change_password(
     )
     db.commit()
     db.refresh(current_user)
+    _notify_password_changed(background, current_user)
     return Token(access_token=issue_tokens(response, current_user))
 
 
@@ -99,6 +156,7 @@ def change_password(
 def reset_password(
     payload: PasswordReset,
     request: Request,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> None:
     """Sets a new password from a one-time reset link (isd_api/passwords.py).
@@ -121,6 +179,8 @@ def reset_password(
     ).delete()
     record_audit(db, entity_type="user", entity_id=user.id, action="password_reset", actor=user)
     db.commit()
+    db.refresh(user)
+    _notify_password_changed(background, user)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

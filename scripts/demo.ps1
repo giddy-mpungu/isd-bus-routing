@@ -133,7 +133,7 @@ function Start-Demo {
     Initialize-Secrets
 
     Write-Step 'Building and starting the stack (the first build takes a few minutes)...'
-    Invoke-Compose up -d --build --wait postgres api web caddy
+    Invoke-Compose up -d --build --wait postgres mailpit api web caddy
 
     Write-Step 'Applying database migrations...'
     Invoke-Compose exec -T api alembic upgrade head
@@ -154,6 +154,7 @@ function Start-Demo {
 
     Write-Host ''
     Write-Host "The demo is running at $LocalUrl (only reachable from this computer)." -ForegroundColor Green
+    Write-Host 'Emails it sends (password resets, new-account set-up) land in the test inbox at http://localhost:8025.' -ForegroundColor Green
     Show-Credentials
 }
 

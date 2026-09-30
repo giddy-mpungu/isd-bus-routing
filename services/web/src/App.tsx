@@ -6,6 +6,7 @@ import { AccountPage } from './pages/AccountPage'
 import { DriverPage } from './pages/DriverPage'
 import { FamilyPage } from './pages/FamilyPage'
 import { FieldTripsPage } from './pages/FieldTripsPage'
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { LoginPage } from './pages/LoginPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
@@ -42,6 +43,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route
             path="/account"
             element={

@@ -1167,6 +1167,40 @@ password" email once email exists (5.2); minimum length 8; links last
   link" shows the link once with Copy; `/reset-password`; the sign-in
   page says to ask the transportation office.
 
+## Email (Phase 5.2)
+
+PR #66, no migration. Decisions by the product owner on 2026-09-30:
+email is the notification channel (open decision #5), through any SMTP
+provider; "Forgot password" links last 1 hour; a password-changed notice;
+set-up emails for new accounts (72 hours); the laptop demo sends to a
+local Mailpit test inbox.
+
+- **Sending** (`isd_api/mailer.py`): `ISD_API_SMTP_HOST`/`PORT`/`SECURITY`
+  (starttls, ssl, none)/`USERNAME`/`PASSWORD` and `ISD_API_MAIL_FROM`
+  (required with a host; startup refuses otherwise). Plain text. Routers
+  queue messages as FastAPI background tasks, so mail never slows a
+  response or reveals by timing whether an account exists; a failure is
+  logged without the message, which may hold a one-time link. Links use
+  `ISD_API_PUBLIC_WEB_URL`, else the first CORS origin. No host set = no
+  email: `GET /auth/options` says `email_enabled: false` and the web app
+  hides what needs it.
+- **Forgot password** (`POST /auth/forgot-password {email}`, 202): always
+  the same reply ("If that email has an account, ..."); for an active
+  account (email matched ignoring case) it issues a
+  `PasswordResetToken` valid `ISD_API_PASSWORD_RESET_EMAIL_MINUTES` (60),
+  audited `reset_email_sent`, and emails it. At most 3 emails per address
+  an hour (`reset_email_limiter`; beyond that it quietly sends nothing);
+  requests are also limited per network address. 503 when email is off.
+- **Password-changed notice** after every change or reset.
+- **Set-up email**: `POST /users` without `password` (email must be on,
+  else 400) stores `security.UNUSABLE_PASSWORD` (matches nothing) and
+  emails a link valid `ISD_API_ACCOUNT_SETUP_LINK_HOURS` (72) to the same
+  `/reset-password` page. The audit's `created` entry records
+  `setup_email: true`.
+- Texts live in `isd_api/account_emails.py`. Family ETA-change emails come
+  next (5.5), after the product owner picks opt-in/out, threshold and
+  quiet hours.
+
 ## Road closures and rerouting (spec section 10)
 
 PR #64, migration `c3f7a9d2e615`; built after the product owner revisited

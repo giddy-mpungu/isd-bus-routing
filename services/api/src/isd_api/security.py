@@ -37,7 +37,14 @@ def hash_password(plain_password: str) -> str:
     return bcrypt.hashpw(plain_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
+# Stored for an account whose owner hasn't chosen a password yet (a
+# set-up email is on its way); no password matches it.
+UNUSABLE_PASSWORD = "!unset"
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    if hashed_password == UNUSABLE_PASSWORD:
+        return False
     return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
@@ -156,18 +163,24 @@ class LoginRateLimiter:
         self._attempts: dict[str, list[datetime]] = defaultdict(list)
         self._lock = threading.Lock()
 
-    def check(self, key: str) -> None:
+    def allow(self, key: str) -> bool:
+        """Counts an attempt for `key`; False once over the limit."""
         now = datetime.now(UTC)
         with self._lock:
             recent = [t for t in self._attempts[key] if now - t < self._window]
             if len(recent) >= self._max_attempts:
                 self._attempts[key] = recent
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=self._message,
-                )
+                return False
             recent.append(now)
             self._attempts[key] = recent
+            return True
+
+    def check(self, key: str) -> None:
+        if not self.allow(key):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=self._message,
+            )
 
     def reset(self) -> None:
         """Test-only hook — this is process-global state, so tests must
@@ -188,6 +201,10 @@ password_rate_limiter = LoginRateLimiter(
     window_seconds=settings.login_rate_limit_window_seconds,
     message="Too many password attempts. Try again later.",
 )
+
+# "Forgot password" emails per address: a few an hour, so nobody can
+# flood someone's inbox. Over the limit, requests quietly send nothing.
+reset_email_limiter = LoginRateLimiter(max_attempts=3, window_seconds=3600)
 
 
 def issue_tokens(response: Response, user: User) -> str:

@@ -17,6 +17,11 @@ services:
       ISD_API_ENVIRONMENT: ${ISD_API_ENVIRONMENT:-dev}
       ISD_API_DATABASE_URL: ${ISD_API_DATABASE_URL:-sqlite:////data/isd_api.db}
       ISD_API_CORS_ALLOWED_ORIGINS: ${ISD_API_CORS_ALLOWED_ORIGINS:-["http://localhost:8080"]}
+      # Email goes to the Mailpit test inbox below (http://localhost:8025).
+      ISD_API_SMTP_HOST: mailpit
+      ISD_API_SMTP_PORT: 1025
+      ISD_API_SMTP_SECURITY: none
+      ISD_API_MAIL_FROM: isd-bus-routing dev <no-reply@dev.invalid>
       # ISD_API_JWT_SECRET_KEY deliberately NOT listed here. `VAR: ${VAR:-x}`
       # in compose still sets the env var (to `x`, or "" if x is empty) —
       # it does NOT mean "unset". Setting this to "" that way passes an
@@ -32,6 +37,12 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
 
   web:
     build:

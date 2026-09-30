@@ -236,6 +236,27 @@ subdomain placeholder becomes a `*.` wildcard, e.g.
 `https://*.tiles.example.com`. A value that isn't an absolute http(s)
 URL or a same-origin `/path` fails the image build.
 
+## Email
+
+Password resets, the password-changed notice and new-account set-up
+emails go out over SMTP. Any provider works (Amazon SES, Postmark, Brevo,
+Google Workspace with an app password, the district's own mail server):
+put its settings in `.env` (`ISD_API_SMTP_HOST`, `ISD_API_SMTP_PORT`,
+`ISD_API_SMTP_SECURITY`, `ISD_API_SMTP_USERNAME`, `ISD_API_SMTP_PASSWORD`,
+`ISD_API_MAIL_FROM`; see `.env.prod.example`). Use 587 with `starttls`
+or 465 with `ssl`; `none` is only for a local test inbox. Set up SPF and
+DKIM for the sender's domain as the provider describes, or messages land
+in spam. Links in emails point at `ISD_API_PUBLIC_WEB_URL` (default: the
+first CORS origin).
+
+Without `ISD_API_SMTP_HOST` nothing is emailed: the sign-in page tells
+people to ask the transportation office, admins hand out reset links
+from Users, and new accounts need a typed password.
+
+To check it, sign out, choose "Forgot your password?" and enter your own
+email. `docker compose -f docker-compose.prod.yml logs api` shows
+`Couldn't send the '...' email` with the SMTP error if delivery failed.
+
 ## OpenRouteService key (optional)
 
 `ISD_API_ORS_API_KEY` in `.env` turns on road-network deadhead times for
