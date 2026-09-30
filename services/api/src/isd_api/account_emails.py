@@ -59,6 +59,48 @@ def setup_email(user: User, token: str, lifetime: timedelta) -> Email:
     )
 
 
+def mfa_reset_email(user: User) -> Email:
+    return Email(
+        to=user.email,
+        subject="Your bus app two-step sign-in was reset",
+        body=(
+            f"Hello {user.full_name},\n\n"
+            "Your transportation office reset two-step sign-in on your account, and you were "
+            "signed out everywhere. Next time you sign in you'll set up your authenticator "
+            "app again.\n\n"
+            "If you didn't ask for this, contact your transportation office straight away."
+            + SIGNATURE
+        ),
+    )
+
+
+def mfa_turned_off_email(user: User) -> Email:
+    return Email(
+        to=user.email,
+        subject="Two-step sign-in was turned off",
+        body=(
+            f"Hello {user.full_name},\n\n"
+            "Two-step sign-in was just turned off for your account.\n\n"
+            "If this wasn't you, change your password and contact your transportation "
+            "office straight away." + SIGNATURE
+        ),
+    )
+
+
+def recovery_code_used_email(user: User, left: int) -> Email:
+    return Email(
+        to=user.email,
+        subject="A recovery code was used to sign in",
+        body=(
+            f"Hello {user.full_name},\n\n"
+            "Someone signed in to your account with one of your recovery codes instead of "
+            f"the authenticator app. You have {left} left; you can make new ones on your "
+            "Account page.\n\n"
+            "If this wasn't you, contact your transportation office straight away." + SIGNATURE
+        ),
+    )
+
+
 def password_changed_email(user: User) -> Email:
     return Email(
         to=user.email,

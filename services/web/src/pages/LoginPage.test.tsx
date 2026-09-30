@@ -10,7 +10,15 @@ import { LoginPage } from './LoginPage'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
-  return { ...actual, login: vi.fn(), getCurrentUser: vi.fn(), getAuthOptions: vi.fn() }
+  return {
+    ...actual,
+    login: vi.fn(),
+    getCurrentUser: vi.fn(),
+    getAuthOptions: vi.fn(),
+    verifyMfa: vi.fn(),
+    startMfaSetup: vi.fn(),
+    confirmMfa: vi.fn(),
+  }
 })
 
 function renderLoginPage() {
@@ -50,7 +58,12 @@ describe('LoginPage', () => {
   })
 
   it('logs in and navigates to the schedule page on success', async () => {
-    vi.mocked(api.login).mockResolvedValue(undefined)
+    vi.mocked(api.login).mockResolvedValue({
+      access_token: 't',
+      token_type: 'bearer',
+      mfa: null,
+      recovery_codes_left: null,
+    })
     vi.mocked(api.getCurrentUser).mockRejectedValueOnce(new Error('not logged in yet'))
     vi.mocked(api.getCurrentUser).mockResolvedValueOnce(dispatcherUser)
 
@@ -96,5 +109,94 @@ describe('LoginPage', () => {
       'href',
       '/forgot-password',
     )
+  })
+
+  it('asks for the authenticator code after a correct password', async () => {
+    vi.mocked(api.login).mockResolvedValue({
+      access_token: null,
+      token_type: 'bearer',
+      mfa: 'verify',
+      recovery_codes_left: null,
+    })
+    vi.mocked(api.verifyMfa).mockResolvedValue({
+      access_token: 't',
+      token_type: 'bearer',
+      mfa: null,
+      recovery_codes_left: null,
+    })
+    vi.mocked(api.getCurrentUser)
+      .mockRejectedValueOnce(new Error('not logged in yet'))
+      .mockResolvedValueOnce(dispatcherUser)
+    renderLoginPage()
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Email'), 'dispatcher@example.org')
+    await user.type(screen.getByLabelText('Password'), 'correct-password')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    expect(await screen.findByRole('heading', { name: 'Two-step sign-in' })).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Code'), '123456')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+    await waitFor(() => expect(api.verifyMfa).toHaveBeenCalledWith('123456'))
+    expect(await screen.findByText('schedule page')).toBeInTheDocument()
+  })
+
+  it('goes back to the password when the second step timed out', async () => {
+    vi.mocked(api.login).mockResolvedValue({
+      access_token: null,
+      token_type: 'bearer',
+      mfa: 'verify',
+      recovery_codes_left: null,
+    })
+    vi.mocked(api.verifyMfa).mockRejectedValue(
+      new ApiError(401, 'Your sign-in timed out. Enter your password again.'),
+    )
+    renderLoginPage()
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Email'), 'dispatcher@example.org')
+    await user.type(screen.getByLabelText('Password'), 'correct-password')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+    await user.type(await screen.findByLabelText('Code'), '123456')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your sign-in timed out.')
+    expect(screen.getByLabelText('Password')).toBeInTheDocument()
+  })
+
+  it('walks staff through setting up an authenticator', async () => {
+    vi.mocked(api.login).mockResolvedValue({
+      access_token: null,
+      token_type: 'bearer',
+      mfa: 'setup',
+      recovery_codes_left: null,
+    })
+    vi.mocked(api.startMfaSetup).mockResolvedValue({
+      secret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+      otpauth_uri:
+        'otpauth://totp/isd-bus-routing:d%40example.org?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+    })
+    vi.mocked(api.confirmMfa).mockResolvedValue({ recovery_codes: ['AAAAA-BBBBB', 'CCCCC-DDDDD'] })
+    vi.mocked(api.getCurrentUser)
+      .mockRejectedValueOnce(new Error('not logged in yet'))
+      .mockResolvedValueOnce(dispatcherUser)
+    renderLoginPage()
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Email'), 'dispatcher@example.org')
+    await user.type(screen.getByLabelText('Password'), 'correct-password')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    expect(
+      await screen.findByRole('heading', { name: 'Set up two-step sign-in' }),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByRole('img', { name: 'QR code for your authenticator app' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('JBSW Y3DP EHPK 3PXP JBSW Y3DP EHPK 3PXP')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('6-digit code'), '654321')
+    await user.click(screen.getByRole('button', { name: 'Turn on two-step sign-in' }))
+
+    const codes = await screen.findByRole('region', { name: 'Recovery codes' })
+    expect(codes).toHaveTextContent('AAAAA-BBBBB')
+    expect(api.confirmMfa).toHaveBeenCalledWith('654321')
+    await user.click(screen.getByRole('button', { name: "I've saved them" }))
+    expect(await screen.findByText('schedule page')).toBeInTheDocument()
   })
 })

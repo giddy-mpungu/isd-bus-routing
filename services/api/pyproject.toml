@@ -28,6 +28,8 @@ dependencies = [
     "pydantic-settings>=2.2",
     "pyjwt>=2.7",
     "bcrypt>=4.1",
+    # Encrypts authenticator secrets at rest (Phase 5.3, isd_api/mfa.py).
+    "cryptography>=44",
     "email-validator>=2.0",
     "python-multipart>=0.0.9",
     # IANA time zones for the district's local clock (ridership cutoffs).

@@ -49,6 +49,14 @@ function New-RandomHex([int]$Bytes) {
     return (($buffer | ForEach-Object { $_.ToString('x2') }) -join '')
 }
 
+function New-FernetKey {
+    # 32 random bytes, url-safe base64: the format ISD_API_MFA_ENCRYPTION_KEY needs.
+    $buffer = New-Object byte[] 32
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($buffer) } finally { $rng.Dispose() }
+    return [Convert]::ToBase64String($buffer).Replace('+', '-').Replace('/', '_')
+}
+
 function Write-TextFile([string]$Path, [string]$Text) {
     # UTF-8 without a BOM and LF line endings: a BOM would corrupt the
     # first variable name in .env.demo.
@@ -88,7 +96,10 @@ function Assert-Docker {
 function Initialize-Secrets {
     # Generated once, on first run, and never printed. Both files are
     # gitignored (.env.* and secrets/*).
-    if ((Test-Path $EnvFile) -and (Test-Path $PgPasswordFile)) { return }
+    if ((Test-Path $EnvFile) -and (Test-Path $PgPasswordFile)) {
+        Add-MfaKey
+        return
+    }
     Write-Step 'Generating demo secrets (first run only)...'
     New-Item -ItemType Directory -Force (Split-Path $PgPasswordFile) | Out-Null
     # Hex only, so it needs no escaping inside the connection URL below.
@@ -112,6 +123,17 @@ function Initialize-Secrets {
             'CADDY_DOMAIN=:8080',
             ''
         ) -join "`n")
+    Add-MfaKey
+}
+
+function Add-MfaKey {
+    # Demos made before two-step sign-in (PR #67) have no key yet; add one
+    # without touching anything else in .env.demo.
+    $current = [System.IO.File]::ReadAllText($EnvFile)
+    if ($current -match '(?m)^ISD_API_MFA_ENCRYPTION_KEY=') { return }
+    if ($current.Length -gt 0 -and -not $current.EndsWith("`n")) { $current += "`n" }
+    $key = New-FernetKey
+    Write-TextFile $EnvFile ($current + "# Encrypts authenticator secrets (two-step sign-in).`nISD_API_MFA_ENCRYPTION_KEY=$key`n")
 }
 
 function Show-Credentials {

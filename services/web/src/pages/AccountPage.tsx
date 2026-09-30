@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { TwoStepSection } from './TwoStepSection'
 
 /** Phase 5.1: any signed-in user changes their own password. */
 export function AccountPage() {
@@ -86,6 +87,7 @@ export function AccountPage() {
           {isSaving ? 'Saving…' : 'Change password'}
         </button>
       </form>
+      <TwoStepSection />
     </main>
   )
 }

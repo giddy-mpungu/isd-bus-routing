@@ -115,6 +115,11 @@ fail. The tunnel is how other devices get in, including your own phone.
 
 ## Everyday commands
 
+The admin and dispatcher logins need an authenticator app on your phone
+(two-step sign-in, as on a real server): the first sign-in shows a QR
+code to scan. To try the demo without it, add
+`ISD_API_MFA_REQUIRED_ROLES=[]` to `.env.demo` and run `up` again.
+
 | Command | What it does |
 |---|---|
 | `scripts\demo.cmd up` | Start (or update, after pulling new code: it rebuilds changed images and runs any new migrations). Your data is kept. |

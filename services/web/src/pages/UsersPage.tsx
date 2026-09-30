@@ -286,6 +286,28 @@ export function UsersPage() {
     }
   }
 
+  const [resettingMfaId, setResettingMfaId] = useState<number | null>(null)
+
+  async function handleResetMfa(u: User) {
+    if (
+      !window.confirm(
+        `Reset two-step sign-in for ${u.full_name}? They'll be signed out everywhere and set it up again at their next sign-in.`,
+      )
+    ) {
+      return
+    }
+    setRowError(null)
+    setResettingMfaId(u.id)
+    try {
+      await api.resetUserMfa(u.id)
+      await load()
+    } catch (err) {
+      setRowError(err instanceof ApiError ? err.message : 'Failed to reset two-step sign-in.')
+    } finally {
+      setResettingMfaId(null)
+    }
+  }
+
   async function handleToggleActive(u: User) {
     setRowError(null)
     setTogglingId(u.id)
@@ -399,11 +421,28 @@ export function UsersPage() {
                   <Badge tone={u.is_active ? 'success' : 'neutral'}>
                     {u.is_active ? 'Active' : 'Inactive'}
                   </Badge>
+                  {u.mfa_enabled && (
+                    <>
+                      {' '}
+                      <Badge tone="info">2-step on</Badge>
+                    </>
+                  )}
                 </td>
                 <td>
                   <button type="button" onClick={() => startEdit(u)}>
                     Edit
                   </button>{' '}
+                  {u.mfa_enabled && u.id !== me?.id && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void handleResetMfa(u)}
+                        disabled={resettingMfaId === u.id}
+                      >
+                        Reset 2-step
+                      </button>{' '}
+                    </>
+                  )}
                   {u.is_active && (
                     <>
                       <button

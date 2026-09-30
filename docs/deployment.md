@@ -236,6 +236,34 @@ subdomain placeholder becomes a `*.` wildcard, e.g.
 `https://*.tiles.example.com`. A value that isn't an absolute http(s)
 URL or a same-origin `/path` fails the image build.
 
+## Two-step sign-in
+
+Transportation admins and dispatchers sign in with a password plus a
+code from an authenticator app (Google or Microsoft Authenticator, a
+password manager). They set it up the first time they sign in after
+this is deployed; school admins and families may turn it on from
+Account; drivers never use it.
+
+`ISD_API_MFA_ENCRYPTION_KEY` is required: it encrypts each person's
+authenticator secret. Generate it once and keep it with your other
+secrets:
+
+```bash
+python -c "import base64,secrets;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
+```
+
+Changing it later makes every stored secret unreadable, so everyone
+would reset and set up two-step sign-in again. Which roles need it is
+`ISD_API_MFA_REQUIRED_ROLES` (JSON list).
+
+A lost phone: the person signs in with a recovery code, or another
+transportation admin uses Users → "Reset 2-step". If the only admin is
+locked out, on the server:
+
+```bash
+docker compose -f docker-compose.prod.yml exec -e ISD_API_RESET_MFA_EMAIL=admin@yourdistrict.example.org api python scripts/reset_mfa.py
+```
+
 ## Email
 
 Password resets, the password-changed notice and new-account set-up

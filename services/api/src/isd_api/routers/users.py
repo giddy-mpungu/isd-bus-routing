@@ -6,7 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from isd_api import account_emails, mailer, passwords
+from isd_api import account_emails, mailer, mfa, passwords
 from isd_api.audit import record as record_audit
 from isd_api.config import settings
 from isd_api.db import get_db
@@ -206,3 +206,36 @@ def issue_reset_link(
     )
     db.commit()
     return ResetLinkRead(reset_path=f"/reset-password#token={plain}", expires_at=expires_at)
+
+
+@router.post("/{user_id}/mfa-reset", response_model=UserRead)
+def reset_mfa(
+    user_id: int,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+) -> User:
+    """For a lost phone (Phase 5.3): turns two-step sign-in off and signs
+    the person out everywhere; if their role needs it, they set it up
+    again at their next sign-in. Never your own: another admin does it,
+    or scripts/reset_mfa.py on the server as a last resort."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if user.id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Another transportation admin has to reset your own two-step sign-in",
+        )
+    if not mfa.is_enabled(user) and user.mfa_pending_secret_encrypted is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Two-step sign-in isn't set up"
+        )
+    mfa.turn_off(db, user)
+    user.token_version += 1
+    record_audit(db, entity_type="user", entity_id=user.id, action="mfa_reset", actor=current_user)
+    db.commit()
+    db.refresh(user)
+    if mailer.is_configured():
+        background.add_task(mailer.send_quietly, account_emails.mfa_reset_email(user))
+    return user

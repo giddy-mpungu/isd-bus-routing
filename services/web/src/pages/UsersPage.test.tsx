@@ -17,6 +17,7 @@ vi.mock('../api/client', async (importOriginal) => {
     updateUser: vi.fn(),
     issueResetLink: vi.fn(),
     getAuthOptions: vi.fn(),
+    resetUserMfa: vi.fn(),
     getDrivers: vi.fn(),
     getSchools: vi.fn(),
     getStudents: vi.fn(),
@@ -262,5 +263,31 @@ describe('UsersPage', () => {
 
     await user.click(checkbox)
     expect(screen.getByLabelText('Password')).toBeInTheDocument()
+  })
+
+  it("resets someone's two-step sign-in after confirming", async () => {
+    mockLoad([{ ...dispatcherUser, mfa_enabled: true }])
+    vi.mocked(api.resetUserMfa).mockResolvedValue({ ...dispatcherUser, mfa_enabled: false })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderPage()
+    const user = userEvent.setup()
+    const row = (await screen.findByText('disp@example.org')).closest('tr') as HTMLElement
+    expect(within(row).getByText('2-step on')).toBeInTheDocument()
+    await user.click(within(row).getByRole('button', { name: 'Reset 2-step' }))
+    expect(confirm).toHaveBeenCalled()
+    await waitFor(() => expect(api.resetUserMfa).toHaveBeenCalledWith(2))
+    confirm.mockRestore()
+  })
+
+  it('offers no 2-step reset for your own account', async () => {
+    vi.mocked(api.getCurrentUser).mockResolvedValue({ ...me, mfa_enabled: true })
+    vi.mocked(api.getUsers).mockResolvedValue([
+      { ...me, mfa_enabled: true, created_at: '2026-01-01T00:00:00Z' },
+    ])
+    renderPage()
+    const row = (await screen.findByText('admin@example.org')).closest('tr') as HTMLElement
+    await waitFor(() =>
+      expect(within(row).queryByRole('button', { name: 'Reset 2-step' })).not.toBeInTheDocument(),
+    )
   })
 })

@@ -1,11 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import * as api from '../api/client'
-import type { CurrentUser } from '../api/types'
+import type { CurrentUser, MfaStep } from '../api/types'
 
 interface AuthContextValue {
   user: CurrentUser | null
   isLoading: boolean
-  login: (email: string, password: string) => Promise<void>
+  // Resolves to the second step still needed, or null once signed in.
+  login: (email: string, password: string) => Promise<MfaStep | null>
+  // After the second step: load the now signed-in user.
+  completeSignIn: () => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -32,8 +35,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string) => {
-      await api.login(email, password)
+      const result = await api.login(email, password)
+      if (result.mfa) return result.mfa
       await refreshUser()
+      return null
     },
     [refreshUser],
   )
@@ -44,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, login, completeSignIn: refreshUser, logout }}>
       {children}
     </AuthContext.Provider>
   )
