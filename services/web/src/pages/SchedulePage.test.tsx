@@ -16,6 +16,7 @@ import type {
   VehiclePosition,
 } from '../api/types'
 import { SchedulePage } from './SchedulePage'
+import { findMap } from '../test/map'
 
 // Matches SchedulePage's own today() default for `serviceDate` — the
 // component doesn't use the fixtures' own service_date fields for
@@ -316,7 +317,7 @@ describe('SchedulePage', () => {
       expect(screen.getByText(/Jordan Driver — Bus 101: 29.71000, -95.41000/)).toBeInTheDocument(),
     )
     // The same bus on the fleet map, with its schools for context.
-    const map = await screen.findByRole('region', { name: 'Fleet map' })
+    const map = await findMap('Fleet map')
     expect(within(map).getByTitle('Bus 101 — Jordan Driver')).toBeInTheDocument()
     expect(within(map).getByTitle(school.name)).toBeInTheDocument()
   })
@@ -339,7 +340,7 @@ describe('SchedulePage', () => {
     ])
     render(<SchedulePage />)
     const picker = await screen.findByLabelText("Show a bus's track")
-    const map = await screen.findByRole('region', { name: 'Fleet map' })
+    const map = await findMap('Fleet map')
     expect(map.querySelector('path.map-track')).toBeNull()
 
     const user = userEvent.setup()

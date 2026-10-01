@@ -12,6 +12,7 @@ import type {
 } from '../api/types'
 import { AuthProvider } from '../auth/AuthContext'
 import { DriverPage } from './DriverPage'
+import { stubGeolocation } from '../test/geolocation'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -339,10 +340,7 @@ describe('DriverPage', () => {
       } as GeolocationPosition)
       return 1
     })
-    vi.stubGlobal('navigator', {
-      ...navigator,
-      geolocation: { watchPosition, clearWatch: vi.fn() },
-    })
+    stubGeolocation({ watchPosition, clearWatch: vi.fn() })
 
     renderPage()
 
@@ -362,10 +360,7 @@ describe('DriverPage', () => {
   it('does not report position before the bus is under way', async () => {
     vi.mocked(api.getMyAssignments).mockResolvedValue([{ ...assignment, status: 'acknowledged' }])
     const watchPosition = vi.fn()
-    vi.stubGlobal('navigator', {
-      ...navigator,
-      geolocation: { watchPosition, clearWatch: vi.fn() },
-    })
+    stubGeolocation({ watchPosition, clearWatch: vi.fn() })
 
     renderPage()
     await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
@@ -661,10 +656,7 @@ describe('DriverPage: the day as one queue (spec sections 11 and 14)', () => {
       } as GeolocationPosition)
       return 1
     })
-    vi.stubGlobal('navigator', {
-      ...navigator,
-      geolocation: { watchPosition, clearWatch: vi.fn() },
-    })
+    stubGeolocation({ watchPosition, clearWatch: vi.fn() })
 
     renderPage()
 
@@ -688,7 +680,7 @@ function fakeGps() {
     onError = error ?? null
     return 7
   })
-  vi.stubGlobal('navigator', { ...navigator, geolocation: { watchPosition, clearWatch } })
+  stubGeolocation({ watchPosition, clearWatch })
   return {
     watchPosition,
     clearWatch,

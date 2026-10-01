@@ -5,6 +5,7 @@ import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { School, Student, StudentHome } from '../api/types'
 import { StudentHomePanel } from './StudentHomePanel'
+import { findMap } from '../test/map'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -90,7 +91,7 @@ describe('StudentHomePanel', () => {
     renderPanel()
     const user = await open()
     expect(await screen.findByDisplayValue('123 Main St, Houston, TX 77002')).toBeInTheDocument()
-    const map = await screen.findByRole('region', { name: 'Home map for Jamie Student' })
+    const map = await findMap('Home map for Jamie Student')
 
     fireEvent.click(map, { clientX: 5, clientY: 5 })
     await user.click(await screen.findByRole('button', { name: 'Save the placed spot' }))

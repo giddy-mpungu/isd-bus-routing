@@ -5,6 +5,7 @@ import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { RoutePlan, RouteTemplate, School, Stop } from '../api/types'
 import { RouteStopsEditor } from './RouteStopsEditor'
+import { findMap } from '../test/map'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -79,7 +80,7 @@ describe('RouteStopsEditor', () => {
     expect(
       screen.getByLabelText('Minutes from start', { selector: '#route-3-minutes-6' }),
     ).toHaveValue(9)
-    const map = await screen.findByRole('region', { name: 'Route map for template 3' })
+    const map = await findMap('Route map for template 3')
     expect(within(map).getByTitle('1. Oak')).toBeInTheDocument()
     expect(within(map).getByTitle('2. Elm')).toBeInTheDocument()
     expect(within(map).getByTitle('Riverside')).toBeInTheDocument()

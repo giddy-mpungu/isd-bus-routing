@@ -5,6 +5,7 @@ import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { School, Stop, StopProposal } from '../api/types'
 import { StopProposalsSection } from './StopProposalsSection'
+import { findMap } from '../test/map'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -76,7 +77,7 @@ describe('StopProposalsSection', () => {
     expect(screen.getByText('Existing stop')).toBeInTheDocument()
     // An existing stop can't be moved from here.
     expect(screen.getAllByRole('button', { name: 'Move on map' })).toHaveLength(1)
-    const map = await screen.findByRole('region', { name: 'Stop proposals map' }, { timeout: 5000 })
+    const map = await findMap('Stop proposals map')
     expect(within(map).getByTitle('Proposed stop 1 (2)')).toBeInTheDocument()
     expect(within(map).getByTitle('Oak & 5th (1)')).toBeInTheDocument()
   })
@@ -128,7 +129,7 @@ describe('StopProposalsSection', () => {
     const user = await choose()
     await user.click(await screen.findByRole('button', { name: 'Move on map' }))
     expect(screen.getByText('Click the map to move Proposed stop 1.')).toBeInTheDocument()
-    const map = await screen.findByRole('region', { name: 'Stop proposals map' }, { timeout: 5000 })
+    const map = await findMap('Stop proposals map')
     fireEvent.click(map, { clientX: 5, clientY: 5 })
 
     await waitFor(() => expect(api.updateStopProposal).toHaveBeenCalled())

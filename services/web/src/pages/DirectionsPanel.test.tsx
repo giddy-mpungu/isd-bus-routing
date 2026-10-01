@@ -5,6 +5,8 @@ import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { DirectionsResult } from '../api/types'
 import { DirectionsPanel } from './DirectionsPanel'
+import { findMap } from '../test/map'
+import { stubGeolocation } from '../test/geolocation'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -90,11 +92,7 @@ describe('DirectionsPanel', () => {
       'href',
       'geo:29.7,-95.4?q=29.7,-95.4(Riverside)',
     )
-    const map = await screen.findByRole(
-      'region',
-      { name: 'Directions map for assignment 7' },
-      { timeout: 5000 },
-    )
+    const map = await findMap('Directions map for assignment 7')
     expect(map.querySelector('path.map-track')).not.toBeNull()
   })
 
@@ -135,12 +133,9 @@ describe('DirectionsPanel', () => {
 
   it('routes from the tablet position when asked', async () => {
     vi.mocked(api.getDirections).mockResolvedValue(directions)
-    vi.stubGlobal('navigator', {
-      ...navigator,
-      geolocation: {
-        getCurrentPosition: (ok: PositionCallback) =>
-          ok({ coords: { latitude: 29.8, longitude: -95.5 } } as GeolocationPosition),
-      },
+    stubGeolocation({
+      getCurrentPosition: (ok: PositionCallback) =>
+        ok({ coords: { latitude: 29.8, longitude: -95.5 } } as GeolocationPosition),
     })
     const user = await open()
     await user.click(await screen.findByRole('button', { name: 'Route from my position' }))
