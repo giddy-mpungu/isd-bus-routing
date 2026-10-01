@@ -1169,7 +1169,7 @@ password" email once email exists (5.2); minimum length 8; links last
 
 ## Single sign-on (Phase 5.4)
 
-PR #69, migration `f6c1d4e8a235`, no new dependencies (PyJWT +
+PR #70, migration `f6c1d4e8a235`, no new dependencies (PyJWT +
 `cryptography` verify ID tokens; stdlib HTTP). Generic OpenID Connect,
 authorization code flow with PKCE (S256), so Entra ID, Google Workspace
 and Keycloak all fit. Decisions by the product owner on 2026-10-01:
