@@ -5,6 +5,7 @@ import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { RoadClosure, School } from '../api/types'
 import { RoadClosuresSection } from './RoadClosuresSection'
+import { findMap } from '../test/map'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -50,7 +51,7 @@ describe('RoadClosuresSection', () => {
     expect(
       screen.getByText('⚠ Riverside AM run on Bus 8: the Oak & 5th stop is inside it'),
     ).toBeInTheDocument()
-    const map = await screen.findByRole('region', { name: 'Road closures map' })
+    const map = await findMap('Road closures map')
     expect(within(map).getByTitle('Collision')).toBeInTheDocument()
     expect(map.querySelector('.map-pin-closure')).not.toBeNull()
   })
@@ -62,7 +63,7 @@ describe('RoadClosuresSection', () => {
     const submit = await screen.findByRole('button', { name: 'Click the map first' })
     expect(submit).toBeDisabled()
 
-    fireEvent.click(await screen.findByRole('region', { name: 'Road closures map' }), {
+    fireEvent.click(await findMap('Road closures map'), {
       clientX: 5,
       clientY: 5,
     })
@@ -100,7 +101,7 @@ describe('RoadClosuresSection', () => {
     )
     render(<RoadClosuresSection schools={schools} />)
     const user = userEvent.setup()
-    fireEvent.click(await screen.findByRole('region', { name: 'Road closures map' }), {
+    fireEvent.click(await findMap('Road closures map'), {
       clientX: 5,
       clientY: 5,
     })

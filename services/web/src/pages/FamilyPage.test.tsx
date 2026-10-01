@@ -5,6 +5,7 @@ import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { BusPosition, FamilyMember } from '../api/types'
 import { FamilyPage } from './FamilyPage'
+import { findMap } from '../test/map'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -133,7 +134,7 @@ describe('FamilyPage', () => {
       expect(screen.getByText(/Bus 101 was near 29\.712, -95\.419 at /)).toBeInTheDocument(),
     )
     expect(screen.queryByText(/Jordan/)).not.toBeInTheDocument()
-    const map = await screen.findByRole('region', { name: 'Approximate location of Bus 101' })
+    const map = await findMap('Approximate location of Bus 101')
     expect(within(map).getByTitle('Bus 101 (approximate)')).toBeInTheDocument()
     expect(map.querySelector('.map-pin-approx')).not.toBeNull()
   })

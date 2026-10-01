@@ -56,6 +56,21 @@ describe('MapView', () => {
     expect(screen.getByRole('region', { name: 'Fleet map' })).not.toHaveClass('is-pickable')
   })
 
+  it("keeps Leaflet's own classes when picking turns on and off", () => {
+    // leaflet-container carries Leaflet's overflow: hidden, which keeps
+    // the tiles inside the map's box.
+    const { rerender } = render(<MapView markers={[bus]} label="Fleet map" />)
+    const map = screen.getByRole('region', { name: 'Fleet map' })
+    expect(map).toHaveClass('map-view', 'leaflet-container')
+
+    rerender(<MapView markers={[bus]} label="Fleet map" onPick={vi.fn()} />)
+    expect(map).toHaveClass('map-view', 'is-pickable', 'leaflet-container')
+
+    rerender(<MapView markers={[bus]} label="Fleet map" />)
+    expect(map).not.toHaveClass('is-pickable')
+    expect(map).toHaveClass('map-view', 'leaflet-container')
+  })
+
   it('draws a track as a line', () => {
     render(
       <MapView
