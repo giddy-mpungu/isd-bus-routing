@@ -115,6 +115,10 @@ fail. The tunnel is how other devices get in, including your own phone.
 
 ## Everyday commands
 
+The demo also runs the background worker, so bus-time emails to parents
+land in the test inbox too (the demo district's routes have no planned
+stop times yet, so it has nothing to send until you plan some).
+
 The admin and dispatcher logins need an authenticator app on your phone
 (two-step sign-in, as on a real server): the first sign-in shows a QR
 code to scan. To try the demo without it, add

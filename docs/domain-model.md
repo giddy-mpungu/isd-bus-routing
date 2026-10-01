@@ -1167,6 +1167,39 @@ password" email once email exists (5.2); minimum length 8; links last
   link" shows the link once with Copy; `/reset-password`; the sign-in
   page says to ask the transportation office.
 
+## Bus-time emails to families (Phase 5.5)
+
+PR #72, migration `a7d2e5f9b346`. Decisions by the product owner on
+2026-10-01: **on by default** for parents, with a Family page switch and
+a link in every email to turn it off; an email when today's estimate for
+a child's pickup or drop-off is **10 minutes** or more from the plan, and
+again only when it moves 10+ from what was last sent; **only on the
+service day, from 05:30** district time, never once that time has
+passed; run by a separate **worker** service.
+
+- `isd_api/eta_notifications.py` `run(db, now)`: for each of today's runs
+  with an assignment, the same trip and estimates as the Family page
+  (`daily_trip`); each riding child's parents (role parent, active,
+  `User.eta_emails_enabled`). Baseline: the last time emailed, else the
+  planned minute. Settings `ISD_API_ETA_EMAIL_THRESHOLD_MINUTES`,
+  `ISD_API_ETA_EMAIL_EARLIEST`. Nothing without email configured.
+- **Exactly once**: an `EtaNotification` row (unique per child, parent,
+  day, leg and time) is committed before sending; a second worker hits
+  the unique key and skips; a failed send deletes its row so the next
+  pass retries.
+- **Opt-out**: `GET`/`PUT /users/me/notification-settings` (parents);
+  the email links to `/email-preferences#token=...` (a 90-day signed
+  token, purpose `eta-optout`), which needs a click, then
+  `POST /notifications/eta/opt-out`, because mail scanners open links.
+  Audited `eta_emails_on`/`eta_emails_off`.
+- **Worker** (`isd_api/worker.py`, `python -m isd_api.worker`): every
+  `ISD_API_WORKER_INTERVAL_SECONDS` (120) runs each job in its own
+  session; one failing job doesn't stop the others. The scheduled SIS
+  sync will join it.
+- Not yet: one-click `List-Unsubscribe` headers (needed only at bulk
+  volumes, 5,000+ a day to Gmail/Yahoo); delays seen only on live GPS
+  (estimates are plan-based, as on the Family page).
+
 ## Single sign-on (Phase 5.4)
 
 PR #70, migration `f6c1d4e8a235`, no new dependencies (PyJWT +

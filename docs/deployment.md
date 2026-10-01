@@ -236,6 +236,16 @@ subdomain placeholder becomes a `*.` wildcard, e.g.
 `https://*.tiles.example.com`. A value that isn't an absolute http(s)
 URL or a same-origin `/path` fails the image build.
 
+## Background worker
+
+`docker-compose.prod.yml` runs a `worker` service next to the api: the
+same image and settings, no port. It sends families bus-time emails
+(when today's pickup or drop-off moves 10+ minutes from the plan, from
+05:30 district time) and will run the scheduled SIS sync. It needs email
+configured to send anything. `docker compose -f docker-compose.prod.yml
+logs worker` shows each pass that sent something and any failures. One
+worker is enough; a second would never send duplicates, only waste work.
+
 ## Single sign-on (optional)
 
 Staff can sign in with the district's own accounts through any OpenID
