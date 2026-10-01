@@ -899,6 +899,11 @@ fieldset.motion-lockable:disabled {
   color: var(--muted);
 }
 
+/* Bus-time emails (Phase 5.5). */
+.eta-email-setting {
+  margin: 0 0 1rem;
+}
+
 /* Single sign-on (Phase 5.4). */
 .sso-button {
   display: block;

@@ -97,6 +97,12 @@ class Settings(BaseSettings):
     oidc_trust_mfa: Literal["claim", "always", "never"] = "claim"
     oidc_mfa_acr_values: list[str] = []
 
+    # Bus-time emails to families (Phase 5.5, isd_api/eta_notifications.py),
+    # sent by the worker (isd_api/worker.py) every worker_interval_seconds.
+    eta_email_threshold_minutes: int = 10
+    eta_email_earliest: str = "05:30"  # district time, HH:MM
+    worker_interval_seconds: int = 120
+
     # Email (Phase 5.2, isd_api/mailer.py): any SMTP provider. Unset
     # smtp_host means no email is sent and "Forgot password" is hidden.
     # "starttls" upgrades a plain connection (usually port 587); "ssl" is

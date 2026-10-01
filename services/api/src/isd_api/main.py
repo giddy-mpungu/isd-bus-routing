@@ -22,6 +22,7 @@ from isd_api.routers import (
     field_trips,
     geographic_knowledge,
     mfa,
+    notifications,
     optimization_settings,
     positions,
     qualifications,
@@ -102,6 +103,7 @@ app.include_router(ridership_rules.router)
 app.include_router(road_closures.router)
 app.include_router(mfa.router)
 app.include_router(sso.router)
+app.include_router(notifications.router)
 app.include_router(transportation_rules.router)
 app.include_router(templates.route_router)
 app.include_router(templates.crew_router)

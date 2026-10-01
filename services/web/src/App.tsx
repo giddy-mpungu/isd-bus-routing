@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AppLayout } from './layout/AppLayout'
 import { AccountPage } from './pages/AccountPage'
+import { EmailPreferencesPage } from './pages/EmailPreferencesPage'
 import { DriverPage } from './pages/DriverPage'
 import { FamilyPage } from './pages/FamilyPage'
 import { FieldTripsPage } from './pages/FieldTripsPage'
@@ -44,6 +45,7 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/email-preferences" element={<EmailPreferencesPage />} />
           <Route
             path="/account"
             element={

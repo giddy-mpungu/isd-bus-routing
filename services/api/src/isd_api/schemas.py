@@ -136,6 +136,16 @@ class UserRead(BaseModel):
     sso_linked: bool = False
 
 
+class NotificationSettings(BaseModel):
+    """Phase 5.5: a parent's own email choices."""
+
+    eta_emails: bool
+
+
+class EtaOptOut(BaseModel):
+    token: str = Field(min_length=1, max_length=1000)
+
+
 class UserUpdate(BaseModel):
     """spec section 17: "user permissions" — role reassignment and
     deactivation. Deliberately does NOT cover email or password: an admin

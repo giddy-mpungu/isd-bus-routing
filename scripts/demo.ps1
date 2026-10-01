@@ -155,7 +155,7 @@ function Start-Demo {
     Initialize-Secrets
 
     Write-Step 'Building and starting the stack (the first build takes a few minutes)...'
-    Invoke-Compose up -d --build --wait postgres mailpit api web caddy
+    Invoke-Compose up -d --build --wait postgres mailpit api worker web caddy
 
     Write-Step 'Applying database migrations...'
     Invoke-Compose exec -T api alembic upgrade head

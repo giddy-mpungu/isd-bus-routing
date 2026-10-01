@@ -69,6 +69,7 @@ import type {
   LoginResult,
   MfaSetup,
   MfaStatus,
+  NotificationSettings,
   ResetLink,
   RoadClosure,
   RoadClosureCreate,
@@ -227,6 +228,21 @@ export function ssoStartUrl(): string {
 
 export async function unlinkSso(userId: number): Promise<User> {
   return request<User>(`/users/${userId}/sso-unlink`, jsonInit('POST', {}))
+}
+
+// Phase 5.5: bus-time emails to parents.
+export async function getNotificationSettings(): Promise<NotificationSettings> {
+  return request<NotificationSettings>('/users/me/notification-settings')
+}
+
+export async function updateNotificationSettings(
+  payload: NotificationSettings,
+): Promise<NotificationSettings> {
+  return request<NotificationSettings>('/users/me/notification-settings', jsonInit('PUT', payload))
+}
+
+export async function optOutOfEtaEmails(token: string): Promise<void> {
+  await request<void>('/notifications/eta/opt-out', jsonInit('POST', { token }))
 }
 
 export async function getAuthOptions(): Promise<AuthOptions> {
