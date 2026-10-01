@@ -1167,6 +1167,43 @@ password" email once email exists (5.2); minimum length 8; links last
   link" shows the link once with Copy; `/reset-password`; the sign-in
   page says to ask the transportation office.
 
+## Single sign-on (Phase 5.4)
+
+PR #70, migration `f6c1d4e8a235`, no new dependencies (PyJWT +
+`cryptography` verify ID tokens; stdlib HTTP). Generic OpenID Connect,
+authorization code flow with PKCE (S256), so Entra ID, Google Workspace
+and Keycloak all fit. Decisions by the product owner on 2026-10-01:
+
+- **Existing accounts only**, matched case-insensitively on the email in
+  the ID token (`ISD_API_OIDC_EMAIL_CLAIM`; refused when
+  `email_verified` is false). Admins still create accounts and roles.
+  `ISD_API_OIDC_ROLES` says who may use it (staff: transportation admin,
+  dispatcher, school admin, driver); families keep passwords. The first
+  sign-in stores the provider's `sub` (`User.oidc_subject`, unique,
+  audited `sso_linked`); later sign-ins must match it, so a reassigned
+  email can't take over. `POST /users/{id}/sso-unlink` (admins) forgets
+  it.
+- **The provider's MFA counts only when reported**
+  (`ISD_API_OIDC_TRUST_MFA=claim`: `amr` with an RFC 8176 second-factor
+  value, or `acr` in `ISD_API_OIDC_MFA_ACR_VALUES`); otherwise ours is
+  asked for (`/login?mfa=verify|setup`, the same pending cookie as after
+  a password). `always` suits a provider that enforces MFA by policy
+  without saying so in the token (Entra ID v2 and Google ID tokens
+  usually don't); `never` always asks for ours.
+- **Passwords stay** as a fallback for everyone.
+- Flow: `GET /auth/oidc/start` (state, nonce and PKCE verifier in a
+  signed, httpOnly, SameSite=Lax, 10-minute `isd_oidc` cookie) → the
+  provider → `GET /auth/oidc/callback` (state checked, code exchanged
+  with the client secret and verifier, ID token checked: signature
+  against the provider's JWKS with asymmetric algorithms only, issuer,
+  audience, expiry, nonce) → the web app. Failures redirect to
+  `/login?sso_error=` `no_account`, `not_for_role`, `linked_elsewhere`,
+  `no_email`, `cancelled`, `expired`, `provider_unreachable` or `failed`
+  (details only in the api log). `GET /auth/options` gives
+  `sso_label` for the button. Signing out of the app doesn't sign out of
+  the district's provider.
+- Local testing: `dev/keycloak/` (generated realm, nothing committed).
+
 ## Two-step sign-in (Phase 5.3)
 
 PR #68, migration `e5b9c3d7f124`, new dependency `cryptography`

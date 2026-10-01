@@ -287,6 +287,27 @@ export function UsersPage() {
   }
 
   const [resettingMfaId, setResettingMfaId] = useState<number | null>(null)
+  const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
+
+  async function handleUnlinkSso(u: User) {
+    if (
+      !window.confirm(
+        `Unlink ${u.full_name}'s district account? Their next district sign-in will link again, to whichever district account uses ${u.email}.`,
+      )
+    ) {
+      return
+    }
+    setRowError(null)
+    setUnlinkingId(u.id)
+    try {
+      await api.unlinkSso(u.id)
+      await load()
+    } catch (err) {
+      setRowError(err instanceof ApiError ? err.message : 'Failed to unlink the district account.')
+    } finally {
+      setUnlinkingId(null)
+    }
+  }
 
   async function handleResetMfa(u: User) {
     if (
@@ -427,11 +448,28 @@ export function UsersPage() {
                       <Badge tone="info">2-step on</Badge>
                     </>
                   )}
+                  {u.sso_linked && (
+                    <>
+                      {' '}
+                      <Badge tone="info">District sign-in</Badge>
+                    </>
+                  )}
                 </td>
                 <td>
                   <button type="button" onClick={() => startEdit(u)}>
                     Edit
                   </button>{' '}
+                  {u.sso_linked && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void handleUnlinkSso(u)}
+                        disabled={unlinkingId === u.id}
+                      >
+                        Unlink district sign-in
+                      </button>{' '}
+                    </>
+                  )}
                   {u.mfa_enabled && u.id !== me?.id && (
                     <>
                       <button

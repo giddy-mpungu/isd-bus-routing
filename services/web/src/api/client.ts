@@ -219,6 +219,16 @@ export async function resetUserMfa(userId: number): Promise<User> {
   return request<User>(`/users/${userId}/mfa-reset`, jsonInit('POST', {}))
 }
 
+// Phase 5.4: a full-page navigation (not fetch) starts single sign-on;
+// the api sends the browser on to the district's sign-in page.
+export function ssoStartUrl(): string {
+  return `${API_BASE_URL}/auth/oidc/start`
+}
+
+export async function unlinkSso(userId: number): Promise<User> {
+  return request<User>(`/users/${userId}/sso-unlink`, jsonInit('POST', {}))
+}
+
 export async function getAuthOptions(): Promise<AuthOptions> {
   return request<AuthOptions>('/auth/options')
 }

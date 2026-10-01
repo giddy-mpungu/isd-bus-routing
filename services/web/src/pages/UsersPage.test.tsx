@@ -18,6 +18,7 @@ vi.mock('../api/client', async (importOriginal) => {
     issueResetLink: vi.fn(),
     getAuthOptions: vi.fn(),
     resetUserMfa: vi.fn(),
+    unlinkSso: vi.fn(),
     getDrivers: vi.fn(),
     getSchools: vi.fn(),
     getStudents: vi.fn(),
@@ -289,5 +290,18 @@ describe('UsersPage', () => {
     await waitFor(() =>
       expect(within(row).queryByRole('button', { name: 'Reset 2-step' })).not.toBeInTheDocument(),
     )
+  })
+
+  it('shows district sign-in and unlinks it after confirming', async () => {
+    mockLoad([{ ...driverUser, sso_linked: true }])
+    vi.mocked(api.unlinkSso).mockResolvedValue({ ...driverUser, sso_linked: false })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderPage()
+    const user = userEvent.setup()
+    const row = (await screen.findByText('drv@example.org')).closest('tr') as HTMLElement
+    expect(within(row).getByText('District sign-in')).toBeInTheDocument()
+    await user.click(within(row).getByRole('button', { name: 'Unlink district sign-in' }))
+    await waitFor(() => expect(api.unlinkSso).toHaveBeenCalledWith(3))
+    confirm.mockRestore()
   })
 })

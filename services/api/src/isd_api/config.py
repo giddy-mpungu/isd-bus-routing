@@ -79,6 +79,24 @@ class Settings(BaseSettings):
     mfa_encryption_key: str | None = None
     mfa_issuer: str = "isd-bus-routing"
 
+    # Single sign-on (Phase 5.4, isd_api/oidc.py): any OpenID Connect
+    # provider. Unset issuer = no SSO button. The redirect URI is this
+    # api's /auth/oidc/callback as the browser reaches it, registered with
+    # the provider. trust_mfa: "claim" counts the provider's two-step
+    # check only when its ID token reports one (amr, or acr in
+    # mfa_acr_values); "always" for providers that enforce MFA by policy
+    # without saying so in the token; "never" always asks for ours.
+    oidc_issuer: str | None = None
+    oidc_client_id: str | None = None
+    oidc_client_secret: str | None = None
+    oidc_redirect_uri: str | None = None
+    oidc_scopes: str = "openid email profile"
+    oidc_email_claim: str = "email"
+    oidc_label: str = "your district account"
+    oidc_roles: list[str] = ["transportation_admin", "dispatcher", "school_admin", "driver"]
+    oidc_trust_mfa: Literal["claim", "always", "never"] = "claim"
+    oidc_mfa_acr_values: list[str] = []
+
     # Email (Phase 5.2, isd_api/mailer.py): any SMTP provider. Unset
     # smtp_host means no email is sent and "Forgot password" is hidden.
     # "starttls" upgrades a plain connection (usually port 587); "ssl" is
@@ -113,6 +131,10 @@ class Settings(BaseSettings):
         "mail_from",
         "public_web_url",
         "mfa_encryption_key",
+        "oidc_issuer",
+        "oidc_client_id",
+        "oidc_client_secret",
+        "oidc_redirect_uri",
         mode="before",
     )
     @classmethod
@@ -150,6 +172,19 @@ class Settings(BaseSettings):
                     "ISD_API_MFA_ENCRYPTION_KEY must be set to 32 random bytes in url-safe "
                     "base64 when ISD_API_ENVIRONMENT=production (see docs/deployment.md)."
                 )
+        if self.oidc_issuer:
+            missing = [
+                name
+                for name in ("oidc_client_id", "oidc_client_secret", "oidc_redirect_uri")
+                if not getattr(self, name)
+            ]
+            if missing:
+                raise RuntimeError(
+                    "ISD_API_OIDC_ISSUER is set but these are not: "
+                    + ", ".join("ISD_API_" + m.upper() for m in missing)
+                )
+            if self.environment == "production" and not self.oidc_issuer.startswith("https://"):
+                raise RuntimeError("ISD_API_OIDC_ISSUER must be an https:// address in production.")
         if self.smtp_host and not self.mail_from:
             raise RuntimeError("ISD_API_MAIL_FROM must be set when ISD_API_SMTP_HOST is.")
 

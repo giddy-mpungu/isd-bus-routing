@@ -259,8 +259,15 @@ class User(Base):
     mfa_pending_secret_encrypted: Mapped[str | None] = mapped_column(String(255), nullable=True)
     mfa_last_step: Mapped[int | None] = mapped_column(Integer, nullable=True)
     mfa_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Single sign-on (isd_api/oidc.py): the provider's id for this person,
+    # set at their first SSO sign-in; later ones must match it.
+    oidc_subject: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
     driver: Mapped[Driver | None] = relationship(back_populates="user")
+
+    @property
+    def sso_linked(self) -> bool:
+        return self.oidc_subject is not None
 
     @property
     def mfa_enabled(self) -> bool:

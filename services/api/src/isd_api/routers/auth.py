@@ -16,7 +16,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from isd_api import account_emails, mailer, mfa, passwords
+from isd_api import account_emails, mailer, mfa, oidc, passwords
 from isd_api.audit import record as record_audit
 from isd_api.config import settings
 from isd_api.db import get_db
@@ -90,7 +90,10 @@ def _set_password(user: User, new_password: str) -> None:
 
 @router.get("/options", response_model=AuthOptions)
 def auth_options() -> AuthOptions:
-    return AuthOptions(email_enabled=mailer.is_configured())
+    return AuthOptions(
+        email_enabled=mailer.is_configured(),
+        sso_label=settings.oidc_label if oidc.is_configured() else None,
+    )
 
 
 FORGOT_REPLY = "If that email has an account, a link to reset its password is on its way."

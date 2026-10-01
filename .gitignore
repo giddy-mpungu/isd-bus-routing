@@ -28,3 +28,6 @@ npm-debug.log*
 # Docker secret files for docker-compose.prod.yml (see secrets/README.md).
 secrets/*
 !secrets/README.md
+
+# Generated local Keycloak realm and its throwaway credentials (dev/keycloak/make_realm.py).
+dev/keycloak/out/

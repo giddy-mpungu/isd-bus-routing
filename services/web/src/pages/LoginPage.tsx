@@ -1,28 +1,56 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { MfaStep } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { MfaSetup } from '../components/MfaSetup'
 
+// Why single sign-on sent the browser back here (routers/sso.py).
+const SSO_ERRORS: Record<string, string> = {
+  no_account:
+    "There's no account for that district email here. Ask your transportation office to add you.",
+  not_for_role: 'Your account signs in with its email and password, not the district account.',
+  linked_elsewhere:
+    'That email is linked to a different district account. Ask your transportation office to unlink it.',
+  no_email: "The district sign-in didn't share a verified email address.",
+  cancelled: 'Sign-in with the district account was cancelled.',
+  expired: 'That sign-in took too long or was interrupted. Try again.',
+  provider_unreachable:
+    "The district sign-in couldn't be reached. Try again, or use your password.",
+  failed: "The district sign-in couldn't be completed. Try again, or use your password.",
+}
+
+function stepFrom(value: string | null): MfaStep | null {
+  return value === 'verify' || value === 'setup' ? value : null
+}
+
 export function LoginPage() {
   const { user, login, completeSignIn } = useAuth()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [searchParams] = useSearchParams()
+  const [error, setError] = useState<string | null>(() => {
+    const reason = searchParams.get('sso_error')
+    return reason ? (SSO_ERRORS[reason] ?? SSO_ERRORS.failed) : null
+  })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [emailEnabled, setEmailEnabled] = useState(false)
-  // Phase 5.3: the second step, once the password was right.
-  const [step, setStep] = useState<MfaStep | null>(null)
+  const [ssoLabel, setSsoLabel] = useState<string | null>(null)
+  // Phase 5.3: the second step, once the password (or single sign-on,
+  // when the district's two-step check wasn't reported) was right.
+  const [step, setStep] = useState<MfaStep | null>(() => stepFrom(searchParams.get('mfa')))
   const [code, setCode] = useState('')
 
   useEffect(() => {
     let current = true
     api.getAuthOptions().then(
       (options) => {
-        if (current) setEmailEnabled(options.email_enabled)
+        if (current) {
+          setEmailEnabled(options.email_enabled)
+          setSsoLabel(options.sso_label ?? null)
+        }
       },
       () => {
         // Keep the "ask your transportation office" hint.
@@ -141,6 +169,15 @@ export function LoginPage() {
       <form onSubmit={(event) => void handleSubmit(event)}>
         <h1>isd-bus-routing</h1>
         <p>Dispatcher console</p>
+
+        {ssoLabel && (
+          <>
+            <a className="sso-button" href={api.ssoStartUrl()}>
+              Sign in with {ssoLabel}
+            </a>
+            <p className="login-or">or with your email and password</p>
+          </>
+        )}
 
         <label htmlFor="email">Email</label>
         <input

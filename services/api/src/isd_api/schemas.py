@@ -103,6 +103,8 @@ class AuthOptions(BaseModel):
     """What the sign-in page can offer, before anyone signs in."""
 
     email_enabled: bool
+    # Phase 5.4: the single sign-on button's wording, or None for no SSO.
+    sso_label: str | None = None
 
 
 class PasswordReset(BaseModel):
@@ -131,6 +133,7 @@ class UserRead(BaseModel):
     created_at: datetime
     mfa_enabled: bool = False
     mfa_required: bool = False
+    sso_linked: bool = False
 
 
 class UserUpdate(BaseModel):
