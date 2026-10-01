@@ -5,6 +5,7 @@ import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { Stop, Student } from '../api/types'
 import { StopsSection } from './StopsSection'
+import { findMap } from '../test/map'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -29,7 +30,7 @@ describe('StopsSection', () => {
 
   it('shows every stop on the map', async () => {
     render(<StopsSection stops={[stop]} students={[]} canEdit={false} onChanged={onChanged} />)
-    const map = await screen.findByRole('region', { name: 'Stops map' })
+    const map = await findMap('Stops map')
     expect(within(map).getByTitle('Main St & 1st')).toBeInTheDocument()
     expect(map).not.toHaveClass('is-pickable')
   })
@@ -37,7 +38,7 @@ describe('StopsSection', () => {
   it('clicking the map fills in a new stop’s coordinates and marks the spot', async () => {
     vi.mocked(api.createStop).mockResolvedValue({ ...stop, id: 2, label: 'Oak Ave' })
     render(<StopsSection stops={[stop]} students={[]} canEdit onChanged={onChanged} />)
-    const map = await screen.findByRole('region', { name: 'Stops map' })
+    const map = await findMap('Stops map')
 
     fireEvent.click(map, { clientX: 5, clientY: 5 })
 
@@ -61,7 +62,7 @@ describe('StopsSection', () => {
     render(<StopsSection stops={[stop]} students={[]} canEdit onChanged={onChanged} />)
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Relocate' }))
-    const map = await screen.findByRole('region', { name: 'Stops map' })
+    const map = await findMap('Stops map')
 
     fireEvent.click(map, { clientX: 5, clientY: 5 })
 
