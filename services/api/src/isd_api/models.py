@@ -35,6 +35,9 @@ from sqlalchemy import (
 from sqlalchemy import (
     Enum as SAEnum,
 )
+from sqlalchemy import (
+    true as sa_true,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from isd_api.db import Base
@@ -262,6 +265,10 @@ class User(Base):
     # Single sign-on (isd_api/oidc.py): the provider's id for this person,
     # set at their first SSO sign-in; later ones must match it.
     oidc_subject: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    # Bus-time emails (isd_api/eta_notifications.py): on unless turned off.
+    eta_emails_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=sa_true(), nullable=False
+    )
 
     driver: Mapped[Driver | None] = relationship(back_populates="user")
 
@@ -1216,6 +1223,34 @@ class AuditLogEntry(Base):
     before_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     after_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class EtaNotification(Base):
+    """One bus-time email sent to a parent (Phase 5.5): what time it gave,
+    so the next one goes only when the estimate moves again. The unique
+    key stops two workers sending the same email."""
+
+    __tablename__ = "eta_notifications"
+    __table_args__ = (
+        UniqueConstraint(
+            "student_id",
+            "user_id",
+            "service_date",
+            "direction",
+            "eta_minute",
+            name="uq_eta_notification_once",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("students.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    service_date: Mapped[date] = mapped_column(Date, nullable=False)
+    direction: Mapped[RideDirection] = mapped_column(
+        SAEnum(RideDirection, native_enum=False, length=8), nullable=False
+    )
+    eta_minute: Mapped[int] = mapped_column(Integer, nullable=False)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class MfaRecoveryCode(Base):

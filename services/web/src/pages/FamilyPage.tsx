@@ -3,6 +3,7 @@ import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { Announcement, BusPosition, FamilyMember, RideDirection } from '../api/types'
 import { LazyMapView } from '../components/LazyMapView'
+import { EtaEmailSetting } from './EtaEmailSetting'
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -165,6 +166,7 @@ export function FamilyPage() {
   return (
     <div className="family-page">
       <h1>My family — {serviceDate}</h1>
+      <EtaEmailSetting />
 
       {announcements.length > 0 && (
         <section className="announcements-panel">

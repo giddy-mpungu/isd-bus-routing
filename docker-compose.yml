@@ -38,6 +38,27 @@ services:
       timeout: 3s
       retries: 5
 
+  # Scheduled jobs (isd_api/worker.py), e.g. bus-time emails.
+  worker:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    command: ["python", "-m", "isd_api.worker"]
+    environment:
+      ISD_API_ENVIRONMENT: ${ISD_API_ENVIRONMENT:-dev}
+      ISD_API_DATABASE_URL: ${ISD_API_DATABASE_URL:-sqlite:////data/isd_api.db}
+      ISD_API_SMTP_HOST: mailpit
+      ISD_API_SMTP_PORT: 1025
+      ISD_API_SMTP_SECURITY: none
+      ISD_API_MAIL_FROM: isd-bus-routing dev <no-reply@dev.invalid>
+    volumes:
+      - api-data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
   mailpit:
     image: axllent/mailpit:latest
     ports:

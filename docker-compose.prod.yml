@@ -56,7 +56,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
+    # Anchored: the worker below runs with exactly the same settings.
+    environment: &api-environment
       ISD_API_ENVIRONMENT: production
       # The full connection string, including the same password as
       # ./secrets/postgres_password.txt — one required opaque value
@@ -91,6 +92,22 @@ services:
       timeout: 3s
       retries: 5
     # Not published to the host — reached only via Caddy's reverse proxy below.
+
+  # Scheduled jobs (isd_api/worker.py): bus-time emails to families now,
+  # the scheduled SIS sync later. Same image and settings as the api; no
+  # port, nothing reaches it. One is enough (jobs never double up anyway).
+  worker:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    restart: unless-stopped
+    command: ["python", "-m", "isd_api.worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+    environment: *api-environment
+    healthcheck:
+      disable: true
 
   web:
     build:

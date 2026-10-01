@@ -51,7 +51,7 @@ services:
       - "127.0.0.1:8025:8025"
 
   api:
-    environment:
+    environment: &demo-mail
       ISD_API_SMTP_HOST: mailpit
       ISD_API_SMTP_PORT: 1025
       ISD_API_SMTP_SECURITY: none
@@ -59,6 +59,10 @@ services:
     depends_on:
       mailpit:
         condition: service_started
+
+  # The worker sends bus-time emails, so it uses the test inbox too.
+  worker:
+    environment: *demo-mail
 
 # 3. A demo-only database password file, so a demo never shares a
 #    secret with a real deployment's ./secrets/postgres_password.txt.

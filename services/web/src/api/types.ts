@@ -1117,3 +1117,8 @@ export interface ResetLink {
   reset_path: string
   expires_at: string
 }
+
+// Phase 5.5: a parent's email choices.
+export interface NotificationSettings {
+  eta_emails: boolean
+}
