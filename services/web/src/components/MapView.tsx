@@ -71,6 +71,11 @@ export function MapView({
 
   useEffect(() => {
     onPickRef.current = onPick
+    // Toggled here rather than in the JSX className: Leaflet adds its own
+    // classes to this element (leaflet-container, with the overflow: hidden
+    // that keeps tiles inside the box), and React would overwrite them all
+    // whenever the className it renders changed.
+    containerRef.current?.classList.toggle('is-pickable', Boolean(onPick))
   }, [onPick])
 
   useEffect(() => {
@@ -135,7 +140,7 @@ export function MapView({
   return (
     <div
       ref={containerRef}
-      className={`map-view${onPick ? ' is-pickable' : ''}`}
+      className="map-view"
       role="region"
       aria-label={label}
       style={{ height }}
