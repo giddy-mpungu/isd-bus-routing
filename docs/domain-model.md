@@ -1167,6 +1167,45 @@ password" email once email exists (5.2); minimum length 8; links last
   link" shows the link once with Copy; `/reset-password`; the sign-in
   page says to ask the transportation office.
 
+## Two-step sign-in (Phase 5.3)
+
+PR #68, migration `e5b9c3d7f124`, new dependency `cryptography`
+(web: `qrcode-generator`, lazy-loaded). Decisions by the product owner
+on 2026-09-30: TOTP authenticator apps; **required** for
+`ISD_API_MFA_REQUIRED_ROLES` (transportation admins and dispatchers),
+optional for school admins, parents and students, never on driver
+accounts (shared tablets); staff without it set it up at their next
+sign-in (no grace period); **no "remember this device"**; a
+transportation admin resets someone else's.
+
+- **Codes** (`isd_api/mfa.py`): RFC 6238 on the standard library
+  (HMAC-SHA1, 6 digits, 30 s, the neighbouring step accepted). Each code
+  works once: `User.mfa_last_step` refuses its step and older ones.
+  Secrets are Fernet-encrypted with `ISD_API_MFA_ENCRYPTION_KEY`
+  (production refuses to start without a valid one; dev derives one
+  from the JWT secret). Ten single-use recovery codes
+  (`MfaRecoveryCode`, SHA-256 only), `XXXXX-XXXXX` without look-alike
+  characters.
+- **Sign-in**: after a correct password, an account with or needing it
+  gets no token, only `isd_mfa_pending` (httpOnly, SameSite=Strict, 5
+  minutes) and `LoginResult.mfa` = `verify` or `setup`.
+  `POST /auth/mfa/verify` (code or recovery code), `/setup` (new secret +
+  `otpauth://` URI) and `/confirm` (turns it on, returns recovery codes)
+  then issue the session. Tokens carry `mfa: true`; `get_current_user`
+  refuses a token with a `purpose` (the pending one) and, for accounts
+  that have or need two-step, one without `mfa` (so password-only
+  sessions end, including after a promotion to dispatcher).
+- **Account page**: status, new recovery codes (needs a code), turn on,
+  turn off (password; not for roles that need it). `GET /auth/mfa`,
+  `POST /auth/mfa/recovery-codes`, `/disable`.
+- **Reset**: `POST /users/{id}/mfa-reset` (transportation admins, not
+  their own; bumps `token_version`, so every session ends, and emails a
+  notice); last resort `scripts/reset_mfa.py`
+  (`ISD_API_RESET_MFA_EMAIL`).
+- Rate-limited per account; audited (`mfa_enabled`, `mfa_disabled`,
+  `mfa_recovery_code_used`, `mfa_recovery_codes_replaced`, `mfa_reset`);
+  emails when a recovery code is used, it's turned off, or it's reset.
+
 ## Email (Phase 5.2)
 
 PR #66, no migration. Decisions by the product owner on 2026-09-30:

@@ -8,7 +8,7 @@ import { AccountPage } from './AccountPage'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
-  return { ...actual, getCurrentUser: vi.fn(), changePassword: vi.fn() }
+  return { ...actual, getCurrentUser: vi.fn(), changePassword: vi.fn(), getMfaStatus: vi.fn() }
 })
 
 function renderPage() {
@@ -30,6 +30,12 @@ async function fill(current: string, next: string, confirm: string) {
 describe('AccountPage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    vi.mocked(api.getMfaStatus).mockResolvedValue({
+      allowed: false,
+      required: false,
+      enabled: false,
+      recovery_codes_left: 0,
+    })
     vi.mocked(api.getCurrentUser).mockResolvedValue({
       id: 4,
       email: 'pat@example.org',

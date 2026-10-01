@@ -899,6 +899,65 @@ fieldset.motion-lockable:disabled {
   color: var(--muted);
 }
 
+/* Two-step sign-in (Phase 5.3). */
+.login-page-wide .login-card {
+  width: min(100%, 460px);
+  background: white;
+  padding: 2rem 2.25rem;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.login-page.login-page-wide form {
+  width: auto;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+.login-page.login-page-wide form::before {
+  display: none;
+}
+
+.mfa-setup ol {
+  padding-left: 1.2rem;
+  margin: 0 0 0.75rem;
+}
+
+.qr-code {
+  display: block;
+  margin: 0.5rem 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.mfa-secret,
+.recovery-codes code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  word-break: break-all;
+}
+
+.recovery-codes {
+  margin: 0.5rem 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--warning-500);
+  border-radius: var(--radius-sm);
+  background: var(--warning-50);
+}
+
+.recovery-codes ul {
+  columns: 2;
+  margin: 0.5rem 0;
+  padding-left: 1.2rem;
+}
+
+.two-step-section {
+  margin-top: 2rem;
+}
+
 /* Road closures (spec section 10). */
 .map-pin-closure .map-pin-dot {
   background: var(--danger-600);

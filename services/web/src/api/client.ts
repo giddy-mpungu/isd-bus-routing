@@ -66,6 +66,9 @@ import type {
   RidershipRules,
   RidershipRulesUpdate,
   AuthOptions,
+  LoginResult,
+  MfaSetup,
+  MfaStatus,
   ResetLink,
   RoadClosure,
   RoadClosureCreate,
@@ -148,11 +151,11 @@ function jsonInit(method: string, body: unknown): RequestInit {
   }
 }
 
-export async function login(email: string, password: string): Promise<void> {
+export async function login(email: string, password: string): Promise<LoginResult> {
   // OAuth2PasswordRequestForm on the backend expects form-encoded
   // username/password, not JSON — this is the one call that isn't.
   const body = new URLSearchParams({ username: email, password })
-  await request<{ access_token: string; token_type: string }>('/auth/login', {
+  return request<LoginResult>('/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
@@ -180,6 +183,40 @@ export async function resetPassword(token: string, newPassword: string): Promise
     '/auth/reset-password',
     jsonInit('POST', { token, new_password: newPassword }),
   )
+}
+
+// Phase 5.3: two-step sign-in. During sign-in these use the short-lived
+// cookie the password step set; from the Account page, the session.
+export async function verifyMfa(code: string): Promise<LoginResult> {
+  return request<LoginResult>('/auth/mfa/verify', jsonInit('POST', { code }))
+}
+
+export async function startMfaSetup(): Promise<MfaSetup> {
+  return request<MfaSetup>('/auth/mfa/setup', jsonInit('POST', {}))
+}
+
+export async function confirmMfa(code: string): Promise<{ recovery_codes: string[] }> {
+  return request<{ recovery_codes: string[] }>('/auth/mfa/confirm', jsonInit('POST', { code }))
+}
+
+export async function getMfaStatus(): Promise<MfaStatus> {
+  return request<MfaStatus>('/auth/mfa')
+}
+
+export async function replaceRecoveryCodes(code: string): Promise<string[]> {
+  const body = await request<{ recovery_codes: string[] }>(
+    '/auth/mfa/recovery-codes',
+    jsonInit('POST', { code }),
+  )
+  return body.recovery_codes
+}
+
+export async function disableMfa(password: string): Promise<void> {
+  await request<unknown>('/auth/mfa/disable', jsonInit('POST', { password }))
+}
+
+export async function resetUserMfa(userId: number): Promise<User> {
+  return request<User>(`/users/${userId}/mfa-reset`, jsonInit('POST', {}))
 }
 
 export async function getAuthOptions(): Promise<AuthOptions> {

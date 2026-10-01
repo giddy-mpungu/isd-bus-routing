@@ -13,6 +13,8 @@ production deployment fails to start rather than running insecurely.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 from typing import Literal
 
 from pydantic import field_validator
@@ -68,6 +70,15 @@ class Settings(BaseSettings):
     password_reset_email_minutes: int = 60
     account_setup_link_hours: int = 72
 
+    # Two-step sign-in (Phase 5.3, isd_api/mfa.py). Roles listed here must
+    # use an authenticator app; others may (drivers never do). The key
+    # encrypts authenticator secrets (a Fernet key: 32 random bytes,
+    # url-safe base64); required in production, and changing it means
+    # everyone sets up their authenticator again.
+    mfa_required_roles: list[str] = ["transportation_admin", "dispatcher"]
+    mfa_encryption_key: str | None = None
+    mfa_issuer: str = "isd-bus-routing"
+
     # Email (Phase 5.2, isd_api/mailer.py): any SMTP provider. Unset
     # smtp_host means no email is sent and "Forgot password" is hidden.
     # "starttls" upgrades a plain connection (usually port 587); "ssl" is
@@ -96,7 +107,13 @@ class Settings(BaseSettings):
     ors_profile: str = "driving-hgv"
 
     @field_validator(
-        "smtp_host", "smtp_username", "smtp_password", "mail_from", "public_web_url", mode="before"
+        "smtp_host",
+        "smtp_username",
+        "smtp_password",
+        "mail_from",
+        "public_web_url",
+        "mfa_encryption_key",
+        mode="before",
     )
     @classmethod
     def _blank_is_unset(cls, value: object) -> object:
@@ -108,6 +125,14 @@ class Settings(BaseSettings):
         base = self.public_web_url or (self.cors_allowed_origins or ["http://localhost:5173"])[0]
         return base.rstrip("/")
 
+    @property
+    def mfa_fernet_key(self) -> bytes:
+        if self.mfa_encryption_key:
+            return self.mfa_encryption_key.encode("ascii")
+        # Dev/test only (production refuses to start without a real key).
+        digest = hashlib.sha256(b"isd-mfa-dev:" + self.jwt_secret_key.encode()).digest()
+        return base64.urlsafe_b64encode(digest)
+
     def require_production_ready(self) -> None:
         if self.environment == "production" and self.jwt_secret_key == _INSECURE_DEV_JWT_SECRET:
             raise RuntimeError(
@@ -115,6 +140,16 @@ class Settings(BaseSettings):
                 "ISD_API_ENVIRONMENT=production — refusing to start with the "
                 "insecure development default."
             )
+        if self.environment == "production":
+            try:
+                ok = len(base64.urlsafe_b64decode(self.mfa_encryption_key or "")) == 32
+            except ValueError:
+                ok = False
+            if not ok:
+                raise RuntimeError(
+                    "ISD_API_MFA_ENCRYPTION_KEY must be set to 32 random bytes in url-safe "
+                    "base64 when ISD_API_ENVIRONMENT=production (see docs/deployment.md)."
+                )
         if self.smtp_host and not self.mail_from:
             raise RuntimeError("ISD_API_MAIL_FROM must be set when ISD_API_SMTP_HOST is.")
 

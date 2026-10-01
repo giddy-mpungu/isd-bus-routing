@@ -66,7 +66,10 @@ def test_changing_your_password_signs_out_other_sessions(client, db_session):
     for old in (first, second):
         ended = client.get("/users/me", headers=auth_headers(old))
         assert ended.status_code == 401
-        assert ended.json()["detail"] == "Your password was changed. Sign in again."
+        assert (
+            ended.json()["detail"]
+            == "Your sign-in details changed (password or two-step sign-in). Sign in again."
+        )
     assert client.get("/users/me", headers=auth_headers(fresh)).status_code == 200
     # The browser's cookie was replaced too, so the person stays signed in.
     assert client.get("/users/me").status_code == 200

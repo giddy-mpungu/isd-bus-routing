@@ -104,6 +104,15 @@ def _pin_ridership_clock(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_required_mfa(monkeypatch):
+    """Most tests sign admins and dispatchers in with a password alone;
+    tests of two-step sign-in (test_mfa.py) turn the requirement back on."""
+    from isd_api.config import settings
+
+    monkeypatch.setattr(settings, "mfa_required_roles", [])
+
+
+@pytest.fixture(autouse=True)
 def _reset_login_rate_limiter():
     """login_rate_limiter is process-global state (services/api/src/
     isd_api/security.py) — TestClient requests all share

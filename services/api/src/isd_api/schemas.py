@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -49,6 +50,51 @@ class PasswordChange(BaseModel):
     new_password: str
 
 
+class LoginResult(BaseModel):
+    """POST /auth/login and /auth/mfa/verify. `mfa` says what's still
+    needed after a correct password: "verify" (enter a code) or "setup"
+    (the role needs an authenticator and the account has none yet); then
+    there's no token yet, only a short-lived cookie for /auth/mfa/*."""
+
+    access_token: str | None = None
+    token_type: str = "bearer"
+    mfa: Literal["verify", "setup"] | None = None
+    recovery_codes_left: int | None = None
+
+
+class MfaCode(BaseModel):
+    code: str = Field(min_length=1, max_length=20)
+
+
+class MfaSetupRead(BaseModel):
+    """Shown once while setting up: the QR code encodes `otpauth_uri`;
+    `secret` is for typing in by hand."""
+
+    secret: str
+    otpauth_uri: str
+
+
+class MfaConfirmRead(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    recovery_codes: list[str]
+
+
+class MfaStatus(BaseModel):
+    allowed: bool
+    required: bool
+    enabled: bool
+    recovery_codes_left: int
+
+
+class MfaDisable(BaseModel):
+    password: str
+
+
+class RecoveryCodesRead(BaseModel):
+    recovery_codes: list[str]
+
+
 class ForgotPassword(BaseModel):
     email: str = Field(max_length=255)
 
@@ -83,6 +129,8 @@ class UserRead(BaseModel):
     school_id: int | None = None
     student_id: int | None = None
     created_at: datetime
+    mfa_enabled: bool = False
+    mfa_required: bool = False
 
 
 class UserUpdate(BaseModel):

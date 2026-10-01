@@ -2,16 +2,21 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
+import type { MfaStep } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import { MfaSetup } from '../components/MfaSetup'
 
 export function LoginPage() {
-  const { user, login } = useAuth()
+  const { user, login, completeSignIn } = useAuth()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [emailEnabled, setEmailEnabled] = useState(false)
+  // Phase 5.3: the second step, once the password was right.
+  const [step, setStep] = useState<MfaStep | null>(null)
+  const [code, setCode] = useState('')
 
   useEffect(() => {
     let current = true
@@ -35,18 +40,100 @@ export function LoginPage() {
     return <Navigate to="/" replace />
   }
 
+  async function finish() {
+    await completeSignIn()
+    navigate('/')
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     setError(null)
     setIsSubmitting(true)
     try {
-      await login(email, password)
-      navigate('/')
+      const next = await login(email, password)
+      if (next) {
+        setPassword('')
+        setStep(next)
+      } else {
+        navigate('/')
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Login failed.')
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  async function handleVerify(event: FormEvent) {
+    event.preventDefault()
+    setError(null)
+    setIsSubmitting(true)
+    try {
+      const result = await api.verifyMfa(code)
+      if (result.recovery_codes_left !== null && result.recovery_codes_left <= 3) {
+        window.alert(
+          `You have ${result.recovery_codes_left} recovery codes left. Make new ones on your Account page.`,
+        )
+      }
+      await finish()
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        // The 5-minute window after the password ran out.
+        setStep(null)
+      }
+      setError(err instanceof ApiError ? err.message : 'Sign-in failed.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  if (step === 'setup') {
+    return (
+      <main className="login-page login-page-wide">
+        <div className="login-card">
+          <h1>Set up two-step sign-in</h1>
+          <p>
+            Your role can see student information, so signing in needs a code from an authenticator
+            app as well as your password. This takes about a minute.
+          </p>
+          <MfaSetup onDone={() => void finish()} />
+        </div>
+      </main>
+    )
+  }
+
+  if (step === 'verify') {
+    return (
+      <main className="login-page">
+        <form onSubmit={(event) => void handleVerify(event)}>
+          <h1>Two-step sign-in</h1>
+          <p>Enter the 6-digit code from your authenticator app.</p>
+          <label htmlFor="mfa-code">Code</label>
+          <input
+            id="mfa-code"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={20}
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            required
+            autoFocus
+          />
+          {error && (
+            <p role="alert" className="error">
+              {error}
+            </p>
+          )}
+          <button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? 'Checking…' : 'Sign in'}
+          </button>
+          <p className="login-help">
+            Lost your phone? Enter one of your recovery codes instead, or ask your transportation
+            office to reset two-step sign-in.
+          </p>
+        </form>
+      </main>
+    )
   }
 
   return (

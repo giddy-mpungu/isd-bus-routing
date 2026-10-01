@@ -16,12 +16,19 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from isd_api import account_emails, mailer, passwords
+from isd_api import account_emails, mailer, mfa, passwords
 from isd_api.audit import record as record_audit
 from isd_api.config import settings
 from isd_api.db import get_db
 from isd_api.models import PasswordResetToken, User
-from isd_api.schemas import AuthOptions, ForgotPassword, PasswordChange, PasswordReset, Token
+from isd_api.schemas import (
+    AuthOptions,
+    ForgotPassword,
+    LoginResult,
+    PasswordChange,
+    PasswordReset,
+    Token,
+)
 from isd_api.security import (
     SESSION_COOKIE_NAME,
     clear_session_cookie,
@@ -33,19 +40,20 @@ from isd_api.security import (
     password_rate_limiter,
     reset_email_limiter,
     revoke_token,
+    set_mfa_pending_cookie,
     verify_password,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=LoginResult)
 def login(
     request: Request,
     response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
-) -> Token:
+) -> LoginResult:
     login_rate_limiter.check(request.client.host if request.client else "unknown")
     user = db.query(User).filter(User.email == form_data.username).one_or_none()
     if (
@@ -63,7 +71,12 @@ def login(
     # (returned in the body, unchanged from before), and a longer-lived
     # session token for the browser (set as an httpOnly cookie, never
     # exposed in the response body — the frontend never touches it).
-    return Token(access_token=issue_tokens(response, user))
+    # With two-step sign-in (isd_api/mfa.py), neither is issued until the
+    # code is entered: only a 5-minute cookie for /auth/mfa/*.
+    if mfa.is_enabled(user) or mfa.is_required(user):
+        set_mfa_pending_cookie(response, user)
+        return LoginResult(mfa="verify" if mfa.is_enabled(user) else "setup")
+    return LoginResult(access_token=issue_tokens(response, user))
 
 
 def _set_password(user: User, new_password: str) -> None:
@@ -149,7 +162,10 @@ def change_password(
     db.commit()
     db.refresh(current_user)
     _notify_password_changed(background, current_user)
-    return Token(access_token=issue_tokens(response, current_user))
+    # Signed in with two-step sign-in on means the code was entered.
+    return Token(
+        access_token=issue_tokens(response, current_user, mfa=mfa.is_enabled(current_user))
+    )
 
 
 @router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)

@@ -67,6 +67,9 @@ services:
       ISD_API_JWT_SECRET_KEY: ${ISD_API_JWT_SECRET_KEY:?set a real random secret in .env — see docs/deployment.md}
       ISD_API_CORS_ALLOWED_ORIGINS: ${ISD_API_CORS_ALLOWED_ORIGINS:?set the real public web origin(s) as a JSON list in .env, e.g. ["https://bus.yourdistrict.example.org"]}
       ISD_API_ORS_API_KEY: ${ISD_API_ORS_API_KEY:-}
+      # Two-step sign-in (docs/deployment.md, "Two-step sign-in").
+      ISD_API_MFA_ENCRYPTION_KEY: ${ISD_API_MFA_ENCRYPTION_KEY:?set 32 random bytes, url-safe base64, in .env — see docs/deployment.md}
+      ISD_API_MFA_REQUIRED_ROLES: ${ISD_API_MFA_REQUIRED_ROLES:-["transportation_admin","dispatcher"]}
       # Email (optional; docs/deployment.md, "Email"). Blank host = no email.
       ISD_API_SMTP_HOST: ${ISD_API_SMTP_HOST:-}
       ISD_API_SMTP_PORT: ${ISD_API_SMTP_PORT:-587}

@@ -14,6 +14,9 @@ export interface CurrentUser {
   driver_id: number | null
   school_id: number | null
   student_id: number | null
+  // Phase 5.3: two-step sign-in is on / needed for this role.
+  mfa_enabled?: boolean
+  mfa_required?: boolean
 }
 
 export interface User extends CurrentUser {
@@ -1074,6 +1077,29 @@ export interface RoadClosureCreate {
   radius_m: number
   starts_at?: string | null
   ends_at?: string | null
+}
+
+// Phase 5.3: after a correct password, what's still needed: a code
+// ("verify") or setting up an authenticator ("setup").
+export type MfaStep = 'verify' | 'setup'
+
+export interface LoginResult {
+  access_token: string | null
+  token_type: string
+  mfa: MfaStep | null
+  recovery_codes_left: number | null
+}
+
+export interface MfaSetup {
+  secret: string
+  otpauth_uri: string
+}
+
+export interface MfaStatus {
+  allowed: boolean
+  required: boolean
+  enabled: boolean
+  recovery_codes_left: number
 }
 
 // Phase 5.2: what the sign-in page can offer.

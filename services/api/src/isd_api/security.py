@@ -53,6 +53,7 @@ def create_access_token(
     user_id: int,
     role: Role,
     token_version: int = 0,
+    mfa: bool = False,
     expires_delta: timedelta | None = None,
 ) -> str:
     delta = expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
@@ -68,11 +69,15 @@ def create_access_token(
         "exp": expire,
         "jti": str(uuid.uuid4()),
         "tv": token_version,
+        # True once the second step was passed (isd_api/mfa.py).
+        "mfa": mfa,
     }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-def create_session_token(*, user_id: int, role: Role, token_version: int = 0) -> str:
+def create_session_token(
+    *, user_id: int, role: Role, token_version: int = 0, mfa: bool = False
+) -> str:
     """A longer-lived token for the browser session cookie (Phase 3).
     Its exp is the absolute session ceiling — unaffected by the sliding
     Max-Age renewal set_session_cookie performs on each request."""
@@ -80,6 +85,7 @@ def create_session_token(*, user_id: int, role: Role, token_version: int = 0) ->
         user_id=user_id,
         role=role,
         token_version=token_version,
+        mfa=mfa,
         expires_delta=timedelta(hours=settings.session_absolute_max_hours),
     )
 
@@ -207,14 +213,70 @@ password_rate_limiter = LoginRateLimiter(
 reset_email_limiter = LoginRateLimiter(max_attempts=3, window_seconds=3600)
 
 
-def issue_tokens(response: Response, user: User) -> str:
+def issue_tokens(response: Response, user: User, *, mfa: bool = False) -> str:
     """Sets a fresh session cookie for `user` and returns a bearer token,
-    both under the account's current token_version."""
+    both under the account's current token_version. `mfa`: the second
+    step was passed (required for accounts that have or need it)."""
     set_session_cookie(
         response,
-        create_session_token(user_id=user.id, role=user.role, token_version=user.token_version),
+        create_session_token(
+            user_id=user.id, role=user.role, token_version=user.token_version, mfa=mfa
+        ),
     )
-    return create_access_token(user_id=user.id, role=user.role, token_version=user.token_version)
+    return create_access_token(
+        user_id=user.id, role=user.role, token_version=user.token_version, mfa=mfa
+    )
+
+
+MFA_PENDING_COOKIE_NAME = "isd_mfa_pending"
+MFA_PENDING_MINUTES = 5
+
+
+def set_mfa_pending_cookie(response: Response, user: User) -> None:
+    """After a correct password, when a code (or authenticator setup) is
+    still needed: a 5-minute token that only the /auth/mfa endpoints
+    accept, never a session (get_current_user refuses any "purpose")."""
+    expire = datetime.now(UTC) + timedelta(minutes=MFA_PENDING_MINUTES)
+    token = jwt.encode(
+        {
+            "sub": str(user.id),
+            "purpose": "mfa",
+            "tv": user.token_version,
+            "exp": expire,
+            "jti": str(uuid.uuid4()),
+        },
+        settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+    )
+    response.set_cookie(
+        key=MFA_PENDING_COOKIE_NAME,
+        value=token,
+        max_age=MFA_PENDING_MINUTES * 60,
+        httponly=True,
+        samesite="strict",
+        secure=settings.environment == "production",
+        path="/",
+    )
+
+
+def clear_mfa_pending_cookie(response: Response) -> None:
+    response.delete_cookie(key=MFA_PENDING_COOKIE_NAME, path="/")
+
+
+def pending_mfa_user(token: str | None, db: Session) -> User | None:
+    """The user a pending-MFA cookie belongs to, if it's still valid."""
+    if token is None:
+        return None
+    try:
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+    except jwt.PyJWTError:
+        return None
+    if payload.get("purpose") != "mfa":
+        return None
+    user = db.get(User, int(payload["sub"]))
+    if user is None or not user.is_active or payload.get("tv") != user.token_version:
+        return None
+    return user
 
 
 def get_current_user(
@@ -244,6 +306,10 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     payload = _decode_token(token)
+    # Only session and bearer tokens authenticate; a pending-MFA token
+    # (purpose "mfa") never does.
+    if payload.get("purpose") is not None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     # A token issued before this claim existed has no "jti" — skip the
     # check rather than treating a missing claim as automatically
     # revoked, so already-issued sessions don't break on deploy.
@@ -264,7 +330,15 @@ def get_current_user(
     if payload.get("tv", 0) != user.token_version:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Your password was changed. Sign in again.",
+            detail="Your sign-in details changed (password or two-step sign-in). Sign in again.",
+        )
+    # Accounts that have or need two-step sign-in only work with a token
+    # issued after the code was entered. This also ends password-only
+    # sessions of someone who was just given a role that needs it.
+    if (user.mfa_enabled or user.mfa_required) and not payload.get("mfa", False):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sign in again to use two-step sign-in.",
         )
     if authenticated_via_cookie:
         set_session_cookie(response, token)

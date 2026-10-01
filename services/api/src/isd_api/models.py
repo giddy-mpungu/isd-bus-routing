@@ -252,8 +252,27 @@ class User(Base):
     token_version: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0", nullable=False
     )
+    # Two-step sign-in (isd_api/mfa.py): the authenticator secret,
+    # encrypted; a secret being set up but not yet confirmed; the time
+    # step of the last code accepted, so no code works twice.
+    mfa_secret_encrypted: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    mfa_pending_secret_encrypted: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    mfa_last_step: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mfa_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     driver: Mapped[Driver | None] = relationship(back_populates="user")
+
+    @property
+    def mfa_enabled(self) -> bool:
+        return self.mfa_secret_encrypted is not None
+
+    @property
+    def mfa_required(self) -> bool:
+        # Never on driver accounts: tablets are shared (isd_api/mfa.py).
+        from isd_api.config import settings
+
+        return self.role != Role.DRIVER and self.role.value in settings.mfa_required_roles
+
     guardian_of: Mapped[list[Student]] = relationship(
         secondary="student_guardians", back_populates="guardians"
     )
@@ -1190,6 +1209,18 @@ class AuditLogEntry(Base):
     before_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     after_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class MfaRecoveryCode(Base):
+    """A single-use code for signing in without the authenticator app
+    (Phase 5.3). Only its SHA-256 is kept; see isd_api/mfa.py."""
+
+    __tablename__ = "mfa_recovery_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class PasswordResetToken(Base):
