@@ -11,9 +11,7 @@ import { expect } from 'vitest'
  * empty map depends on timing that shifts under a full-suite load, so pin
  * checks or map clicks straight after it fail intermittently. Leaflet adds
  * its map pane in the same effect pass that draws the points, so once the
- * pane is there, so is everything else. (Not the `leaflet-container`
- * class: React rewrites the container's className whenever `is-pickable`
- * toggles, which drops Leaflet's classes.)
+ * pane is there, so is everything else.
  */
 export function findMap(name: string): Promise<HTMLElement> {
   return waitFor(() => {
