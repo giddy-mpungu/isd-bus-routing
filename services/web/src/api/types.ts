@@ -17,6 +17,8 @@ export interface CurrentUser {
   // Phase 5.3: two-step sign-in is on / needed for this role.
   mfa_enabled?: boolean
   mfa_required?: boolean
+  // Phase 5.4: signs in with the district account (single sign-on).
+  sso_linked?: boolean
 }
 
 export interface User extends CurrentUser {
@@ -1105,6 +1107,8 @@ export interface MfaStatus {
 // Phase 5.2: what the sign-in page can offer.
 export interface AuthOptions {
   email_enabled: boolean
+  // Phase 5.4: the single sign-on button's wording; null when SSO is off.
+  sso_label?: string | null
 }
 
 // Phase 5.1: a one-time link to set a new password. The token is in the

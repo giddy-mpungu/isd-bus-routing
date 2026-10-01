@@ -899,6 +899,29 @@ fieldset.motion-lockable:disabled {
   color: var(--muted);
 }
 
+/* Single sign-on (Phase 5.4). */
+.sso-button {
+  display: block;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--brand-600);
+  border-radius: var(--radius-sm);
+  color: var(--brand-700);
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+}
+
+.sso-button:hover,
+.sso-button:focus-visible {
+  background: var(--brand-50);
+}
+
+.login-page p.login-or {
+  margin: 0.4rem 0 0;
+  text-align: center;
+  font-size: 0.85rem;
+}
+
 /* Two-step sign-in (Phase 5.3). */
 .login-page-wide .login-card {
   width: min(100%, 460px);

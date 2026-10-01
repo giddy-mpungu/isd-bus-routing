@@ -113,9 +113,9 @@ def test_settings_treat_blank_as_unset_and_need_a_sender():
 
 
 def test_options_say_whether_email_is_on(client, outbox, monkeypatch):
-    assert client.get("/auth/options").json() == {"email_enabled": True}
+    assert client.get("/auth/options").json()["email_enabled"] is True
     monkeypatch.setattr(settings, "smtp_host", None)
-    assert client.get("/auth/options").json() == {"email_enabled": False}
+    assert client.get("/auth/options").json()["email_enabled"] is False
 
 
 def test_forgot_password_emails_a_one_hour_link(client, db_session, outbox):

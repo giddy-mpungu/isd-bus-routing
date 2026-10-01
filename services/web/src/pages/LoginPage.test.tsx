@@ -21,9 +21,9 @@ vi.mock('../api/client', async (importOriginal) => {
   }
 })
 
-function renderLoginPage() {
+function renderLoginPage(entry = '/login') {
   return render(
-    <MemoryRouter initialEntries={['/login']}>
+    <MemoryRouter initialEntries={[entry]}>
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
@@ -198,5 +198,34 @@ describe('LoginPage', () => {
     expect(api.confirmMfa).toHaveBeenCalledWith('654321')
     await user.click(screen.getByRole('button', { name: "I've saved them" }))
     expect(await screen.findByText('schedule page')).toBeInTheDocument()
+  })
+
+  it('offers single sign-on when the district has it', async () => {
+    vi.mocked(api.getAuthOptions).mockResolvedValue({
+      email_enabled: false,
+      sso_label: 'your district account',
+    })
+    renderLoginPage()
+    const link = await screen.findByRole('link', { name: 'Sign in with your district account' })
+    expect(link).toHaveAttribute('href', api.ssoStartUrl())
+    expect(api.ssoStartUrl()).toMatch(/\/auth\/oidc\/start$/)
+  })
+
+  it('has no single sign-on button when it is off', async () => {
+    renderLoginPage()
+    await screen.findByText(/Forgot your password\?/)
+    expect(screen.queryByRole('link', { name: /Sign in with/ })).not.toBeInTheDocument()
+  })
+
+  it('explains why single sign-on sent the browser back', async () => {
+    renderLoginPage('/login?sso_error=no_account')
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "There's no account for that district email here.",
+    )
+  })
+
+  it('asks for our code after single sign-on when the district reported none', async () => {
+    renderLoginPage('/login?mfa=verify')
+    expect(await screen.findByRole('heading', { name: 'Two-step sign-in' })).toBeInTheDocument()
   })
 })

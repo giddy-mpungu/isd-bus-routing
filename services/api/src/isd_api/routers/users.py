@@ -239,3 +239,26 @@ def reset_mfa(
     if mailer.is_configured():
         background.add_task(mailer.send_quietly, account_emails.mfa_reset_email(user))
     return user
+
+
+@router.post("/{user_id}/sso-unlink", response_model=UserRead)
+def unlink_sso(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+) -> User:
+    """Forgets which district account signs this person in (Phase 5.4),
+    e.g. after the district gave them a new one; their next SSO sign-in
+    links again."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if user.oidc_subject is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Not linked")
+    user.oidc_subject = None
+    record_audit(
+        db, entity_type="user", entity_id=user.id, action="sso_unlinked", actor=current_user
+    )
+    db.commit()
+    db.refresh(user)
+    return user

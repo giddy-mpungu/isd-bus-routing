@@ -70,6 +70,13 @@ services:
       # Two-step sign-in (docs/deployment.md, "Two-step sign-in").
       ISD_API_MFA_ENCRYPTION_KEY: ${ISD_API_MFA_ENCRYPTION_KEY:?set 32 random bytes, url-safe base64, in .env — see docs/deployment.md}
       ISD_API_MFA_REQUIRED_ROLES: ${ISD_API_MFA_REQUIRED_ROLES:-["transportation_admin","dispatcher"]}
+      # Single sign-on (optional; docs/deployment.md, "Single sign-on").
+      ISD_API_OIDC_ISSUER: ${ISD_API_OIDC_ISSUER:-}
+      ISD_API_OIDC_CLIENT_ID: ${ISD_API_OIDC_CLIENT_ID:-}
+      ISD_API_OIDC_CLIENT_SECRET: ${ISD_API_OIDC_CLIENT_SECRET:-}
+      ISD_API_OIDC_REDIRECT_URI: ${ISD_API_OIDC_REDIRECT_URI:-}
+      ISD_API_OIDC_TRUST_MFA: ${ISD_API_OIDC_TRUST_MFA:-claim}
+      ISD_API_OIDC_LABEL: ${ISD_API_OIDC_LABEL:-your district account}
       # Email (optional; docs/deployment.md, "Email"). Blank host = no email.
       ISD_API_SMTP_HOST: ${ISD_API_SMTP_HOST:-}
       ISD_API_SMTP_PORT: ${ISD_API_SMTP_PORT:-587}

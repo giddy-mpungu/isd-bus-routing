@@ -32,6 +32,7 @@ from isd_api.routers import (
     schedule,
     schools,
     sis_import,
+    sso,
     stop_proposals,
     stops,
     students,
@@ -100,6 +101,7 @@ app.include_router(optimization_settings.router)
 app.include_router(ridership_rules.router)
 app.include_router(road_closures.router)
 app.include_router(mfa.router)
+app.include_router(sso.router)
 app.include_router(transportation_rules.router)
 app.include_router(templates.route_router)
 app.include_router(templates.crew_router)

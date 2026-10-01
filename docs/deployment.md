@@ -236,6 +236,35 @@ subdomain placeholder becomes a `*.` wildcard, e.g.
 `https://*.tiles.example.com`. A value that isn't an absolute http(s)
 URL or a same-origin `/path` fails the image build.
 
+## Single sign-on (optional)
+
+Staff can sign in with the district's own accounts through any OpenID
+Connect provider (Microsoft Entra ID, Google Workspace, Okta, Keycloak,
+...). Only people who already have an account here, with the same email,
+get in; admins still add them in Users. Families keep passwords, and
+passwords keep working for staff too.
+
+1. Register an app with the provider: a confidential "web" client using
+   the authorization code flow, redirect URI
+   `https://bus.yourdistrict.example.org/api/auth/oidc/callback`, scopes
+   `openid email profile`.
+2. In `.env` set `ISD_API_OIDC_ISSUER` (single-tenant, e.g.
+   `https://login.microsoftonline.com/<tenant-id>/v2.0` or
+   `https://accounts.google.com`), `ISD_API_OIDC_CLIENT_ID`,
+   `ISD_API_OIDC_CLIENT_SECRET` and `ISD_API_OIDC_REDIRECT_URI` (the same
+   URI). The sign-in page then shows "Sign in with your district
+   account" (`ISD_API_OIDC_LABEL` changes the wording).
+3. Decide how far to trust the district's two-step check
+   (`ISD_API_OIDC_TRUST_MFA`): `claim` (default) skips ours only when the
+   ID token says MFA was used; `always` if the district enforces MFA for
+   everyone signing in to this app but the token doesn't say so (common
+   with Entra ID and Google); `never` always asks for ours too.
+
+Use a single-tenant issuer: with a multi-tenant one, any organisation's
+users could present an email that matches. Access logs record the
+one-time authorization code in the callback URL; it's useless once
+exchanged and, with PKCE, can't be redeemed without the browser's secret.
+
 ## Two-step sign-in
 
 Transportation admins and dispatchers sign in with a password plus a
