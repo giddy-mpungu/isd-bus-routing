@@ -9,7 +9,7 @@
 # migrations, ISD_API_ENVIRONMENT=production, Secure session cookies,
 # Caddy in front) so what testers see is what a real server runs, and
 # moving to a VPS later is just the prod file on its own with a real
-# .env (docs/deployment.md). Only four things differ here:
+# .env (docs/deployment.md). Only five things differ here:
 
 name: isd-demo
 
@@ -64,8 +64,17 @@ services:
   worker:
     environment: *demo-mail
 
-# 3. A demo-only database password file, so a demo never shares a
-#    secret with a real deployment's ./secrets/postgres_password.txt.
+  # 5. Backups go to a folder on this computer, ./demo-backups
+  #    (gitignored; .env.demo sets RESTIC_REPOSITORY=/backups/restic),
+  #    instead of storage off the server.
+  backup:
+    volumes: !override
+      - ./demo-backups:/backups
+
+# 3. Demo-only secret files, so a demo never shares a secret with a real
+#    deployment's ./secrets/*.txt.
 secrets:
   postgres_password:
     file: ./secrets/demo_postgres_password.txt
+  restic_password:
+    file: ./secrets/demo_restic_password.txt

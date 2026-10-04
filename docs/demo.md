@@ -132,6 +132,8 @@ code to scan. To try the demo without it, add
 | `scripts\demo.cmd status` | What's running |
 | `scripts\demo.cmd logs` | Follow the logs (Ctrl+C to stop following) |
 | `scripts\demo.cmd credentials` | Print the demo logins again |
+| `scripts\demo.cmd backup` | Back up the demo database now, to `demo-backups\` (it also happens every night at 02:00 and before every `up` that updates it) |
+| `scripts\demo.cmd check-backup` | Prove the latest backup restores, into a throwaway database |
 | `scripts\demo.cmd reset` | **Delete all demo data** and the demo's secrets, after you type `RESET` to confirm. The next `up` starts from a fresh district. |
 
 If you also use the dev `docker-compose.yml`, stop it first. Both use

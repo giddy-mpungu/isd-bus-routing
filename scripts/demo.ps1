@@ -12,6 +12,9 @@
   status       Show what's running.
   logs         Follow the logs (Ctrl+C to stop following).
   credentials  Print the demo logins again.
+  backup       Back up the demo database now (also nightly at 02:00 and before
+               every update), to .\demo-backups.
+  check-backup Prove the latest backup restores, into a throwaway database.
   reset        Delete ALL demo data and secrets and start over from scratch.
 
 .EXAMPLE
@@ -19,7 +22,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('up', 'share', 'unshare', 'stop', 'status', 'logs', 'credentials', 'reset')]
+    [ValidateSet('up', 'share', 'unshare', 'stop', 'status', 'logs', 'credentials', 'backup', 'check-backup', 'reset')]
     [string]$Command = 'up'
 )
 
@@ -29,6 +32,7 @@ Set-Location $RepoRoot
 
 $EnvFile = Join-Path $RepoRoot '.env.demo'
 $PgPasswordFile = Join-Path $RepoRoot 'secrets\demo_postgres_password.txt'
+$ResticPasswordFile = Join-Path $RepoRoot 'secrets\demo_restic_password.txt'
 $CredentialsJson = Join-Path $RepoRoot 'secrets\demo-credentials.json'
 $LocalUrl = 'http://localhost:8080'
 $ComposeArgs = @('compose', '--env-file', $EnvFile, '-f', 'docker-compose.prod.yml', '-f', 'docker-compose.demo.yml')
@@ -97,7 +101,7 @@ function Initialize-Secrets {
     # Generated once, on first run, and never printed. Both files are
     # gitignored (.env.* and secrets/*).
     if ((Test-Path $EnvFile) -and (Test-Path $PgPasswordFile)) {
-        Add-MfaKey
+        Add-MissingSettings
         return
     }
     Write-Step 'Generating demo secrets (first run only)...'
@@ -123,17 +127,25 @@ function Initialize-Secrets {
             'CADDY_DOMAIN=:8080',
             ''
         ) -join "`n")
-    Add-MfaKey
+    Add-MissingSettings
 }
 
-function Add-MfaKey {
-    # Demos made before two-step sign-in (PR #68) have no key yet; add one
-    # without touching anything else in .env.demo.
+function Add-EnvSetting([string]$Name, [string]$Value, [string]$Comment) {
+    # Demos made before a setting existed don't have it yet; add it without
+    # touching anything else in .env.demo.
     $current = [System.IO.File]::ReadAllText($EnvFile)
-    if ($current -match '(?m)^ISD_API_MFA_ENCRYPTION_KEY=') { return }
+    if ($current -match "(?m)^$Name=") { return }
     if ($current.Length -gt 0 -and -not $current.EndsWith("`n")) { $current += "`n" }
-    $key = New-FernetKey
-    Write-TextFile $EnvFile ($current + "# Encrypts authenticator secrets (two-step sign-in).`nISD_API_MFA_ENCRYPTION_KEY=$key`n")
+    Write-TextFile $EnvFile ($current + "# $Comment`n$Name=$Value`n")
+}
+
+function Add-MissingSettings {
+    Add-EnvSetting 'ISD_API_MFA_ENCRYPTION_KEY' (New-FernetKey) 'Encrypts authenticator secrets (two-step sign-in).'
+    Add-EnvSetting 'RESTIC_REPOSITORY' '/backups/restic' 'Backups go to .\demo-backups on this computer.'
+    if (-not (Test-Path $ResticPasswordFile)) {
+        # Hex only; never printed. Losing it makes the demo's backups unreadable.
+        Write-TextFile $ResticPasswordFile (New-RandomHex 32)
+    }
 }
 
 function Show-Credentials {
@@ -156,6 +168,10 @@ function Start-Demo {
 
     Write-Step 'Building and starting the stack (the first build takes a few minutes)...'
     Invoke-Compose up -d --build --wait postgres mailpit api worker web caddy
+
+    Write-Step 'Backing up the database before applying migrations...'
+    Invoke-Compose up -d --build backup
+    Invoke-Compose exec -T backup backup.sh pre-migration
 
     Write-Step 'Applying database migrations...'
     Invoke-Compose exec -T api alembic upgrade head
@@ -215,14 +231,19 @@ switch ($Command) {
     'status' { Invoke-Compose --profile share ps }
     'logs' { Invoke-Compose --profile share logs -f --tail 100 }
     'credentials' { Show-Credentials }
+    'backup' { Invoke-Compose exec -T backup backup.sh manual }
+    'check-backup' { Invoke-Compose exec -T backup check-restore.sh }
     'reset' {
-        Write-Host 'This permanently deletes ALL demo data (database, logins) and the demo secrets.' -ForegroundColor Yellow
+        Write-Host 'This permanently deletes ALL demo data (database, logins, backups) and the demo secrets.' -ForegroundColor Yellow
         $answer = Read-Host 'Type RESET to continue'
         if ($answer -cne 'RESET') { Write-Host 'Cancelled; nothing was deleted.'; return }
         if (Test-Path $EnvFile) { Invoke-Compose --profile share down -v }
-        foreach ($f in @($EnvFile, $PgPasswordFile, $CredentialsJson)) {
+        foreach ($f in @($EnvFile, $PgPasswordFile, $ResticPasswordFile, $CredentialsJson)) {
             if (Test-Path $f) { Remove-Item $f }
         }
+        # The demo's backups go too: without their password they can't be read.
+        $backups = Join-Path $RepoRoot 'demo-backups'
+        if (Test-Path $backups) { Remove-Item -Recurse -Force $backups }
         Write-Host 'Demo reset. Run "scripts\demo.ps1 up" to start fresh.' -ForegroundColor Green
     }
 }

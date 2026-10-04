@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import logging
 import signal
+import tempfile
 import threading
 from collections.abc import Callable
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
@@ -23,6 +25,10 @@ from isd_api.config import settings
 from isd_api.db import SessionLocal
 
 logger = logging.getLogger("isd_api.worker")
+
+# Touched after every pass; the container's health check (docker-compose)
+# fails when it gets old, i.e. when the loop has stopped or hung.
+HEARTBEAT = Path(tempfile.gettempdir()) / "isd-worker-heartbeat"  # /tmp in the container
 
 JOBS: list[tuple[str, Callable[[Session], int]]] = [
     ("bus-time emails", eta_notifications.run),
@@ -53,6 +59,7 @@ def main() -> None:
     logger.info("worker started; every %ds", settings.worker_interval_seconds)
     while not stop.is_set():
         run_once()
+        HEARTBEAT.touch()
         stop.wait(settings.worker_interval_seconds)
     logger.info("worker stopped")
 

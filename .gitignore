@@ -31,3 +31,6 @@ secrets/*
 
 # Generated local Keycloak realm and its throwaway credentials (dev/keycloak/make_realm.py).
 dev/keycloak/out/
+
+# The laptop demo's backups (docker-compose.demo.yml).
+demo-backups/
