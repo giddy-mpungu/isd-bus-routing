@@ -57,7 +57,12 @@ services:
       api:
         condition: service_healthy
     healthcheck:
-      disable: true
+      # Healthy while the loop keeps going (isd_api/worker.py HEARTBEAT).
+      test: ["CMD", "python", "-c", "import os, sys, time; sys.exit(time.time() - os.path.getmtime('/tmp/isd-worker-heartbeat') > 600)"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   mailpit:
     image: axllent/mailpit:latest

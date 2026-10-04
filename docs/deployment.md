@@ -146,9 +146,12 @@ a real domain, Let's Encrypt, and an internet-facing host.
 
 ```bash
 git pull
+docker compose -f docker-compose.prod.yml exec backup backup.sh pre-migration
 docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
 ```
+
+The first line takes a backup before anything changes (see Backups).
 
 Pull the new images/rebuild *before* migrating, so the old code never
 runs against a newer schema than it expects. `alembic upgrade head` is
@@ -167,32 +170,63 @@ been verified to run cleanly with no manual fixes (on SQLite; the
 `api-postgres` CI job verifies each new migration the same way against
 real PostgreSQL as it's added) — but a downgrade against real
 production *data* (not an empty schema) has not been exercised. Take a
-backup (below) immediately before rolling back a migration on data you
-care about.
+backup (`backup.sh pre-migration`, below) immediately before rolling
+back a migration on data you care about.
 
 ## Backups
 
-PostgreSQL data lives in the `postgres-data` named volume. A logical
-dump is the simplest reliable backup for this size of deployment:
+The `backup` service (services/backup) backs the database up every night
+at `BACKUP_TIME` (02:00, in `BACKUP_TZ`): a `pg_dump`, the newest 7 kept
+on this server in the `backup-data` volume, and every one sent with
+[restic](https://restic.net), **encrypted**, to `RESTIC_REPOSITORY` **off
+this server**. restic keeps 7 daily, 4 weekly and 12 monthly snapshots
+and deletes older ones. Every Sunday it also restores the latest backup
+into a throwaway database to prove it works. These were the product
+owner's choices (2026-10-04).
+
+Set up before go-live:
+
+1. Create a bucket with any S3-compatible provider (Backblaze B2, about
+   $6 per TB a month; Cloudflare R2; AWS S3; Wasabi) and an access key
+   limited to that bucket. Put `RESTIC_REPOSITORY`,
+   `BACKUP_S3_ACCESS_KEY_ID` and `BACKUP_S3_SECRET_ACCESS_KEY` in `.env`
+   (examples in `.env.prod.example`).
+2. Generate the encryption password, and **store a copy in a password
+   manager, off this server**. Without it, no backup can ever be read:
+
+   ```bash
+   openssl rand -hex 32 > secrets/restic_password.txt
+   ```
+
+3. Start it and take the first backup by hand:
+
+   ```bash
+   docker compose -f docker-compose.prod.yml up -d backup
+   docker compose -f docker-compose.prod.yml exec backup backup.sh manual
+   docker compose -f docker-compose.prod.yml exec backup check-restore.sh
+   ```
+
+Check on it any time:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec postgres \
-  pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup-$(date +%F).sql
+docker compose -f docker-compose.prod.yml logs --tail 50 backup
+docker compose -f docker-compose.prod.yml exec backup restic snapshots
 ```
 
-Restore into a fresh volume:
+**Restoring** replaces the whole database with a backup; everything since
+is lost. Stop what writes to it first:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec -T postgres \
-  psql -U "$POSTGRES_USER" "$POSTGRES_DB" < backup-2026-09-22.sql
+docker compose -f docker-compose.prod.yml stop api worker
+docker compose -f docker-compose.prod.yml exec backup restic snapshots
+docker compose -f docker-compose.prod.yml exec -e CONFIRM_RESTORE=isd_api backup restore.sh latest
+docker compose -f docker-compose.prod.yml up -d api worker
 ```
 
-Automate the dump on a schedule (e.g. a daily cron job calling the
-`pg_dump` command above) and copy the resulting file off the host —
-a backup that only ever lives on the same disk as the database it
-backs up doesn't protect against that disk failing. This project does
-not include that scheduling or off-host copy step yet; set it up
-before this deployment holds any data a district depends on.
+(Use a snapshot id from `restic snapshots` instead of `latest` for an
+older one; `CONFIRM_RESTORE` must be the database name, `POSTGRES_DB`.)
+On a brand-new server, set up `.env`, the secrets and the stack first,
+run `alembic upgrade head`, then restore.
 
 ## Monitoring and logs
 
