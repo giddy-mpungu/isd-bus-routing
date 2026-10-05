@@ -55,7 +55,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine.dispose()
 
 
-app = FastAPI(title="isd-bus-routing API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="isd-bus-routing API",
+    version="0.1.0",
+    lifespan=lifespan,
+    # Not published in production unless ISD_API_EXPOSE_API_DOCS=true.
+    docs_url="/docs" if settings.api_docs_enabled else None,
+    redoc_url="/redoc" if settings.api_docs_enabled else None,
+    openapi_url="/openapi.json" if settings.api_docs_enabled else None,
+)
 
 # allow_credentials=True is required for the Phase 3 dispatcher console's
 # session cookie to cross the dev-server/API origin boundary — combined

@@ -330,6 +330,7 @@ export function FieldTripsPage() {
 
   return (
     <main className="field-trips-page">
+      <h1>Field trips</h1>
       <header className="schedule-toolbar">
         <div>
           <label htmlFor="field-trip-date">Departure date</label>

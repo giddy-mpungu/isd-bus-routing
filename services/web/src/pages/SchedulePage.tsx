@@ -557,6 +557,7 @@ export function SchedulePage() {
 
   return (
     <main className="schedule-page">
+      <h1>Schedule</h1>
       <header className="schedule-toolbar">
         <div>
           <label htmlFor="service-date">Service date</label>
