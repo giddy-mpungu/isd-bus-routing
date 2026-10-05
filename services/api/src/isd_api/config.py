@@ -161,6 +161,16 @@ class Settings(BaseSettings):
         digest = hashlib.sha256(b"isd-mfa-dev:" + self.jwt_secret_key.encode()).digest()
         return base64.urlsafe_b64encode(digest)
 
+    # The interactive API docs (/docs, /redoc, /openapi.json) map every
+    # endpoint; on by default except in production (audit, 2026-10-04).
+    expose_api_docs: bool | None = None
+
+    @property
+    def api_docs_enabled(self) -> bool:
+        if self.expose_api_docs is not None:
+            return self.expose_api_docs
+        return self.environment != "production"
+
     def require_production_ready(self) -> None:
         if self.environment == "production" and self.jwt_secret_key == _INSECURE_DEV_JWT_SECRET:
             raise RuntimeError(

@@ -7,7 +7,7 @@ from isd_api.audit import record as record_audit
 from isd_api.db import get_db
 from isd_api.models import Qualification, Role, User
 from isd_api.schemas import QualificationCreate, QualificationRead, QualificationUpdate
-from isd_api.security import get_current_user, require_role
+from isd_api.security import require_role
 
 router = APIRouter(prefix="/qualifications", tags=["qualifications"])
 
@@ -31,11 +31,13 @@ def create_qualification(
 
 @router.get("", response_model=list[QualificationRead])
 def list_qualifications(
-    db: Session = Depends(get_db), _: User = Depends(get_current_user)
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role(Role.TRANSPORTATION_ADMIN, Role.DISPATCHER)),
 ) -> list[Qualification]:
-    """Every role that can read this at all sees active and inactive
-    alike -- see list_vehicles' identical note. Frontend pickers that
-    assign a qualification to a driver/vehicle/run filter to active."""
+    """Staff only (least privilege, audit 2026-10-04): only the
+    dispatcher console uses it. Active and inactive alike -- see
+    list_vehicles' identical note. Frontend pickers that assign a
+    qualification to a driver/vehicle/run filter to active."""
     return list(db.query(Qualification).order_by(Qualification.id).all())
 
 
