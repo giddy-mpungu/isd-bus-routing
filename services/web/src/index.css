@@ -899,6 +899,17 @@ fieldset.motion-lockable:disabled {
   color: var(--muted);
 }
 
+/* Scheduled SIS sync. */
+.sis-sync-panel {
+  margin: 1rem 0 1.5rem;
+}
+
+.sis-sync-problems {
+  margin: 0.4rem 0 0;
+  padding-left: 1.2rem;
+  font-size: 0.9rem;
+}
+
 /* Bus-time emails (Phase 5.5). */
 .eta-email-setting {
   margin: 0 0 1rem;

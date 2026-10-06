@@ -1122,3 +1122,21 @@ export interface ResetLink {
 export interface NotificationSettings {
   eta_emails: boolean
 }
+
+// The scheduled OneRoster sync (spec section 19).
+export interface SisSyncRun {
+  id: number
+  trigger: 'scheduled' | 'manual'
+  status: 'running' | 'ok' | 'needs_attention' | 'failed'
+  started_at: string
+  finished_at: string | null
+  counts: Partial<Record<SisImportAction, number>> | null
+  problems: SisImportRow[] | null
+  error: string | null
+}
+
+export interface SisSyncStatus {
+  configured: boolean
+  sync_time: string
+  runs: SisSyncRun[]
+}

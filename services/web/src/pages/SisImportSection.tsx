@@ -1,4 +1,5 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react'
+import { SisSyncPanel } from './SisSyncPanel'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { School, SisImportAction, SisImportResult } from '../api/types'
@@ -126,6 +127,8 @@ export function SisImportSection({
           </li>
         ))}
       </ul>
+
+      <SisSyncPanel />
 
       <h3>Import</h3>
       <form onSubmit={handlePreview}>

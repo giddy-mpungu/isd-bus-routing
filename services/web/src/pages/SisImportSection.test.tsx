@@ -17,6 +17,7 @@ vi.mock('../api/client', async (importOriginal) => {
     ...actual,
     updateSchoolExternalId: vi.fn(),
     importSisStudents: vi.fn(),
+    getSisSyncStatus: vi.fn(),
   }
 })
 
@@ -72,6 +73,11 @@ describe('SisImportSection', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     onSchoolsChanged.mockResolvedValue(undefined)
+    vi.mocked(api.getSisSyncStatus).mockResolvedValue({
+      configured: false,
+      sync_time: '03:00',
+      runs: [],
+    })
   })
 
   it('saves a school SIS ID and only enables Save once it changed', async () => {

@@ -87,6 +87,8 @@ import type {
   SchoolCreate,
   SchoolUpdate,
   SisImportResult,
+  SisSyncRun,
+  SisSyncStatus,
   Stop,
   StopCreate,
   StopProposal,
@@ -243,6 +245,14 @@ export async function updateNotificationSettings(
 
 export async function optOutOfEtaEmails(token: string): Promise<void> {
   await request<void>('/notifications/eta/opt-out', jsonInit('POST', { token }))
+}
+
+export async function getSisSyncStatus(): Promise<SisSyncStatus> {
+  return request<SisSyncStatus>('/integrations/sis/sync')
+}
+
+export async function syncSisNow(): Promise<SisSyncRun> {
+  return request<SisSyncRun>('/integrations/sis/sync', jsonInit('POST', {}))
 }
 
 export async function getAuthOptions(): Promise<AuthOptions> {

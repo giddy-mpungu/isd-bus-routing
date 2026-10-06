@@ -1225,6 +1225,26 @@ class AuditLogEntry(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class SisSyncRun(Base):
+    """One run of the SIS roster sync (isd_api/sis_sync.py): when, how it
+    went, the counts, and the rows that wait for a person. A scheduled run
+    is unique per district day (`scheduled_for`); manual ones leave it null."""
+
+    __tablename__ = "sis_sync_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trigger: Mapped[str] = mapped_column(String(16), nullable=False)  # scheduled | manual
+    # running | ok | needs_attention | failed
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scheduled_for: Mapped[date | None] = mapped_column(Date, unique=True, nullable=True)
+    triggered_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    counts: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    problems: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
 class EtaNotification(Base):
     """One bus-time email sent to a parent (Phase 5.5): what time it gave,
     so the next one goes only when the estimate moves again. The unique

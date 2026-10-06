@@ -22,7 +22,9 @@ from __future__ import annotations
 import csv
 import io
 import re
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from typing import Any
 
 from isd_api.eligibility import normalize_grade
 
@@ -86,64 +88,104 @@ def parse_students_csv(raw: bytes) -> ParsedRoster:
             "Not a OneRoster users.csv: missing column(s) " + ", ".join(missing)
         )
 
+    def rows() -> Iterator[tuple[int, dict[str, str]]]:
+        for row_count, row in enumerate(reader, start=1):
+            if row_count > MAX_ROWS:
+                raise OneRosterFormatError(f"File has more than {MAX_ROWS} rows")
+            yield reader.line_num, row
+
+    try:
+        return _parse_rows(rows())
+    except csv.Error as exc:
+        raise OneRosterFormatError(f"Malformed CSV: {exc}") from exc
+
+
+def parse_students_api(users: list[dict[str, Any]]) -> ParsedRoster:
+    """The same records from a OneRoster 1.1 REST API's `users` objects
+    (isd_api/integrations/oneroster_api.py). A record's "line" is its
+    position in the download, counting from 1."""
+    if len(users) > MAX_ROWS:
+        raise OneRosterFormatError(f"Roster has more than {MAX_ROWS} users")
+
+    def rows() -> Iterator[tuple[int, dict[str, str]]]:
+        for position, user in enumerate(users, start=1):
+            if not isinstance(user, dict):
+                continue
+            orgs = user.get("orgs") or []
+            grades = user.get("grades") or []
+            yield (
+                position,
+                {
+                    "sourcedId": str(user.get("sourcedId") or ""),
+                    "status": str(user.get("status") or ""),
+                    "role": str(user.get("role") or ""),
+                    "givenName": str(user.get("givenName") or ""),
+                    "familyName": str(user.get("familyName") or ""),
+                    "orgSourcedIds": ",".join(
+                        str(o.get("sourcedId") or "") for o in orgs if isinstance(o, dict)
+                    ),
+                    "grades": ",".join(str(g) for g in grades if isinstance(g, (str, int))),
+                },
+            )
+
+    return _parse_rows(rows())
+
+
+def _parse_rows(rows: Iterable[tuple[int, dict[str, str]]]) -> ParsedRoster:
+    """The row rules both sources share: students only, a usable
+    sourcedId seen once, a name, the organizations and the first grade."""
     students: list[RosterStudent] = []
     problems: list[RowProblem] = []
     ignored = 0
     seen: dict[str, int] = {}
-    try:
-        for row_count, row in enumerate(reader, start=1):
-            if row_count > MAX_ROWS:
-                raise OneRosterFormatError(f"File has more than {MAX_ROWS} rows")
-            line = reader.line_num
-            # `role` is optional in some exports that contain students only;
-            # when present, anything other than a student is not ours to import.
-            role = _clean(row.get("role")).lower()
-            if role and role != "student":
-                ignored += 1
-                continue
+    for line, row in rows:
+        # `role` is optional in some exports that contain students only;
+        # when present, anything other than a student is not ours to import.
+        role = _clean(row.get("role")).lower()
+        if role and role != "student":
+            ignored += 1
+            continue
 
-            source_id = _clean(row.get("sourcedId"))
-            if not source_id or len(source_id) > MAX_ID_LENGTH:
-                problems.append(RowProblem(line, None, "sourcedId is missing or too long"))
-                continue
-            if source_id in seen:
-                problems.append(
-                    RowProblem(
-                        line,
-                        source_id,
-                        f"Duplicate sourcedId (first seen on line {seen[source_id]}); row skipped",
-                    )
-                )
-                continue
-            seen[source_id] = line
-
-            given = _clean(row.get("givenName"))
-            family = _clean(row.get("familyName"))
-            full_name = f"{given} {family}".strip()
-            if not full_name:
-                problems.append(RowProblem(line, source_id, "Student has no name"))
-                continue
-            if len(full_name) > MAX_NAME_LENGTH:
-                problems.append(RowProblem(line, source_id, "Name is too long"))
-                continue
-
-            org_ids = tuple(
-                o for o in (_clean(o) for o in (row.get("orgSourcedIds") or "").split(",")) if o
-            )
-            status = _clean(row.get("status")).lower()
-            grades = [g for g in (_clean(g) for g in (row.get("grades") or "").split(",")) if g]
-            students.append(
-                RosterStudent(
-                    line=line,
-                    source_id=source_id,
-                    full_name=full_name,
-                    org_ids=org_ids,
-                    removal_requested=status == "tobedeleted",
-                    grade=normalize_grade(grades[0]) if grades else None,
+        source_id = _clean(row.get("sourcedId"))
+        if not source_id or len(source_id) > MAX_ID_LENGTH:
+            problems.append(RowProblem(line, None, "sourcedId is missing or too long"))
+            continue
+        if source_id in seen:
+            problems.append(
+                RowProblem(
+                    line,
+                    source_id,
+                    f"Duplicate sourcedId (first seen on line {seen[source_id]}); row skipped",
                 )
             )
-    except csv.Error as exc:
-        raise OneRosterFormatError(f"Malformed CSV: {exc}") from exc
+            continue
+        seen[source_id] = line
+
+        given = _clean(row.get("givenName"))
+        family = _clean(row.get("familyName"))
+        full_name = f"{given} {family}".strip()
+        if not full_name:
+            problems.append(RowProblem(line, source_id, "Student has no name"))
+            continue
+        if len(full_name) > MAX_NAME_LENGTH:
+            problems.append(RowProblem(line, source_id, "Name is too long"))
+            continue
+
+        org_ids = tuple(
+            o for o in (_clean(o) for o in (row.get("orgSourcedIds") or "").split(",")) if o
+        )
+        status = _clean(row.get("status")).lower()
+        grades = [g for g in (_clean(g) for g in (row.get("grades") or "").split(",")) if g]
+        students.append(
+            RosterStudent(
+                line=line,
+                source_id=source_id,
+                full_name=full_name,
+                org_ids=org_ids,
+                removal_requested=status == "tobedeleted",
+                grade=normalize_grade(grades[0]) if grades else None,
+            )
+        )
 
     return ParsedRoster(
         students=tuple(students), problems=tuple(problems), ignored_non_student_rows=ignored
