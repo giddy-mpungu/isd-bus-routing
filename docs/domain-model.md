@@ -531,11 +531,28 @@ user picked this over a specific vendor): it reads a **OneRoster 1.1
 - UI: "SIS roster import" on `/setup` (transportation_admin only): per-school
   SIS ID fields, file picker, Preview then Apply. Apply is only enabled for
   the exact file and options that were just previewed.
+- **Scheduled sync** (PR #75, migration `b8f3c6a1d457`; decisions by the
+  product owner on 2026-10-06): the worker pulls the district's **OneRoster
+  1.1 REST API** (`isd_api/integrations/oneroster_api.py`: OAuth 2 client
+  credentials, `GET /students` paged by `limit`/`offset`, standard library
+  only) every night at `ISD_API_SIS_SYNC_TIME` (03:00 district time, after
+  the backup), and "Sync now" (`POST /integrations/sis/sync`) runs it at
+  once. The same row rules (`parse_students_api`) and the same
+  reconciliation (`isd_api/sis_reconcile.py`, shared with the CSV upload);
+  safe changes are applied (created, updated), never `link_by_name`, so a
+  possible duplicate, an unmapped school or a removal request waits for a
+  person. Every run is a `SisSyncRun` (status ok / needs_attention / failed,
+  counts, the rows that wait, capped at 200; a scheduled run unique per day
+  via `scheduled_for`; one at a time; a run left "running" over 15 minutes
+  is closed as interrupted). Transportation admins are emailed counts, never
+  names, only when a run fails or leaves something waiting. Audit actions
+  `sis_sync_created`/`sis_sync_updated` (actor none for nightly runs).
+  `GET /integrations/sis/sync` lists the last 30. UI: "Scheduled sync" in
+  Setup, SIS import.
 - **Not built yet:** guardian/parent links (OneRoster `agentSourcedIds`),
-  grade level, a scheduled REST pull from a OneRoster server (needs the
-  district's credentials and endpoint — the CSV path needs neither),
-  deactivation of students absent from a later file, and the other §19
-  systems (HR/absence, SSO, fleet maintenance, bell schedules).
+  deactivation of students absent from a later roster, OneRoster 1.1's
+  older OAuth 1.0a signing (some older servers), and the other §19
+  systems (HR/absence, fleet maintenance, bell schedules).
 
 ## Master-data lifecycle (spec section 3.1 "relocate ... stops",
 section 21 "reassign buses"/"reassign drivers")
