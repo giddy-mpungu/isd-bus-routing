@@ -280,6 +280,26 @@ configured to send anything. `docker compose -f docker-compose.prod.yml
 logs worker` shows each pass that sent something and any failures. One
 worker is enough; a second would never send duplicates, only waste work.
 
+## SIS sync (optional)
+
+The worker can read the student roster from the district's SIS every
+night at `ISD_API_SIS_SYNC_TIME` (03:00 district time, after the 02:00
+backup) through the **OneRoster 1.1 REST API**, which PowerSchool,
+Infinite Campus, Skyward and hubs such as ClassLink offer. Ask the SIS
+administrator for a OneRoster API connection with OAuth 2 client
+credentials and read access to students; put the base URL (ending in
+`/ims/oneroster/v1p1`), the token URL, the client ID and the secret in
+`.env` (see `.env.prod.example`), then restart the api and worker.
+
+Before the first sync, give each school its SIS ID (OneRoster org
+`sourcedId`) under Setup, SIS import: a student only lands at a school
+someone has mapped. Each sync applies new students and name, school and
+grade changes on its own; possible duplicates, unmapped schools and
+removal requests wait under Setup, SIS import, and transportation admins
+are emailed (counts only, no names) when a sync fails or leaves something
+waiting. "Sync now" there runs it straight away. Removals are never
+applied automatically.
+
 ## Single sign-on (optional)
 
 Staff can sign in with the district's own accounts through any OpenID

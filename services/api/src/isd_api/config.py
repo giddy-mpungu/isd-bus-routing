@@ -97,6 +97,17 @@ class Settings(BaseSettings):
     oidc_trust_mfa: Literal["claim", "always", "never"] = "claim"
     oidc_mfa_acr_values: list[str] = []
 
+    # Scheduled SIS roster sync (isd_api/sis_sync.py): the district's
+    # OneRoster 1.1 REST API, e.g. https://sis.example.org/ims/oneroster/v1p1,
+    # and its OAuth 2 token endpoint. All four set = the nightly sync runs
+    # at sis_sync_time (district time) and "Sync now" works.
+    sis_oneroster_base_url: str | None = None
+    sis_oneroster_token_url: str | None = None
+    sis_oneroster_client_id: str | None = None
+    sis_oneroster_client_secret: str | None = None
+    sis_oneroster_scope: str | None = None
+    sis_sync_time: str = "03:00"
+
     # Bus-time emails to families (Phase 5.5, isd_api/eta_notifications.py),
     # sent by the worker (isd_api/worker.py) every worker_interval_seconds.
     eta_email_threshold_minutes: int = 10
@@ -141,6 +152,11 @@ class Settings(BaseSettings):
         "oidc_client_id",
         "oidc_client_secret",
         "oidc_redirect_uri",
+        "sis_oneroster_base_url",
+        "sis_oneroster_token_url",
+        "sis_oneroster_client_id",
+        "sis_oneroster_client_secret",
+        "sis_oneroster_scope",
         mode="before",
     )
     @classmethod
@@ -201,6 +217,11 @@ class Settings(BaseSettings):
                 )
             if self.environment == "production" and not self.oidc_issuer.startswith("https://"):
                 raise RuntimeError("ISD_API_OIDC_ISSUER must be an https:// address in production.")
+        if self.environment == "production":
+            for name in ("sis_oneroster_base_url", "sis_oneroster_token_url"):
+                value = getattr(self, name)
+                if value and not value.startswith("https://"):
+                    raise RuntimeError(f"ISD_API_{name.upper()} must be an https:// address.")
         if self.smtp_host and not self.mail_from:
             raise RuntimeError("ISD_API_MAIL_FROM must be set when ISD_API_SMTP_HOST is.")
 

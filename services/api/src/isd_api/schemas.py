@@ -1464,6 +1464,27 @@ class SisImportRow(BaseModel):
     student_id: int | None = None
 
 
+class SisSyncRunRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    trigger: str
+    status: str
+    started_at: datetime
+    finished_at: datetime | None = None
+    counts: dict[str, int] | None = None
+    problems: list[SisImportRow] | None = None
+    error: str | None = None
+
+
+class SisSyncStatus(BaseModel):
+    """The scheduled OneRoster sync: whether it's set up, when it runs,
+    and the latest runs (newest first)."""
+
+    configured: bool
+    sync_time: str
+    runs: list[SisSyncRunRead]
+
+
 class SisImportResult(BaseModel):
     dry_run: bool
     counts: dict[str, int]

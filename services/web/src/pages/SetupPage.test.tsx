@@ -33,6 +33,7 @@ vi.mock('../api/client', async (importOriginal) => {
     createAnnouncement: vi.fn(),
     getAuditLog: vi.fn(),
     getAuditLogEntityTypes: vi.fn(),
+    getSisSyncStatus: vi.fn(),
   }
 })
 
@@ -91,6 +92,11 @@ const vehicle: Vehicle = {
 }
 
 function mockLoad() {
+  vi.mocked(api.getSisSyncStatus).mockResolvedValue({
+    configured: false,
+    sync_time: '03:00',
+    runs: [],
+  })
   vi.mocked(api.getSchools).mockResolvedValue([school])
   vi.mocked(api.getQualifications).mockResolvedValue([licenseQual, vehicleQual])
   vi.mocked(api.getDrivers).mockResolvedValue([driver])

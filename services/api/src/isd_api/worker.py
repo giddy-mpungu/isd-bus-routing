@@ -20,7 +20,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from isd_api import eta_notifications
+from isd_api import eta_notifications, sis_sync
 from isd_api.config import settings
 from isd_api.db import SessionLocal
 
@@ -32,6 +32,7 @@ HEARTBEAT = Path(tempfile.gettempdir()) / "isd-worker-heartbeat"  # /tmp in the 
 
 JOBS: list[tuple[str, Callable[[Session], int]]] = [
     ("bus-time emails", eta_notifications.run),
+    ("SIS roster sync", sis_sync.run_if_due),
 ]
 
 

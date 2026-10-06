@@ -16,36 +16,17 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
-from isd_api.audit import record as record_audit
+from isd_api import sis_sync
+from isd_api.config import settings
 from isd_api.db import get_db
-from isd_api.integrations.oneroster import (
-    MAX_BYTES,
-    OneRosterFormatError,
-    RosterStudent,
-    parse_students_csv,
-)
-from isd_api.models import Role, School, Student, User
-from isd_api.schemas import SisImportResult, SisImportRow
+from isd_api.integrations import oneroster_api
+from isd_api.integrations.oneroster import MAX_BYTES, OneRosterFormatError, parse_students_csv
+from isd_api.models import Role, SisSyncRun, User
+from isd_api.schemas import SisImportResult, SisSyncRunRead, SisSyncStatus
 from isd_api.security import require_role
+from isd_api.sis_reconcile import reconcile
 
 router = APIRouter(prefix="/integrations/sis", tags=["integrations"])
-
-_MAX_RETURNED_ROWS = 1000
-
-
-def _school_for(
-    student: RosterStudent, schools_by_external_id: dict[str, School]
-) -> tuple[School | None, str | None]:
-    mapped = [schools_by_external_id[o] for o in student.org_ids if o in schools_by_external_id]
-    unique = {s.id: s for s in mapped}
-    if len(unique) == 1:
-        return next(iter(unique.values())), None
-    if not unique:
-        return None, (
-            "None of this student's organizations is mapped to a school here; "
-            "set the school's SIS ID first"
-        )
-    return None, "Student belongs to more than one mapped school; not guessing which applies"
 
 
 @router.post("/students/import", response_model=SisImportResult)
@@ -71,193 +52,37 @@ async def import_students(
     except OneRosterFormatError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    schools_by_external_id = {
-        s.external_id: s for s in db.query(School).all() if s.external_id is not None
-    }
-    existing_by_external_id = {
-        s.external_id: s for s in db.query(Student).all() if s.external_id is not None
-    }
-    unlinked = db.query(Student).filter(Student.external_id.is_(None)).all()
+    return reconcile(db, parsed, dry_run=dry_run, link_by_name=link_by_name, actor=current_user)
 
-    counts = {
-        "created": 0,
-        "updated": 0,
-        "unchanged": 0,
-        "linked": 0,
-        "needs_review": 0,
-        "removal_requested": 0,
-        "error": 0,
-    }
-    rows: list[SisImportRow] = []
 
-    def add(
-        line: int,
-        source_id: str | None,
-        name: str | None,
-        action: str,
-        detail: str | None = None,
-        student_id: int | None = None,
-    ) -> None:
-        counts[action] += 1
-        if action != "unchanged":
-            rows.append(
-                SisImportRow(
-                    line=line,
-                    source_id=source_id,
-                    full_name=name,
-                    action=action,
-                    detail=detail,
-                    student_id=student_id,
-                )
-            )
-
-    for problem in parsed.problems:
-        add(problem.line, problem.source_id, None, "error", problem.message)
-
-    for rs in parsed.students:
-        existing = existing_by_external_id.get(rs.source_id)
-
-        if rs.removal_requested:
-            # Never applied: a student can have overrides and history, and a
-            # roster flag is not a reason to erase them without a human.
-            add(
-                rs.line,
-                rs.source_id,
-                rs.full_name,
-                "removal_requested",
-                "SIS marked this student for deletion; not applied, remove manually if intended",
-                existing.id if existing else None,
-            )
-            continue
-
-        school, school_problem = _school_for(rs, schools_by_external_id)
-        if school is None:
-            add(rs.line, rs.source_id, rs.full_name, "error", school_problem)
-            continue
-
-        if existing is not None:
-            new_grade = rs.grade if rs.grade is not None else existing.grade
-            changed = (
-                existing.full_name != rs.full_name
-                or existing.school_id != school.id
-                or existing.grade != new_grade
-            )
-            if not changed:
-                add(rs.line, rs.source_id, rs.full_name, "unchanged", None, existing.id)
-                continue
-            details = []
-            if existing.full_name != rs.full_name:
-                details.append(f"name '{existing.full_name}' -> '{rs.full_name}'")
-            if existing.school_id != school.id:
-                details.append(f"school {existing.school_id} -> {school.id}")
-            if existing.grade != new_grade:
-                details.append(f"grade {existing.grade or 'none'} -> {new_grade}")
-            add(rs.line, rs.source_id, rs.full_name, "updated", "; ".join(details), existing.id)
-            if not dry_run:
-                before = {
-                    "full_name": existing.full_name,
-                    "school_id": existing.school_id,
-                    "grade": existing.grade,
-                }
-                existing.full_name = rs.full_name
-                existing.school_id = school.id
-                existing.grade = new_grade
-                db.flush()
-                record_audit(
-                    db,
-                    entity_type="student",
-                    entity_id=existing.id,
-                    action="sis_import_updated",
-                    actor=current_user,
-                    before_state=before,
-                    after_state={
-                        "full_name": existing.full_name,
-                        "school_id": existing.school_id,
-                        "grade": existing.grade,
-                    },
-                )
-            continue
-
-        candidates = [
-            s for s in unlinked if s.full_name == rs.full_name and s.school_id == school.id
-        ]
-        if len(candidates) > 1:
-            add(
-                rs.line,
-                rs.source_id,
-                rs.full_name,
-                "needs_review",
-                f"{len(candidates)} hand-entered students share this name at this school; "
-                "not guessing which one",
-            )
-            continue
-        if len(candidates) == 1:
-            match = candidates[0]
-            if not link_by_name:
-                add(
-                    rs.line,
-                    rs.source_id,
-                    rs.full_name,
-                    "needs_review",
-                    f"Same name and school as hand-entered student {match.id}; re-run with "
-                    "'link by name' to attach the SIS ID to it instead of creating a duplicate",
-                    match.id,
-                )
-                continue
-            add(rs.line, rs.source_id, rs.full_name, "linked", "Attached SIS ID by name", match.id)
-            # Claimed in memory even on a dry run, so two roster rows can't
-            # both report linking to the same hand-entered student.
-            unlinked.remove(match)
-            if not dry_run:
-                match.external_id = rs.source_id
-                if rs.grade is not None:
-                    match.grade = rs.grade
-                existing_by_external_id[rs.source_id] = match
-                db.flush()
-                record_audit(
-                    db,
-                    entity_type="student",
-                    entity_id=match.id,
-                    action="sis_import_linked",
-                    actor=current_user,
-                    before_state={"external_id": None},
-                    after_state={"external_id": rs.source_id},
-                )
-            continue
-
-        add(rs.line, rs.source_id, rs.full_name, "created")
-        if not dry_run:
-            created = Student(
-                full_name=rs.full_name,
-                school_id=school.id,
-                external_id=rs.source_id,
-                grade=rs.grade,
-            )
-            db.add(created)
-            db.flush()
-            existing_by_external_id[rs.source_id] = created
-            record_audit(
-                db,
-                entity_type="student",
-                entity_id=created.id,
-                action="sis_import_created",
-                actor=current_user,
-                after_state={
-                    "full_name": created.full_name,
-                    "school_id": created.school_id,
-                    "grade": created.grade,
-                    "external_id": rs.source_id,
-                },
-            )
-
-    if not dry_run:
-        db.commit()
-
-    rows.sort(key=lambda r: r.line)
-    return SisImportResult(
-        dry_run=dry_run,
-        counts=counts,
-        rows=rows[:_MAX_RETURNED_ROWS],
-        rows_truncated=len(rows) > _MAX_RETURNED_ROWS,
-        ignored_non_student_rows=parsed.ignored_non_student_rows,
+@router.get("/sync", response_model=SisSyncStatus)
+def sync_status(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+) -> SisSyncStatus:
+    """The scheduled OneRoster sync and its last 30 runs (isd_api/sis_sync.py)."""
+    runs = db.query(SisSyncRun).order_by(SisSyncRun.id.desc()).limit(30).all()
+    return SisSyncStatus(
+        configured=oneroster_api.is_configured(),
+        sync_time=settings.sis_sync_time,
+        runs=[SisSyncRunRead.model_validate(r) for r in runs],
     )
+
+
+@router.post("/sync", response_model=SisSyncRunRead)
+def sync_now(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+) -> SisSyncRunRead:
+    """Runs the sync now, with the same rules as the nightly one: safe
+    changes applied, the rest waiting for review."""
+    if not oneroster_api.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The SIS connection isn't set up; see docs/deployment.md, SIS sync",
+        )
+    try:
+        run = sis_sync.run_sync(db, trigger="manual", actor=current_user)
+    except sis_sync.SyncAlreadyRunning as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return SisSyncRunRead.model_validate(run)

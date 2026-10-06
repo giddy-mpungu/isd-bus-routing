@@ -71,6 +71,13 @@ services:
       # Two-step sign-in (docs/deployment.md, "Two-step sign-in").
       ISD_API_MFA_ENCRYPTION_KEY: ${ISD_API_MFA_ENCRYPTION_KEY:?set 32 random bytes, url-safe base64, in .env — see docs/deployment.md}
       ISD_API_MFA_REQUIRED_ROLES: ${ISD_API_MFA_REQUIRED_ROLES:-["transportation_admin","dispatcher"]}
+      # Scheduled SIS roster sync (optional; docs/deployment.md, "SIS sync").
+      ISD_API_SIS_ONEROSTER_BASE_URL: ${ISD_API_SIS_ONEROSTER_BASE_URL:-}
+      ISD_API_SIS_ONEROSTER_TOKEN_URL: ${ISD_API_SIS_ONEROSTER_TOKEN_URL:-}
+      ISD_API_SIS_ONEROSTER_CLIENT_ID: ${ISD_API_SIS_ONEROSTER_CLIENT_ID:-}
+      ISD_API_SIS_ONEROSTER_CLIENT_SECRET: ${ISD_API_SIS_ONEROSTER_CLIENT_SECRET:-}
+      ISD_API_SIS_ONEROSTER_SCOPE: ${ISD_API_SIS_ONEROSTER_SCOPE:-}
+      ISD_API_SIS_SYNC_TIME: ${ISD_API_SIS_SYNC_TIME:-03:00}
       # Single sign-on (optional; docs/deployment.md, "Single sign-on").
       ISD_API_OIDC_ISSUER: ${ISD_API_OIDC_ISSUER:-}
       ISD_API_OIDC_CLIENT_ID: ${ISD_API_OIDC_CLIENT_ID:-}
