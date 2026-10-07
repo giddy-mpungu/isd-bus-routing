@@ -3,6 +3,7 @@ import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { Announcement, BusPosition, FamilyMember, RideDirection } from '../api/types'
 import { LazyMapView } from '../components/LazyMapView'
+import { CorrectionRequests } from './CorrectionRequests'
 import { EtaEmailSetting } from './EtaEmailSetting'
 
 function today(): string {
@@ -204,6 +205,10 @@ export function FamilyPage() {
               Everything the bus system holds about {member.full_name.split(' ')[0]}, including who
               at the district has viewed it.
             </p>
+            <CorrectionRequests
+              studentId={member.student_id}
+              firstName={member.full_name.split(' ')[0]}
+            />
           </li>
         ))}
       </ul>

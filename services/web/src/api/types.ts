@@ -374,6 +374,9 @@ export interface Student {
   // (GET /students/{id}/home) and never part of this record.
   has_home?: boolean
   eligibility?: Eligibility | null
+  // FERPA retention: left the district; personal data deleted after delete_after.
+  withdrawn_on?: string | null
+  delete_after?: string | null
 }
 
 export type GradeBand = 'prek' | 'elementary' | 'middle' | 'high' | 'specialized'
@@ -1150,4 +1153,18 @@ export interface StudentAccess {
   user_role: Role
   what: string
   what_label: string
+}
+
+// FERPA: a family's request to correct a student's record.
+export interface Correction {
+  id: number
+  student_id: number
+  student_name: string
+  requested_by: string
+  created_at: string
+  what_is_wrong: string
+  should_say: string
+  status: 'open' | 'accepted' | 'declined'
+  decided_at: string | null
+  response: string | null
 }

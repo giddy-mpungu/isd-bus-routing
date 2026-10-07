@@ -14,6 +14,7 @@ from isd_api.routers import (
     announcements,
     audit_log,
     auth,
+    corrections,
     crews,
     destination_profiles,
     dispatch_tasks,
@@ -112,6 +113,7 @@ app.include_router(road_closures.router)
 app.include_router(mfa.router)
 app.include_router(sso.router)
 app.include_router(notifications.router)
+app.include_router(corrections.router)
 app.include_router(transportation_rules.router)
 app.include_router(templates.route_router)
 app.include_router(templates.crew_router)

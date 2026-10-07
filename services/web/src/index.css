@@ -912,6 +912,34 @@ fieldset.motion-lockable:disabled {
   color: var(--muted);
 }
 
+.correction-requests {
+  margin-top: 0.6rem;
+}
+
+.correction-requests textarea,
+.corrections-list textarea {
+  display: block;
+  width: min(100%, 36rem);
+  min-height: 4rem;
+  margin-bottom: 0.5rem;
+}
+
+.correction-list,
+.corrections-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.correction-answer {
+  margin-top: 0.2rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.corrections-list li {
+  margin-bottom: 1rem;
+}
+
 /* Scheduled SIS sync. */
 .sis-sync-panel {
   margin: 1rem 0 1.5rem;

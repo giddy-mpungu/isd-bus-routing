@@ -12,6 +12,7 @@ import type {
 } from '../api/types'
 import { Badge } from '../components/Badge'
 import { AccessLogPanel } from './AccessLogPanel'
+import { WithdrawControl } from './WithdrawControl'
 import { StudentHomePanel } from './StudentHomePanel'
 
 const GRADES = ['PK', 'K', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
@@ -426,6 +427,7 @@ export function StudentsSection({
                     onChanged={onChanged}
                   />
                   <AccessLogPanel student={s} />
+                  <WithdrawControl student={s} onChanged={onChanged} />
                 </span>
               )}
             </li>

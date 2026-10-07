@@ -148,7 +148,12 @@ def generate_stop_proposals(
     if school is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown school_id")
     rules = eligibility.load_rules(db)
-    students = db.query(Student).filter(Student.school_id == school.id).order_by(Student.id).all()
+    students = (
+        db.query(Student)
+        .filter(Student.school_id == school.id, Student.withdrawn_on.is_(None))
+        .order_by(Student.id)
+        .all()
+    )
     homes = {h.student_id: h for h in db.query(StudentHome)}
 
     counts = {"already_have_stop": 0, "no_home": 0, "not_eligible": 0}

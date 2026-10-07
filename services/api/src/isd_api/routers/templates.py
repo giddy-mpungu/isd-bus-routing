@@ -269,7 +269,11 @@ def plan_route_stops(
     stop_ids = [rs.stop_id for rs in template.stops]
     students = (
         db.query(Student)
-        .filter(Student.school_id == template.school_id, Student.stop_id.in_(stop_ids))
+        .filter(
+            Student.school_id == template.school_id,
+            Student.stop_id.in_(stop_ids),
+            Student.withdrawn_on.is_(None),  # left the district (FERPA retention)
+        )
         .all()
     )
     by_stop: dict[int, list[Student]] = {}

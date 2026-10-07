@@ -97,6 +97,12 @@ class Settings(BaseSettings):
     oidc_trust_mfa: Literal["claim", "always", "never"] = "claim"
     oidc_mfa_acr_values: list[str] = []
 
+    # FERPA retention (isd_api/retention.py): a withdrawn student's data is
+    # kept through the end of this many school years after the one they
+    # left in; school years end on school_year_end (MM-DD).
+    school_year_end: str = "06-30"
+    student_retention_school_years: int = 1
+
     # Scheduled SIS roster sync (isd_api/sis_sync.py): the district's
     # OneRoster 1.1 REST API, e.g. https://sis.example.org/ims/oneroster/v1p1,
     # and its OAuth 2 token endpoint. All four set = the nightly sync runs

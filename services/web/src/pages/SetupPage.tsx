@@ -19,6 +19,7 @@ import type {
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { TabList, TabPanel, type TabItem } from '../components/Tabs'
+import { CorrectionsQueue } from './CorrectionsQueue'
 import { DriversSection } from './DriversSection'
 import { OptimizationSettingsSection } from './OptimizationSettingsSection'
 import { QualificationsSection } from './QualificationsSection'
@@ -62,11 +63,12 @@ type SetupTab =
   | 'announcements'
   | 'optimization'
   | 'sis-import'
+  | 'corrections'
   | 'audit-log'
 
 // SIS import and the audit log are transportation_admin-only sections
 // (see canCreate below), so their tabs only exist for that role.
-const ADMIN_ONLY_TABS: SetupTab[] = ['sis-import', 'audit-log']
+const ADMIN_ONLY_TABS: SetupTab[] = ['sis-import', 'corrections', 'audit-log']
 
 const TAB_PREFIX = 'setup'
 
@@ -231,6 +233,7 @@ export function SetupPage() {
     { id: 'announcements', label: 'Announcements', count: announcements.length },
     { id: 'optimization', label: 'Rules & optimization' },
     { id: 'sis-import', label: 'SIS import' },
+    { id: 'corrections', label: 'Corrections' },
     { id: 'audit-log', label: 'Audit log' },
   ]
   const tabs = allTabs.filter((t) => canCreate || !ADMIN_ONLY_TABS.includes(t.id))
@@ -592,6 +595,12 @@ export function SetupPage() {
       {canCreate && (
         <TabPanel id="sis-import" activeId={activeTab} idPrefix={TAB_PREFIX}>
           <SisImportSection schools={schools} onSchoolsChanged={loadAll} />
+        </TabPanel>
+      )}
+
+      {canCreate && (
+        <TabPanel id="corrections" activeId={activeTab} idPrefix={TAB_PREFIX}>
+          <CorrectionsQueue />
         </TabPanel>
       )}
 

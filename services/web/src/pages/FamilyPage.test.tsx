@@ -16,6 +16,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getBusPosition: vi.fn(),
     getMyAnnouncements: vi.fn(),
     getNotificationSettings: vi.fn(),
+    getStudentCorrections: vi.fn(),
   }
 })
 
@@ -40,6 +41,7 @@ describe('FamilyPage', () => {
     vi.resetAllMocks()
     vi.mocked(api.getMyAnnouncements).mockResolvedValue([])
     vi.mocked(api.getNotificationSettings).mockRejectedValue(new ApiError(403, 'Forbidden'))
+    vi.mocked(api.getStudentCorrections).mockResolvedValue([])
   })
 
   it('renders a card per linked child with school/stop and ridership state', async () => {

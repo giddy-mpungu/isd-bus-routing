@@ -864,6 +864,13 @@ class StudentRead(BaseModel):
     accommodations: list[QualificationRead] = []
     has_home: bool = False
     eligibility: EligibilityRead | None = None
+    # FERPA: left the district on this day; personal data deleted after delete_after.
+    withdrawn_on: date | None = None
+    delete_after: date | None = None
+
+
+class StudentWithdraw(BaseModel):
+    withdrawn_on: date | None = None  # default: today
 
 
 class StudentUpdate(BaseModel):
@@ -1462,6 +1469,31 @@ class SisImportRow(BaseModel):
     action: str
     detail: str | None = None
     student_id: int | None = None
+
+
+class CorrectionCreate(BaseModel):
+    """A family's request to correct a student's record (FERPA)."""
+
+    what_is_wrong: str = Field(min_length=1, max_length=1000)
+    should_say: str = Field(min_length=1, max_length=1000)
+
+
+class CorrectionDecision(BaseModel):
+    decision: Literal["accepted", "declined"]
+    response: str = Field(min_length=1, max_length=1000)
+
+
+class CorrectionRead(BaseModel):
+    id: int
+    student_id: int
+    student_name: str
+    requested_by: str
+    created_at: datetime
+    what_is_wrong: str
+    should_say: str
+    status: str  # open | accepted | declined
+    decided_at: datetime | None = None
+    response: str | None = None
 
 
 class StudentAccessRead(BaseModel):
