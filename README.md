@@ -198,6 +198,10 @@ test checks every state it reaches with axe-core
 in a real browser with axe (or the browser's own accessibility tools)
 when changing colours.
 
+The family, driver and sign-in screens are translated (Spanish so far);
+a new phrase goes in each `src/i18n/<language>.ts` or the build fails.
+See `docs/translation.md`.
+
 CI (`.github/workflows/ci.yml`) runs all of this for all three
 services on every PR and every push to `main` — run it locally before
 pushing so CI is confirmation, not discovery.
