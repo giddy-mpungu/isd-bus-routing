@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from isd_api import access_log, eligibility, student_records
+from isd_api import access_log, eligibility, retention, student_records
 from isd_api.audit import record as record_audit
 from isd_api.daily_trip import daily_trip
 from isd_api.db import get_db
@@ -33,7 +33,7 @@ from isd_api.models import (
     User,
     VehiclePosition,
 )
-from isd_api.ridership_rules import change_closed_reason, load_rules
+from isd_api.ridership_rules import change_closed_reason, district_now, load_rules
 from isd_api.routers.runs import _resolve_riding_students
 from isd_api.routers.vehicles import _resolve_qualifications
 from isd_api.routes import run_for_student
@@ -52,6 +52,7 @@ from isd_api.schemas import (
     StudentHomeUpdate,
     StudentRead,
     StudentUpdate,
+    StudentWithdraw,
 )
 from isd_api.security import get_current_user, require_role
 
@@ -77,6 +78,10 @@ def _student_read(
         hazardous_route=student.hazardous_route,
         accommodations=[QualificationRead.model_validate(q) for q in student.accommodations],
         has_home=home is not None,
+        withdrawn_on=student.withdrawn_on,
+        delete_after=(
+            retention.delete_after(student.withdrawn_on) if student.withdrawn_on else None
+        ),
         eligibility=EligibilityRead(
             eligible=result.eligible,
             reason=result.reason,
@@ -447,6 +452,60 @@ def _linked_students(db: Session, current_user: User) -> list[Student]:
         status_code=status.HTTP_403_FORBIDDEN,
         detail=f"Role '{current_user.role.value}' cannot access family data",
     )
+
+
+@router.post("/{student_id}/withdraw", response_model=StudentRead)
+def withdraw_student(
+    student_id: int,
+    payload: StudentWithdraw,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+) -> StudentRead:
+    """FERPA (isd_api/retention.py): the student has left the district. They
+    stop riding from that day; their personal data is deleted after the end
+    of the following school year. Reinstate undoes it until then."""
+    student = _student_or_404(db, student_id)
+    on = payload.withdrawn_on or district_now(load_rules(db)).date()
+    before = student.withdrawn_on
+    student.withdrawn_on = on
+    record_audit(
+        db,
+        entity_type="student",
+        entity_id=student.id,
+        action="withdrawn",
+        actor=current_user,
+        before_state={"withdrawn_on": before.isoformat() if before else None},
+        after_state={
+            "withdrawn_on": on.isoformat(),
+            "delete_after": retention.delete_after(on).isoformat(),
+        },
+    )
+    db.commit()
+    return _read_one(db, student)
+
+
+@router.post("/{student_id}/reinstate", response_model=StudentRead)
+def reinstate_student(
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+) -> StudentRead:
+    """Back in the district: no longer withdrawn, nothing to delete."""
+    student = _student_or_404(db, student_id)
+    if student.withdrawn_on is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Not withdrawn")
+    before = student.withdrawn_on
+    student.withdrawn_on = None
+    record_audit(
+        db,
+        entity_type="student",
+        entity_id=student.id,
+        action="reinstated",
+        actor=current_user,
+        before_state={"withdrawn_on": before.isoformat()},
+    )
+    db.commit()
+    return _read_one(db, student)
 
 
 @router.get("/{student_id}/records", response_class=HTMLResponse)

@@ -354,6 +354,10 @@ class Student(Base):
     # Eligible regardless of distance, because the walk to school is
     # unsafe (an admin decision, e.g. a highway with no crossing).
     hazardous_route: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # FERPA (isd_api/retention.py): the day the student left the district.
+    # From then on they don't ride; their personal data is deleted after
+    # the end of the following school year.
+    withdrawn_on: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     school: Mapped[School] = relationship()
     stop: Mapped[Stop | None] = relationship()
@@ -1223,6 +1227,25 @@ class AuditLogEntry(Base):
     before_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     after_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class RecordCorrection(Base):
+    """A family's request to correct a student's record (FERPA's right to
+    request amendment; routers/corrections.py): what's wrong, what it
+    should say, and the district's decision."""
+
+    __tablename__ = "record_corrections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("students.id"), nullable=False, index=True)
+    requested_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    what_is_wrong: Mapped[str] = mapped_column(String(1000), nullable=False)
+    should_say: Mapped[str] = mapped_column(String(1000), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)  # open | accepted | declined
+    decided_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    response: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
 
 class StudentAccess(Base):

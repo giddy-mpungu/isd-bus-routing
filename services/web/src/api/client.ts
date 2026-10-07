@@ -66,6 +66,7 @@ import type {
   RidershipRules,
   RidershipRulesUpdate,
   AuthOptions,
+  Correction,
   LoginResult,
   MfaSetup,
   MfaStatus,
@@ -252,6 +253,39 @@ export async function optOutOfEtaEmails(token: string): Promise<void> {
 // download of everything held about their child (a link, like the CSVs).
 export async function getStudentAccessLog(studentId: number): Promise<StudentAccess[]> {
   return request<StudentAccess[]>(`/students/${studentId}/access-log`)
+}
+
+export async function requestCorrection(
+  studentId: number,
+  payload: { what_is_wrong: string; should_say: string },
+): Promise<Correction> {
+  return request<Correction>(`/students/${studentId}/corrections`, jsonInit('POST', payload))
+}
+
+export async function getStudentCorrections(studentId: number): Promise<Correction[]> {
+  return request<Correction[]>(`/students/${studentId}/corrections`)
+}
+
+export async function getCorrections(which: 'open' | 'all'): Promise<Correction[]> {
+  return request<Correction[]>(`/corrections?status_filter=${which}`)
+}
+
+export async function decideCorrection(
+  id: number,
+  payload: { decision: 'accepted' | 'declined'; response: string },
+): Promise<Correction> {
+  return request<Correction>(`/corrections/${id}`, jsonInit('PATCH', payload))
+}
+
+export async function withdrawStudent(studentId: number, withdrawnOn: string): Promise<Student> {
+  return request<Student>(
+    `/students/${studentId}/withdraw`,
+    jsonInit('POST', { withdrawn_on: withdrawnOn }),
+  )
+}
+
+export async function reinstateStudent(studentId: number): Promise<Student> {
+  return request<Student>(`/students/${studentId}/reinstate`, jsonInit('POST', {}))
 }
 
 export function studentRecordsUrl(studentId: number): string {

@@ -76,7 +76,12 @@ def _riding(db: Session, students: list[Student], run: Run) -> list[Student]:
             RidershipOverride.direction == run.direction,
         )
     }
-    return [s for s in students if overrides.get(s.id, s.default_ridership.value == "rides")]
+    return [
+        s
+        for s in students
+        if (s.withdrawn_on is None or s.withdrawn_on > run.service_date)
+        and overrides.get(s.id, s.default_ridership.value == "rides")
+    ]
 
 
 def riders_for_run(db: Session, run: Run) -> tuple[list[Student], bool]:

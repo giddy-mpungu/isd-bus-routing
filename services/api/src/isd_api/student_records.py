@@ -22,6 +22,7 @@ from isd_api import access_log
 from isd_api.models import (
     AuditLogEntry,
     EtaNotification,
+    RecordCorrection,
     RidershipOverride,
     Student,
     StudentAccess,
@@ -108,6 +109,18 @@ def build(db: Session, student: Student, generated_at: datetime) -> str:
         .filter(StudentAccess.student_id == student.id)
         .order_by(StudentAccess.first_at.desc())
     ]
+    corrections = [
+        [
+            when(c.created_at),
+            c.what_is_wrong,
+            c.should_say,
+            c.status,
+            c.response or "",
+        ]
+        for c in db.query(RecordCorrection)
+        .filter(RecordCorrection.student_id == student.id)
+        .order_by(RecordCorrection.created_at.desc())
+    ]
     changes = [
         [when(e.created_at), e.action.replace("_", " "), actor.full_name if actor else "The system"]
         for e, actor in db.query(AuditLogEntry, User)
@@ -137,6 +150,14 @@ def build(db: Session, student: Student, generated_at: datetime) -> str:
             ),
         ),
         (
+            "Correction requests",
+            _table(
+                ["Asked", "What was wrong", "Should say", "Status", "Answer"],
+                corrections,
+                "None.",
+            ),
+        ),
+        (
             "Changes to this record",
             _table(["When", "Change", "By"], changes, "No changes recorded."),
         ),
@@ -148,8 +169,8 @@ def build(db: Session, student: Student, generated_at: datetime) -> str:
         f"<title>Transportation records: {name}</title>\n<style>{_STYLE}</style></head><body>\n"
         f"<h1>Transportation records: {name}</h1>\n"
         "<p>Everything the school bus system holds about this student, as of "
-        f"{escape(when(generated_at))}. If something here is wrong, contact the "
-        "transportation office.</p>\n"
+        f'{escape(when(generated_at))}. If something here is wrong, use "Something\'s wrong?" '
+        "on the Family page, or contact the transportation office.</p>\n"
         f"{body}\n</body></html>\n"
     )
 
