@@ -1187,8 +1187,7 @@ password" email once email exists (5.2); minimum length 8; links last
 ## FERPA (Phase 5)
 
 Decisions by the product owner on 2026-10-07. Part 1 is PR #76
-(migration `c9a4d7e2f568`); part 2 (correction requests, withdrawal and
-deletion) follows.
+(migration `c9a4d7e2f568`); part 2 is PR #77 (migration `d1b5e8f3a679`).
 
 - **Who viewed a student** (`isd_api/access_log.py`, `StudentAccess`):
   every staff view of a student's information is recorded once per person,
@@ -1207,7 +1206,31 @@ deletion) follows.
   in district time. A parent for their own child, a student for themself, a
   transportation admin for anyone; every download audited
   (`records_downloaded`). "Download <name>'s records" on each Family page
-  card.
+  card. The page also lists the student's correction requests.
+- **Right to request amendment** (`routers/corrections.py`,
+  `RecordCorrection`): "Something's wrong?" per child on the Family page
+  (parents for their children, students for themselves; at most 10 open per
+  person): what's wrong and what it should say. Transportation admins answer
+  in Setup, Corrections (`GET /corrections`, open oldest first or all):
+  accept after fixing the record, or decline, always with a reply; the
+  family sees it (`GET /students/{id}/corrections`) and is emailed, and a
+  decline tells them they may ask for a hearing and add a statement. Admins
+  are emailed a link when a request arrives (no student details). Audited
+  `correction_requested` / `_accepted` / `_declined`.
+- **Retention** (`isd_api/retention.py`): an admin marks a student
+  withdrawn (`POST /students/{id}/withdraw`, a date, default today;
+  `/reinstate` undoes it). From that date they don't ride (`routes._riding`)
+  and route planning and stop proposals leave them out. Their data is kept
+  through the end of the following school year
+  (`ISD_API_SCHOOL_YEAR_END` 06-30, `ISD_API_STUDENT_RETENTION_SCHOOL_YEARS`
+  1: withdrawn 2026-10-07 → deleted after 2028-06-30), then the worker's
+  "FERPA retention" job deletes the student, their home, ridership changes,
+  guardian/accommodation links, bus-time email records, access log and
+  correction requests, takes them out of stop proposals, anonymises and
+  switches off a student login, and empties the before/after values of their
+  audit entries; a `deleted_after_retention` entry records it. StudentRead
+  carries `withdrawn_on` and `delete_after`; Setup's student list shows them
+  with Withdraw / Reinstate.
 
 ## Bus-time emails to families (Phase 5.5)
 
