@@ -53,6 +53,12 @@ def hhmm(minute: int) -> str:
     return f"{minute // 60:02d}:{minute % 60:02d}"
 
 
+PAST_DAY = "Ridership for a past day can't be changed."
+CLOSED_TODAY = (
+    "Changes to today's {leg} ride closed at {time}. Please contact the transportation office."
+)
+
+
 def change_closed_reason(
     rules: Rules, service_date: date, direction: RideDirection, now: datetime | None = None
 ) -> str | None:
@@ -60,11 +66,8 @@ def change_closed_reason(
     local = district_now(rules, now)
     today = local.date()
     if service_date < today:
-        return "Ridership for a past day can't be changed."
+        return PAST_DAY
     cutoff = rules.cutoff_for(direction)
     if service_date == today and cutoff is not None and local.hour * 60 + local.minute >= cutoff:
-        return (
-            f"Changes to today's {direction.value.upper()} ride closed at {hhmm(cutoff)}. "
-            "Please contact the transportation office."
-        )
+        return CLOSED_TODAY.format(leg=direction.value.upper(), time=hhmm(cutoff))
     return None

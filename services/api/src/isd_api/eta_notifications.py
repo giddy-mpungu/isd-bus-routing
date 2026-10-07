@@ -26,8 +26,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from isd_api import mailer
+from isd_api.account_emails import compose, language_of
 from isd_api.config import settings
 from isd_api.daily_trip import TripStop, daily_trip
+from isd_api.i18n import tr
 from isd_api.mailer import Email
 from isd_api.models import EtaNotification, RideDirection, Role, Run, Student, User
 from isd_api.ridership_rules import district_now, hhmm, load_rules, utc_now
@@ -63,20 +65,40 @@ def user_for_opt_out(db: Session, token: str) -> User | None:
 
 def change_email(parent: User, student: Student, direction: RideDirection, stop: TripStop) -> Email:
     assert stop.eta_minute is not None
-    planned = f" (planned {hhmm(stop.planned_minute)})" if stop.planned_minute is not None else ""
+    lang = language_of(parent)
+    planned = (
+        tr(lang, " (planned {time})", time=hhmm(stop.planned_minute))
+        if stop.planned_minute is not None
+        else ""
+    )
     link = f"{settings.web_url}/email-preferences#token={opt_out_token(parent)}"
-    return Email(
-        to=parent.email,
-        subject=f"Bus time change for {student.full_name}: {hhmm(stop.eta_minute)}",
-        body=(
-            f"Hello {parent.full_name},\n\n"
-            f"Today's {LEG[direction]} for {student.full_name} at {stop.label} is now "
-            f"expected at about {hhmm(stop.eta_minute)}{planned}.\n\n"
-            "Times are estimates and can move again; the Family page always shows the "
-            f"latest: {settings.web_url}/family\n\n"
-            f"To stop these emails: {link}\n\n"
-            "isd-bus-routing, your district's school transportation system\n"
+    return compose(
+        lang,
+        parent,
+        tr(
+            lang,
+            "Bus time change for {student}: {time}",
+            student=student.full_name,
+            time=hhmm(stop.eta_minute),
         ),
+        [
+            tr(
+                lang,
+                "Today's {leg} for {student} at {stop} is now expected at about {time}{planned}.",
+                leg=tr(lang, LEG[direction]),
+                student=student.full_name,
+                stop=stop.label,
+                time=hhmm(stop.eta_minute),
+                planned=planned,
+            ),
+            tr(
+                lang,
+                "Times are estimates and can move again; the Family page always shows the "
+                "latest: {url}",
+                url=f"{settings.web_url}/family",
+            ),
+            tr(lang, "To stop these emails: {url}", url=link),
+        ],
     )
 
 

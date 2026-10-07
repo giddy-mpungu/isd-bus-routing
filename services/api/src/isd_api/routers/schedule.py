@@ -46,7 +46,7 @@ from isd_solver import (
 )
 from sqlalchemy.orm import Session
 
-from isd_api import access_log, closures
+from isd_api import access_log, closures, i18n
 from isd_api.assignment_states import driver_transition_problem, resets_on_new_driver
 from isd_api.audit import record as record_audit
 from isd_api.availability import (
@@ -809,6 +809,7 @@ def _stop_roster_for(
 @router.get("/{service_date}/my-assignments", response_model=list[DriverAssignmentRead])
 def list_my_assignments(
     service_date: date,
+    lang: str = Depends(i18n.request_language),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(Role.DRIVER)),
 ) -> list[DriverAssignmentRead]:
@@ -848,7 +849,7 @@ def list_my_assignments(
                 roster_ambiguous=ambiguous,
                 stops=stops,
                 stops_ordered=ordered,
-                closure_notes=_closure_notes(db, a),
+                closure_notes=_closure_notes(db, a, lang),
             )
         )
     access_log.record_views(db, current_user, seen, "roster")
@@ -919,6 +920,7 @@ def update_assignment_status(
     payload: AssignmentStatusUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(Role.DRIVER)),
+    lang: str = Depends(i18n.request_language),
 ) -> DriverAssignmentRead:
     """Phase 4: a driver reports progress on their own run (started /
     completed / no-show). Distinct from PATCH /assignments/{id}, which
@@ -938,7 +940,7 @@ def update_assignment_status(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=problem)
     before_status = assignment.status
     if payload.status == before_status:
-        return _driver_assignment_read(db, assignment)
+        return _driver_assignment_read(db, assignment, lang)
     assignment.status = payload.status
     assignment.status_updated_at = datetime.now(UTC)
     db.flush()
@@ -953,7 +955,7 @@ def update_assignment_status(
     )
     db.commit()
     db.refresh(assignment)
-    return _driver_assignment_read(db, assignment)
+    return _driver_assignment_read(db, assignment, lang)
 
 
 # Directions are cached per run, waypoints and vehicle for a while, so a
@@ -969,6 +971,7 @@ def get_directions(
     from_lon: float | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    lang: str = Depends(i18n.request_language),
 ) -> DirectionsRead:
     """Spec section 9 "bus-specific turn-by-turn navigation": directions
     through the run's stops today (the day's trip, skipped stops left out),
@@ -1005,17 +1008,22 @@ def get_directions(
     waypoints = [*stops, school] if run.direction.value == "am" else [school, *stops]
     if from_lat is not None and from_lon is not None:
         waypoints = [
-            DirectionsWaypoint(label="Your position", lat=from_lat, lon=from_lon),
+            DirectionsWaypoint(label=i18n.tr(lang, "Your position"), lat=from_lat, lon=from_lon),
             *waypoints,
         ]
     if not stops:
         return DirectionsRead(
-            available=False, reason="This run has no stops on its route today", waypoints=waypoints
+            available=False,
+            reason=i18n.tr(lang, "This run has no stops on its route today"),
+            waypoints=waypoints,
         )
     if not settings.ors_api_key:
         return DirectionsRead(
             available=False,
-            reason="Turn-by-turn directions need an OpenRouteService key (ISD_API_ORS_API_KEY).",
+            reason=i18n.tr(
+                lang,
+                "Turn-by-turn directions need an OpenRouteService key (ISD_API_ORS_API_KEY).",
+            ),
             waypoints=waypoints,
         )
 
@@ -1027,6 +1035,7 @@ def get_directions(
         tuple((round(w.lat, 4), round(w.lon, 4)) for w in waypoints),
         # A new or cleared closure means new directions.
         tuple((c.id, c.radius_m) for c in in_force),
+        lang,
     )
     now = datetime.now(UTC).timestamp()
     cached = _directions_cache.get(key)
@@ -1056,6 +1065,7 @@ def get_directions(
                 for c in in_force
             ],
             size_restrictions=_size_restrictions_for_schedule(db),
+            language=lang,
         )
     except DirectionsError:
         raise HTTPException(
@@ -1095,21 +1105,23 @@ def get_directions(
     return result
 
 
-def _closure_notes(db: Session, assignment: Assignment) -> list[str]:
+def _closure_notes(db: Session, assignment: Assignment, lang: str = "en") -> list[str]:
     """Closures in force now near this run's trip today (spec section 10)."""
     rules = ridership_rules_load(db)
     if assignment.run.service_date != ridership_district_now(rules).date():
         return []
     notes = []
     for impact in closures.impacts(db, assignment, closures.active_now(db)):
-        note = closures.describe(impact.closure)
+        note = closures.describe(impact.closure, lang)
         if impact.stop_inside is not None:
-            note += f" (the {impact.stop_inside} stop is inside it)"
+            note += i18n.tr(lang, " (the {stop} stop is inside it)", stop=impact.stop_inside)
         notes.append(note)
     return notes
 
 
-def _driver_assignment_read(db: Session, assignment: Assignment) -> DriverAssignmentRead:
+def _driver_assignment_read(
+    db: Session, assignment: Assignment, lang: str = "en"
+) -> DriverAssignmentRead:
     ambiguous, ordered, stops = _stop_roster_for(db, assignment.run, assignment.start_minute)
     return DriverAssignmentRead(
         id=assignment.id,
@@ -1124,7 +1136,7 @@ def _driver_assignment_read(db: Session, assignment: Assignment) -> DriverAssign
         roster_ambiguous=ambiguous,
         stops=stops,
         stops_ordered=ordered,
-        closure_notes=_closure_notes(db, assignment),
+        closure_notes=_closure_notes(db, assignment, lang),
     )
 
 
@@ -1133,6 +1145,7 @@ def acknowledge_receipt(
     service_date: date,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(Role.DRIVER)),
+    lang: str = Depends(i18n.request_language),
 ) -> list[DriverAssignmentRead]:
     """Spec section 14's "Received": the driver's tablet has the day's
     assignments. The driver app calls this once after loading. Only Sent
@@ -1164,4 +1177,4 @@ def acknowledge_receipt(
                 after_state={"status": AssignmentStatus.RECEIVED.value},
             )
     db.commit()
-    return [_driver_assignment_read(db, a) for a in mine]
+    return [_driver_assignment_read(db, a, lang) for a in mine]

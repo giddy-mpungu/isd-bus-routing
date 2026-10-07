@@ -3,9 +3,11 @@ import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { MfaStatus } from '../api/types'
 import { MfaSetup, RecoveryCodes } from '../components/MfaSetup'
+import { useTranslation } from '../i18n'
 
 /** Phase 5.3: two-step sign-in on the Account page. */
 export function TwoStepSection() {
+  const { t } = useTranslation()
   const [status, setStatus] = useState<MfaStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [settingUp, setSettingUp] = useState(false)
@@ -18,9 +20,9 @@ export function TwoStepSection() {
     try {
       setStatus(await api.getMfaStatus())
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to load two-step sign-in.')
+      setError(err instanceof ApiError ? err.message : t('Failed to load two-step sign-in.'))
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     let current = true
@@ -30,13 +32,13 @@ export function TwoStepSection() {
       },
       (err: unknown) => {
         if (current)
-          setError(err instanceof ApiError ? err.message : 'Failed to load two-step sign-in.')
+          setError(err instanceof ApiError ? err.message : t('Failed to load two-step sign-in.'))
       },
     )
     return () => {
       current = false
     }
-  }, [])
+  }, [t])
 
   async function run(action: () => Promise<void>) {
     setError(null)
@@ -44,7 +46,7 @@ export function TwoStepSection() {
     try {
       await action()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong.')
+      setError(err instanceof ApiError ? err.message : t('Something went wrong.'))
     } finally {
       setIsSaving(false)
     }
@@ -80,7 +82,7 @@ export function TwoStepSection() {
 
   return (
     <section className="two-step-section">
-      <h2>Two-step sign-in</h2>
+      <h2>{t('Two-step sign-in')}</h2>
       {error && (
         <p role="alert" className="error">
           {error}
@@ -98,11 +100,17 @@ export function TwoStepSection() {
       ) : status.enabled ? (
         <>
           <p>
-            On. Signing in needs a code from your authenticator app. You have{' '}
-            {status.recovery_codes_left} recovery codes left.
+            {t(
+              status.recovery_codes_left === 1
+                ? 'On. Signing in needs a code from your authenticator app. You have 1 recovery code left.'
+                : 'On. Signing in needs a code from your authenticator app. You have {count} recovery codes left.',
+              { count: status.recovery_codes_left },
+            )}
           </p>
           <form onSubmit={handleNewCodes}>
-            <label htmlFor="new-codes-code">Code from your app, to make new recovery codes</label>
+            <label htmlFor="new-codes-code">
+              {t('Code from your app, to make new recovery codes')}
+            </label>
             <input
               id="new-codes-code"
               inputMode="numeric"
@@ -113,14 +121,14 @@ export function TwoStepSection() {
               required
             />
             <button type="submit" disabled={isSaving}>
-              Make new recovery codes
+              {t('Make new recovery codes')}
             </button>
           </form>
           {status.required ? (
-            <p className="status">Your role needs two-step sign-in, so it stays on.</p>
+            <p className="status">{t('Your role needs two-step sign-in, so it stays on.')}</p>
           ) : (
             <form onSubmit={handleTurnOff}>
-              <label htmlFor="mfa-off-password">Password, to turn it off</label>
+              <label htmlFor="mfa-off-password">{t('Password, to turn it off')}</label>
               <input
                 id="mfa-off-password"
                 type="password"
@@ -130,7 +138,7 @@ export function TwoStepSection() {
                 required
               />
               <button type="submit" disabled={isSaving}>
-                Turn off two-step sign-in
+                {t('Turn off two-step sign-in')}
               </button>
             </form>
           )}
@@ -138,11 +146,12 @@ export function TwoStepSection() {
       ) : (
         <>
           <p>
-            Off. With it on, signing in also needs a code from an authenticator app on your phone,
-            so a stolen password isn&apos;t enough.
+            {t(
+              "Off. With it on, signing in also needs a code from an authenticator app on your phone, so a stolen password isn't enough.",
+            )}
           </p>
           <button type="button" onClick={() => setSettingUp(true)}>
-            Turn on two-step sign-in
+            {t('Turn on two-step sign-in')}
           </button>
         </>
       )}

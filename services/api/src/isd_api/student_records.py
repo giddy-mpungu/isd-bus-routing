@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
 from isd_api import access_log
+from isd_api.i18n import tr
 from isd_api.models import (
     AuditLogEntry,
     EtaNotification,
@@ -42,8 +43,14 @@ def _table(headers: list[str], rows: list[list[str]], empty: str) -> str:
     return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
 
 
-def build(db: Session, student: Student, generated_at: datetime) -> str:
+def build(db: Session, student: Student, generated_at: datetime, lang: str = "en") -> str:
     tz = ZoneInfo(load_rules(db).timezone)
+
+    def t(phrase: str, **values: object) -> str:
+        return tr(lang, phrase, **values)
+
+    def yes(flag: bool) -> str:
+        return t("Yes") if flag else t("No")
 
     def when(moment: datetime) -> str:
         if moment.tzinfo is None:  # SQLite hands it back without one
@@ -51,31 +58,25 @@ def build(db: Session, student: Student, generated_at: datetime) -> str:
         return moment.astimezone(tz).strftime("%Y-%m-%d %H:%M")
 
     details = [
-        ["Name", student.full_name],
-        ["School", student.school.name],
-        ["Grade", student.grade or "Not recorded"],
-        ["Bus stop", student.stop.label if student.stop else "None assigned"],
+        [t("Name"), student.full_name],
+        [t("School"), student.school.name],
+        [t("Grade"), student.grade or t("Not recorded")],
+        [t("Bus stop"), student.stop.label if student.stop else t("None assigned")],
+        [t("Usually rides"), yes(student.default_ridership.value == "rides")],
+        [t("Needs specialized transportation"), yes(student.needs_specialized_transport)],
+        [t("Hazardous walking route"), yes(student.hazardous_route)],
         [
-            "Usually rides",
-            "Yes" if student.default_ridership.value == "rides" else "No",
+            t("Accommodations"),
+            ", ".join(sorted(q.description or q.code for q in student.accommodations)) or t("None"),
         ],
-        [
-            "Needs specialized transportation",
-            "Yes" if student.needs_specialized_transport else "No",
-        ],
-        ["Hazardous walking route", "Yes" if student.hazardous_route else "No"],
-        [
-            "Accommodations",
-            ", ".join(sorted(q.description or q.code for q in student.accommodations)) or "None",
-        ],
-        ["Student ID from the school's records", student.external_id or "None"],
+        [t("Student ID from the school's records"), student.external_id or t("None")],
     ]
     home = db.get(StudentHome, student.id)
     home_rows = (
         [
-            ["Address", home.address],
-            ["Matched as", home.matched_address or "Placed by hand on a map"],
-            ["Last changed", when(home.updated_at)],
+            [t("Address"), home.address],
+            [t("Matched as"), home.matched_address or t("Placed by hand on a map")],
+            [t("Last changed"), when(home.updated_at)],
         ]
         if home
         else []
@@ -84,15 +85,20 @@ def build(db: Session, student: Student, generated_at: datetime) -> str:
     overrides = [
         [
             o.service_date.isoformat(),
-            LEG[o.direction.value],
-            "Riding" if o.is_riding else "Not riding",
+            t(LEG[o.direction.value]),
+            t("Riding") if o.is_riding else t("Not riding"),
         ]
         for o in db.query(RidershipOverride)
         .filter(RidershipOverride.student_id == student.id)
         .order_by(RidershipOverride.service_date.desc())
     ]
     emails = [
-        [n.service_date.isoformat(), LEG[n.direction.value], hhmm(n.eta_minute), when(n.sent_at)]
+        [
+            n.service_date.isoformat(),
+            t(LEG[n.direction.value]),
+            hhmm(n.eta_minute),
+            when(n.sent_at),
+        ]
         for n in db.query(EtaNotification)
         .filter(EtaNotification.student_id == student.id)
         .order_by(EtaNotification.sent_at.desc())
@@ -101,8 +107,8 @@ def build(db: Session, student: Student, generated_at: datetime) -> str:
         [
             when(a.first_at),
             u.full_name,
-            u.role.value.replace("_", " "),
-            access_log.WHAT.get(a.what, a.what),
+            t(u.role.value.replace("_", " ")),
+            t(access_log.WHAT.get(a.what, a.what)),
         ]
         for a, u in db.query(StudentAccess, User)
         .join(User, StudentAccess.user_id == User.id)
@@ -114,7 +120,7 @@ def build(db: Session, student: Student, generated_at: datetime) -> str:
             when(c.created_at),
             c.what_is_wrong,
             c.should_say,
-            c.status,
+            t(c.status),
             c.response or "",
         ]
         for c in db.query(RecordCorrection)
@@ -122,7 +128,11 @@ def build(db: Session, student: Student, generated_at: datetime) -> str:
         .order_by(RecordCorrection.created_at.desc())
     ]
     changes = [
-        [when(e.created_at), e.action.replace("_", " "), actor.full_name if actor else "The system"]
+        [
+            when(e.created_at),
+            e.action.replace("_", " "),
+            actor.full_name if actor else t("The system"),
+        ]
         for e, actor in db.query(AuditLogEntry, User)
         .outerjoin(User, AuditLogEntry.actor_user_id == User.id)
         .filter(AuditLogEntry.entity_type == "student", AuditLogEntry.entity_id == student.id)
@@ -130,47 +140,52 @@ def build(db: Session, student: Student, generated_at: datetime) -> str:
     ]
 
     sections = [
-        ("Details", _table(["", ""], details, "")),
-        ("Home address", _table(["", ""], home_rows, "No home address is on file.")),
-        ("Guardians linked to this student", _table(["Name"], guardians, "None.")),
+        (t("Details"), _table(["", ""], details, "")),
+        (t("Home address"), _table(["", ""], home_rows, t("No home address is on file."))),
+        (t("Guardians linked to this student"), _table([t("Name")], guardians, t("None."))),
         (
-            "Changes to riding on particular days",
-            _table(["Date", "Trip", "Set to"], overrides, "None."),
+            t("Changes to riding on particular days"),
+            _table([t("Date"), t("Trip"), t("Set to")], overrides, t("None.")),
         ),
         (
-            "Bus time emails sent about this student",
-            _table(["Date", "Trip", "Time given", "Sent"], emails, "None."),
+            t("Bus time emails sent about this student"),
+            _table([t("Date"), t("Trip"), t("Time given"), t("Sent")], emails, t("None.")),
         ),
         (
-            "Who at the district viewed this student's information",
+            t("Who at the district viewed this student's information"),
             _table(
-                ["First viewed that day", "Who", "Role", "What"],
+                [t("First viewed that day"), t("Who"), t("Role"), t("What")],
                 views,
-                "No views recorded.",
+                t("No views recorded."),
             ),
         ),
         (
-            "Correction requests",
+            t("Correction requests"),
             _table(
-                ["Asked", "What was wrong", "Should say", "Status", "Answer"],
+                [t("Asked"), t("What was wrong"), t("Should say"), t("Status"), t("Answer")],
                 corrections,
-                "None.",
+                t("None."),
             ),
         ),
         (
-            "Changes to this record",
-            _table(["When", "Change", "By"], changes, "No changes recorded."),
+            t("Changes to this record"),
+            _table([t("When"), t("Change"), t("By")], changes, t("No changes recorded.")),
         ),
     ]
     body = "".join(f"<h2>{escape(title)}</h2>{content}" for title, content in sections)
-    name = escape(student.full_name)
+    title = escape(t("Transportation records: {name}", name=student.full_name))
+    intro = escape(
+        t(
+            "Everything the school bus system holds about this student, as of {when}. If "
+            'something here is wrong, use "Something\'s wrong?" on the Family page, or contact '
+            "the transportation office.",
+            when=when(generated_at),
+        )
+    )
     return (
-        '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">\n'
-        f"<title>Transportation records: {name}</title>\n<style>{_STYLE}</style></head><body>\n"
-        f"<h1>Transportation records: {name}</h1>\n"
-        "<p>Everything the school bus system holds about this student, as of "
-        f'{escape(when(generated_at))}. If something here is wrong, use "Something\'s wrong?" '
-        "on the Family page, or contact the transportation office.</p>\n"
+        f'<!doctype html>\n<html lang="{escape(lang)}"><head><meta charset="utf-8">\n'
+        f"<title>{title}</title>\n<style>{_STYLE}</style></head><body>\n"
+        f"<h1>{title}</h1>\n<p>{intro}</p>\n"
         f"{body}\n</body></html>\n"
     )
 

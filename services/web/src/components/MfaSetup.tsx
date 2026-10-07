@@ -2,17 +2,20 @@ import { useEffect, useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { MfaSetup as MfaSetupData } from '../api/types'
+import { useTranslation } from '../i18n'
 import { QrCode } from './QrCode'
 
 /** Recovery codes, shown once, with a way to keep them. */
 export function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void }) {
   const [copied, setCopied] = useState(false)
+  const { t } = useTranslation()
   return (
-    <div className="recovery-codes" role="region" aria-label="Recovery codes">
+    <div className="recovery-codes" role="region" aria-label={t('Recovery codes')}>
       <p>
-        <strong>Save these recovery codes</strong> somewhere safe, away from your phone (print them,
-        or keep them in a password manager). Each one signs you in once if you lose your phone. They
-        won&apos;t be shown again.
+        <strong>{t('Save these recovery codes')}</strong>{' '}
+        {t(
+          "somewhere safe, away from your phone (print them, or keep them in a password manager). Each one signs you in once if you lose your phone. They won't be shown again.",
+        )}
       </p>
       <ul>
         {codes.map((c) => (
@@ -30,10 +33,10 @@ export function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () =
           )
         }}
       >
-        {copied ? 'Copied' : 'Copy codes'}
+        {copied ? t('Copied') : t('Copy codes')}
       </button>{' '}
       <button type="button" onClick={onDone}>
-        I&apos;ve saved them
+        {t("I've saved them")}
       </button>
     </div>
   )
@@ -45,6 +48,7 @@ export function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () =
  * codes have been seen.
  */
 export function MfaSetup({ onDone }: { onDone: () => void }) {
+  const { t } = useTranslation()
   const [setup, setSetup] = useState<MfaSetupData | null>(null)
   const [code, setCode] = useState('')
   const [codes, setCodes] = useState<string[] | null>(null)
@@ -58,7 +62,7 @@ export function MfaSetup({ onDone }: { onDone: () => void }) {
         if (current) setSetup(data)
       },
       (err: unknown) => {
-        if (current) setError(err instanceof ApiError ? err.message : 'Failed to start setup.')
+        if (current) setError(err instanceof ApiError ? err.message : t('Failed to start setup.'))
       },
     )
     return () => {
@@ -73,7 +77,7 @@ export function MfaSetup({ onDone }: { onDone: () => void }) {
     try {
       setCodes((await api.confirmMfa(code)).recovery_codes)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to check the code.')
+      setError(err instanceof ApiError ? err.message : t('Failed to check the code.'))
     } finally {
       setIsSaving(false)
     }
@@ -86,22 +90,24 @@ export function MfaSetup({ onDone }: { onDone: () => void }) {
     <div className="mfa-setup">
       <ol>
         <li>
-          Open an authenticator app on your phone (Google Authenticator, Microsoft Authenticator, or
-          your password manager) and add an account.
+          {t(
+            'Open an authenticator app on your phone (Google Authenticator, Microsoft Authenticator, or your password manager) and add an account.',
+          )}
         </li>
-        <li>Scan this QR code, or type the setup key instead.</li>
-        <li>Enter the 6-digit code the app shows.</li>
+        <li>{t('Scan this QR code, or type the setup key instead.')}</li>
+        <li>{t('Enter the 6-digit code the app shows.')}</li>
       </ol>
       {setup && (
         <>
-          <QrCode value={setup.otpauth_uri} label="QR code for your authenticator app" />
+          <QrCode value={setup.otpauth_uri} label={t('QR code for your authenticator app')} />
           <p>
-            Setup key: <code className="mfa-secret">{setup.secret.replace(/(.{4})/g, '$1 ')}</code>
+            {t('Setup key:')}{' '}
+            <code className="mfa-secret">{setup.secret.replace(/(.{4})/g, '$1 ')}</code>
           </p>
         </>
       )}
       <form onSubmit={(event) => void handleConfirm(event)}>
-        <label htmlFor="mfa-setup-code">6-digit code</label>
+        <label htmlFor="mfa-setup-code">{t('6-digit code')}</label>
         <input
           id="mfa-setup-code"
           inputMode="numeric"
@@ -117,7 +123,7 @@ export function MfaSetup({ onDone }: { onDone: () => void }) {
           </p>
         )}
         <button type="submit" disabled={isSaving || setup === null}>
-          {isSaving ? 'Checking…' : 'Turn on two-step sign-in'}
+          {isSaving ? t('Checking…') : t('Turn on two-step sign-in')}
         </button>
       </form>
     </div>

@@ -135,7 +135,28 @@ describe('UsersPage', () => {
         driver_id: 5,
         school_id: undefined,
         student_id: undefined,
+        preferred_language: 'en',
       }),
+    )
+  })
+
+  it("sets a new family's email language", async () => {
+    vi.mocked(api.createUser).mockResolvedValue(driverUser)
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => expect(screen.getByText('drv@example.org')).toBeInTheDocument())
+
+    await user.type(screen.getByLabelText('Email'), 'rosa@example.org')
+    await user.type(screen.getByLabelText('Password'), 'password123')
+    await user.type(screen.getByLabelText('Full name'), 'Rosa Diaz')
+    await user.selectOptions(screen.getByLabelText('Role'), 'parent')
+    await user.selectOptions(screen.getByLabelText('Language for their emails'), 'es')
+    await user.click(screen.getByRole('button', { name: 'Add user' }))
+
+    await waitFor(() =>
+      expect(api.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'parent', preferred_language: 'es' }),
+      ),
     )
   })
 

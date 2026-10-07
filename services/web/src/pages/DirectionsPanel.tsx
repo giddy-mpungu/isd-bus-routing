@@ -4,6 +4,7 @@ import { ApiError } from '../api/client'
 import type { DirectionsResult } from '../api/types'
 import { LazyMapView } from '../components/LazyMapView'
 import type { MapMarker, MapTrack } from '../components/mapTypes'
+import { currentLanguage, LOCALES, useTranslation } from '../i18n'
 
 function miles(metres: number): string {
   return `${(metres / 1609.344).toFixed(1)} mi`
@@ -15,7 +16,10 @@ function minutes(seconds: number): string {
 
 function speak(text: string) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
-  window.speechSynthesis.speak(new SpeechSynthesisUtterance(text))
+  const utterance = new SpeechSynthesisUtterance(text)
+  // The server gives directions in the screen's language (OpenRouteService).
+  utterance.lang = LOCALES[currentLanguage()]
+  window.speechSynthesis.speak(utterance)
 }
 
 /**
@@ -26,6 +30,7 @@ function speak(text: string) {
  * tablet's own maps app.
  */
 export function DirectionsPanel({ assignmentId }: { assignmentId: number }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [result, setResult] = useState<DirectionsResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -39,7 +44,7 @@ export function DirectionsPanel({ assignmentId }: { assignmentId: number }) {
       setResult(await api.getDirections(assignmentId, from))
       setLeg(0)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Directions failed to load.')
+      setError(err instanceof ApiError ? err.message : t('Directions failed to load.'))
     } finally {
       setIsLoading(false)
     }
@@ -55,7 +60,7 @@ export function DirectionsPanel({ assignmentId }: { assignmentId: number }) {
     if (!('geolocation' in navigator)) return
     navigator.geolocation.getCurrentPosition(
       (p) => void load({ lat: p.coords.latitude, lon: p.coords.longitude }),
-      () => setError("Couldn't get your position."),
+      () => setError(t("Couldn't get your position.")),
     )
   }
 
@@ -73,13 +78,13 @@ export function DirectionsPanel({ assignmentId }: { assignmentId: number }) {
         ? [
             {
               id: `directions-${assignmentId}`,
-              label: 'Route',
+              label: t('Route'),
               points: result.coordinates.map(([lat, lon]) => [lat, lon] as [number, number]),
             },
           ]
         : []
     return { markers: points, tracks: line }
-  }, [result, leg, assignmentId])
+  }, [result, leg, assignmentId, t])
 
   const legs = result?.legs ?? []
   const current = legs[leg]
@@ -89,11 +94,11 @@ export function DirectionsPanel({ assignmentId }: { assignmentId: number }) {
   return (
     <div className="directions-panel">
       <button type="button" onClick={toggle} aria-expanded={open}>
-        {open ? 'Hide directions' : 'Directions'}
+        {open ? t('Hide directions') : t('Directions')}
       </button>
       {open && (
         <div className="directions-body">
-          {isLoading && <p className="status">Loading directions…</p>}
+          {isLoading && <p className="status">{t('Loading directions…')}</p>}
           {error && (
             <p role="alert" className="error">
               {error}
@@ -112,10 +117,17 @@ export function DirectionsPanel({ assignmentId }: { assignmentId: number }) {
           {result && result.available && current && (
             <>
               <p className="directions-summary">
-                Whole route: {miles(result.distance_m)}, about {minutes(result.duration_s)}
+                {t('Whole route: {distance}, about {time}', {
+                  distance: miles(result.distance_m),
+                  time: minutes(result.duration_s),
+                })}
               </p>
               <h4 className="directions-leg">
-                To {current.to_label} ({miles(current.distance_m)}, {minutes(current.duration_s)})
+                {t('To {place} ({distance}, {time})', {
+                  place: current.to_label,
+                  distance: miles(current.distance_m),
+                  time: minutes(current.duration_s),
+                })}
               </h4>
               <ol className="directions-steps">
                 {steps.map((s, i) => (
@@ -128,15 +140,11 @@ export function DirectionsPanel({ assignmentId }: { assignmentId: number }) {
                 ))}
               </ol>
               <div className="directions-actions">
-                <button
-                  type="button"
-                  onClick={() => steps[0] && speak(steps[0].instruction)}
-                  aria-label="Read the next instruction aloud"
-                >
-                  🔊 Read aloud
+                <button type="button" onClick={() => steps[0] && speak(steps[0].instruction)}>
+                  <span aria-hidden="true">🔊</span> {t('Read the next instruction aloud')}
                 </button>
                 <button type="button" disabled={leg === 0} onClick={() => setLeg(leg - 1)}>
-                  Previous stop
+                  {t('Previous stop')}
                 </button>
                 <button
                   type="button"
@@ -144,7 +152,7 @@ export function DirectionsPanel({ assignmentId }: { assignmentId: number }) {
                   disabled={leg >= legs.length - 1}
                   onClick={() => setLeg(leg + 1)}
                 >
-                  Next stop
+                  {t('Next stop')}
                 </button>
               </div>
             </>
@@ -156,16 +164,16 @@ export function DirectionsPanel({ assignmentId }: { assignmentId: number }) {
                   className="directions-open-maps"
                   href={`geo:${nextWaypoint.lat},${nextWaypoint.lon}?q=${nextWaypoint.lat},${nextWaypoint.lon}(${encodeURIComponent(nextWaypoint.label.replace(/[()]/g, ''))})`}
                 >
-                  Open {nextWaypoint.label} in the maps app
+                  {t('Open {place} in the maps app', { place: nextWaypoint.label })}
                 </a>
               )}{' '}
               <button type="button" onClick={fromHere} disabled={isLoading}>
-                Route from my position
+                {t('Route from my position')}
               </button>
               <LazyMapView
                 markers={markers}
                 tracks={tracks}
-                label={`Directions map for assignment ${assignmentId}`}
+                label={t('Directions map for assignment {id}', { id: assignmentId })}
                 height={260}
               />
               {result.available && <p className="directions-attribution">{result.attribution}</p>}

@@ -90,10 +90,13 @@ COMMON_PASSWORDS = frozenset(
 )
 
 
+TOO_SHORT = "Use at least {count} characters"
+
+
 def policy_problem(password: str, email: str) -> str | None:
     """Why `password` can't be used for the account `email`, or None."""
     if len(password) < settings.password_min_length:
-        return f"Use at least {settings.password_min_length} characters"
+        return TOO_SHORT.format(count=settings.password_min_length)
     if len(password.encode("utf-8")) > MAX_BYTES:
         return "That password is too long"
     lowered = password.lower()

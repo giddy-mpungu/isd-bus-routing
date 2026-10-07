@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
+import { useTranslation } from '../i18n'
 
 /**
  * Phase 5.5: a parent's switch for "bus time changed" emails. On by
  * default; hidden for accounts it doesn't apply to (student logins).
  */
 export function EtaEmailSetting() {
+  const { t } = useTranslation()
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -32,7 +34,7 @@ export function EtaEmailSetting() {
     try {
       setEnabled((await api.updateNotificationSettings({ eta_emails: next })).eta_emails)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to save.')
+      setError(err instanceof ApiError ? err.message : t('Failed to save.'))
     } finally {
       setIsSaving(false)
     }
@@ -48,7 +50,7 @@ export function EtaEmailSetting() {
           disabled={isSaving}
           onChange={(event) => void toggle(event.target.checked)}
         />{' '}
-        Email me when my child&apos;s bus time changes by 10 minutes or more
+        {t("Email me when my child's bus time changes by 10 minutes or more")}
       </label>
       {error && (
         <p role="alert" className="error">

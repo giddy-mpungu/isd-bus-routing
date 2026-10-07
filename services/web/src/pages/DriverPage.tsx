@@ -9,27 +9,53 @@ import type {
   DriverDispatchTask,
   DriverFieldTrip,
   DriverReportType,
+  TripStatus,
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { FINISHED, NEXT_STEP, STATUS_LABELS, STATUS_TONES } from '../assignmentStatus'
 import { Badge, type BadgeTone } from '../components/Badge'
 import { TASK_KIND_LABELS } from '../dispatchTasks'
 import { buildDay, isUnderway, SLOT_LABELS, type QueueSlot } from '../driverDay'
+import {
+  currentLanguage,
+  LOCALES,
+  translateNow as tNow,
+  useTranslation,
+  type Phrase,
+} from '../i18n'
 import { DirectionsPanel } from './DirectionsPanel'
 import { nextMoving, speedAt, type Fix } from '../motion'
 
-const ABSENCE_REASONS: AbsenceReason[] = [
-  'sick_leave',
-  'personal_day',
-  'vacation',
-  'emergency_leave',
-  'training',
-  'approved_leave',
-  'administrative_direction',
-  'injury',
-  'no_call_no_show',
-  'other',
-]
+const ABSENCE_REASONS: Record<AbsenceReason, Phrase> = {
+  sick_leave: 'sick leave',
+  personal_day: 'personal day',
+  vacation: 'vacation',
+  emergency_leave: 'emergency leave',
+  training: 'training',
+  approved_leave: 'approved leave',
+  administrative_direction: 'administrative direction',
+  injury: 'injury',
+  no_call_no_show: 'no call, no show',
+  other: 'other',
+}
+
+const TRIP_STATUSES: Record<TripStatus, Phrase> = {
+  requested: 'requested',
+  approved: 'approved',
+  assigned: 'assigned',
+  dispatched: 'dispatched',
+  in_progress: 'in progress',
+  returning: 'returning',
+  completed: 'completed',
+}
+
+// The announcement's text is written by staff and shown as written.
+const CATEGORIES: Record<Announcement['category'], Phrase> = {
+  general: 'general',
+  delay: 'delay',
+  substitution: 'substitution',
+  route_change: 'route change',
+}
 
 // How often the moving tablet sends its position to dispatch.
 const REPORT_EVERY_MS = 20_000
@@ -51,19 +77,33 @@ function speak(text: string) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
     return
   }
-  window.speechSynthesis.speak(new SpeechSynthesisUtterance(text))
+  const utterance = new SpeechSynthesisUtterance(text)
+  // In the screen's language, so a Spanish voice reads Spanish.
+  utterance.lang = LOCALES[currentLanguage()]
+  window.speechSynthesis.speak(utterance)
 }
 
 function speakAssignment(a: DriverAssignment) {
   speak(
-    `${a.school_name}, ${formatMinuteOfDay(a.start_minute)} to ${formatMinuteOfDay(a.end_minute)}, vehicle ${a.vehicle_label}.`,
+    tNow('{school}, {start} to {end}, vehicle {vehicle}.', {
+      school: a.school_name,
+      start: formatMinuteOfDay(a.start_minute),
+      end: formatMinuteOfDay(a.end_minute),
+      vehicle: a.vehicle_label,
+    }),
   )
 }
 
-function speakTask(t: DriverDispatchTask) {
+function speakTask(task: DriverDispatchTask) {
+  const when = {
+    kind: tNow(TASK_KIND_LABELS[task.kind]),
+    start: formatMinuteOfDay(task.start_minute),
+    end: formatMinuteOfDay(task.end_minute),
+  }
   speak(
-    `${TASK_KIND_LABELS[t.kind]}, ${formatMinuteOfDay(t.start_minute)} to ${formatMinuteOfDay(t.end_minute)}` +
-      `${t.location ? `, at ${t.location}` : ''}. ${t.instructions}`,
+    (task.location
+      ? tNow('{kind}, {start} to {end}, at {place}.', { ...when, place: task.location })
+      : tNow('{kind}, {start} to {end}.', when)) + ` ${task.instructions}`,
   )
 }
 
@@ -81,15 +121,16 @@ const SLOT_TONES: Record<QueueSlot, BadgeTone> = {
 }
 
 function SlotLabel({ slot }: { slot: QueueSlot }) {
+  const { t } = useTranslation()
   return (
     <div className="driver-queue-slot">
-      <Badge tone={SLOT_TONES[slot]}>{SLOT_LABELS[slot]}</Badge>
+      <Badge tone={SLOT_TONES[slot]}>{t(SLOT_LABELS[slot])}</Badge>
     </div>
   )
 }
 
 // A task's last two steps read better as "Start task" / "Task done".
-function taskStepLabel(to: AssignmentStatus, label: string): string {
+function taskStepLabel(to: AssignmentStatus, label: Phrase): Phrase {
   if (to === 'in_progress') return 'Start task'
   if (to === 'completed') return 'Task done'
   return label
@@ -97,6 +138,7 @@ function taskStepLabel(to: AssignmentStatus, label: string): string {
 
 export function DriverPage() {
   const { user } = useAuth()
+  const { t } = useTranslation()
   const [serviceDate] = useState(today)
   const [assignments, setAssignments] = useState<DriverAssignment[]>([])
   const [tasks, setTasks] = useState<DriverDispatchTask[]>([])
@@ -109,30 +151,33 @@ export function DriverPage() {
   // never auto-generated (see routers/announcements.py).
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
 
-  const loadDay = useCallback(async (date: string) => {
-    setErrorMessage(null)
-    try {
-      const [myRuns, myTasks, myTrips] = await Promise.all([
-        api.getMyAssignments(date),
-        api.getMyDispatchTasks(date),
-        api.getMyFieldTrips(date),
-      ])
-      // Spec section 14: tell dispatch the tablet has received new work.
-      const [runs, tasksNow] = await Promise.all([
-        myRuns.some((a) => a.status === 'sent') ? api.markAssignmentsReceived(date) : myRuns,
-        myTasks.some((t) => t.status === 'sent' && !t.cancelled)
-          ? api.markDispatchTasksReceived(date)
-          : myTasks,
-      ])
-      setAssignments(runs)
-      setTasks(tasksNow)
-      setTrips(myTrips)
-    } catch (err) {
-      setErrorMessage(err instanceof ApiError ? err.message : 'Failed to load your day.')
-    } finally {
-      setHasLoaded(true)
-    }
-  }, [])
+  const loadDay = useCallback(
+    async (date: string) => {
+      setErrorMessage(null)
+      try {
+        const [myRuns, myTasks, myTrips] = await Promise.all([
+          api.getMyAssignments(date),
+          api.getMyDispatchTasks(date),
+          api.getMyFieldTrips(date),
+        ])
+        // Spec section 14: tell dispatch the tablet has received new work.
+        const [runs, tasksNow] = await Promise.all([
+          myRuns.some((a) => a.status === 'sent') ? api.markAssignmentsReceived(date) : myRuns,
+          myTasks.some((t) => t.status === 'sent' && !t.cancelled)
+            ? api.markDispatchTasksReceived(date)
+            : myTasks,
+        ])
+        setAssignments(runs)
+        setTasks(tasksNow)
+        setTrips(myTrips)
+      } catch (err) {
+        setErrorMessage(err instanceof ApiError ? err.message : t('Failed to load your day.'))
+      } finally {
+        setHasLoaded(true)
+      }
+    },
+    [t],
+  )
 
   useEffect(() => {
     void loadDay(serviceDate)
@@ -209,7 +254,7 @@ export function DriverPage() {
       await api.updateAssignmentStatus(assignmentId, status)
       await loadDay(serviceDate)
     } catch (err) {
-      setErrorMessage(err instanceof ApiError ? err.message : 'Failed to update run status.')
+      setErrorMessage(err instanceof ApiError ? err.message : t('Failed to update run status.'))
     } finally {
       setBusyKey(null)
     }
@@ -222,7 +267,7 @@ export function DriverPage() {
       await api.updateDispatchTaskStatus(taskId, status)
       await loadDay(serviceDate)
     } catch (err) {
-      setErrorMessage(err instanceof ApiError ? err.message : 'Failed to update the task.')
+      setErrorMessage(err instanceof ApiError ? err.message : t('Failed to update the task.'))
     } finally {
       setBusyKey(null)
     }
@@ -244,7 +289,7 @@ export function DriverPage() {
     setAbsenceError(null)
     setAbsenceSuccess(false)
     if (user?.driver_id == null) {
-      setAbsenceError('Your account is not linked to a driver record.')
+      setAbsenceError(t('Your account is not linked to a driver record.'))
       return
     }
     setIsSavingAbsence(true)
@@ -261,7 +306,7 @@ export function DriverPage() {
       setAbsenceEndMinute('1439')
       setAbsenceSuccess(true)
     } catch (err) {
-      setAbsenceError(err instanceof ApiError ? err.message : 'Failed to report absence.')
+      setAbsenceError(err instanceof ApiError ? err.message : t('Failed to report absence.'))
     } finally {
       setIsSavingAbsence(false)
     }
@@ -279,7 +324,7 @@ export function DriverPage() {
     setReportError(null)
     setReportSuccess(false)
     if (user?.driver_id == null) {
-      setReportError('Your account is not linked to a driver record.')
+      setReportError(t('Your account is not linked to a driver record.'))
       return
     }
     setIsSavingReport(true)
@@ -293,7 +338,7 @@ export function DriverPage() {
       setReportDescription('')
       setReportSuccess(true)
     } catch (err) {
-      setReportError(err instanceof ApiError ? err.message : 'Failed to submit report.')
+      setReportError(err instanceof ApiError ? err.message : t('Failed to submit report.'))
     } finally {
       setIsSavingReport(false)
     }
@@ -301,21 +346,21 @@ export function DriverPage() {
 
   return (
     <div className="driver-page">
-      <h1>My day — {serviceDate}</h1>
+      <h1>{t('My day — {date}', { date: serviceDate })}</h1>
 
       {locked && (
         <p role="status" className="motion-lock">
-          Bus moving: typing is locked until you stop. The next-step buttons still work.
+          {t('Bus moving: typing is locked until you stop. The next-step buttons still work.')}
         </p>
       )}
 
       {announcements.length > 0 && (
         <section className="announcements-panel">
-          <h2>Messages from dispatch</h2>
+          <h2>{t('Messages from dispatch')}</h2>
           <ul>
             {announcements.map((a) => (
               <li key={a.id}>
-                [{a.category.replace(/_/g, ' ')}] {a.message}
+                [{t(CATEGORIES[a.category])}] {a.message}
               </li>
             ))}
           </ul>
@@ -328,35 +373,43 @@ export function DriverPage() {
         </p>
       )}
       {hasLoaded && day.length === 0 && !errorMessage && (
-        <p className="status">Nothing scheduled for you today.</p>
+        <p className="status">{t('Nothing scheduled for you today.')}</p>
       )}
 
       <ul className="driver-run-list">
         {day.map(({ item, slot }) => {
           if (item.type === 'task') {
-            const t = item.task
-            const step = t.cancelled ? undefined : NEXT_STEP[t.status]
+            const task = item.task
+            const step = task.cancelled ? undefined : NEXT_STEP[task.status]
             return (
               <li
                 key={item.key}
-                className={`driver-run-card driver-task-card${t.cancelled ? ' is-cancelled' : ''}`}
+                className={`driver-run-card driver-task-card${task.cancelled ? ' is-cancelled' : ''}`}
               >
                 <SlotLabel slot={slot} />
                 <div className="driver-run-time">
-                  {formatMinuteOfDay(t.start_minute)} – {formatMinuteOfDay(t.end_minute)}
+                  {formatMinuteOfDay(task.start_minute)} – {formatMinuteOfDay(task.end_minute)}
                 </div>
-                <div className="driver-run-school">Dispatch: {TASK_KIND_LABELS[t.kind]}</div>
-                {t.location && <div className="driver-run-vehicle">Where: {t.location}</div>}
-                {t.vehicle_label && (
-                  <div className="driver-run-vehicle">Vehicle: {t.vehicle_label}</div>
+                <div className="driver-run-school">
+                  {t('Dispatch: {kind}', { kind: t(TASK_KIND_LABELS[task.kind]) })}
+                </div>
+                {task.location && (
+                  <div className="driver-run-vehicle">
+                    {t('Where: {place}', { place: task.location })}
+                  </div>
                 )}
-                <p className="driver-task-instructions">{t.instructions}</p>
+                {task.vehicle_label && (
+                  <div className="driver-run-vehicle">
+                    {t('Vehicle: {vehicle}', { vehicle: task.vehicle_label })}
+                  </div>
+                )}
+                <p className="driver-task-instructions">{task.instructions}</p>
                 <div className="driver-run-status">
-                  Status:{' '}
-                  {t.cancelled ? (
-                    <Badge tone="danger">Cancelled by dispatch</Badge>
+                  {t('Status:')}{' '}
+                  {task.cancelled ? (
+                    <Badge tone="danger">{t('Cancelled by dispatch')}</Badge>
                   ) : (
-                    <Badge tone={STATUS_TONES[t.status]}>{STATUS_LABELS[t.status]}</Badge>
+                    <Badge tone={STATUS_TONES[task.status]}>{t(STATUS_LABELS[task.status])}</Badge>
                   )}
                 </div>
                 <div className="driver-run-actions">
@@ -365,13 +418,13 @@ export function DriverPage() {
                       type="button"
                       className="driver-next-step"
                       disabled={busyKey === item.key}
-                      onClick={() => void handleSetTaskStatus(t.id, step.to)}
+                      onClick={() => void handleSetTaskStatus(task.id, step.to)}
                     >
-                      {taskStepLabel(step.to, step.label)}
+                      {t(taskStepLabel(step.to, step.label))}
                     </button>
                   )}
-                  <button type="button" onClick={() => speakTask(t)}>
-                    <span aria-hidden="true">🔊</span> Read aloud
+                  <button type="button" onClick={() => speakTask(task)}>
+                    <span aria-hidden="true">🔊</span> {t('Read aloud')}
                   </button>
                 </div>
               </li>
@@ -387,19 +440,31 @@ export function DriverPage() {
                   {formatMinuteOfDay(trip.start_minute)} – {formatMinuteOfDay(trip.end_minute)}
                 </div>
                 <div className="driver-run-school">
-                  Field trip #{trip.id} to {trip.destination}
+                  {t('Field trip #{id} to {destination}', {
+                    id: trip.id,
+                    destination: trip.destination,
+                  })}
                 </div>
                 <div className="driver-run-vehicle">
-                  Departs {formatTimestamp(trip.departure_at)} from {trip.origin}, returns{' '}
-                  {formatTimestamp(trip.return_at)}
+                  {t('Departs {departs} from {origin}, returns {returns}', {
+                    departs: formatTimestamp(trip.departure_at),
+                    origin: trip.origin,
+                    returns: formatTimestamp(trip.return_at),
+                  })}
                 </div>
                 {trip.vehicle_label && (
-                  <div className="driver-run-vehicle">Vehicle: {trip.vehicle_label}</div>
+                  <div className="driver-run-vehicle">
+                    {t('Vehicle: {vehicle}', { vehicle: trip.vehicle_label })}
+                  </div>
                 )}
                 <div className="driver-run-vehicle">
-                  {trip.passenger_count} passengers for {trip.requesting_party}. Contact:{' '}
-                  {trip.trip_contact}
-                  {trip.bus_assistant_name && `. Bus assistant: ${trip.bus_assistant_name}`}
+                  {t('{count} passengers for {party}. Contact: {contact}', {
+                    count: trip.passenger_count,
+                    party: trip.requesting_party,
+                    contact: trip.trip_contact,
+                  })}
+                  {trip.bus_assistant_name &&
+                    t('. Bus assistant: {name}', { name: trip.bus_assistant_name })}
                 </div>
                 {trip.special_instructions && (
                   <p className="driver-task-instructions">{trip.special_instructions}</p>
@@ -407,19 +472,23 @@ export function DriverPage() {
                 {profile && (
                   <ul className="driver-trip-notes">
                     {profile.approved_entrance && (
-                      <li>Approved entrance: {profile.approved_entrance}</li>
+                      <li>{t('Approved entrance: {text}', { text: profile.approved_entrance })}</li>
                     )}
-                    {profile.parking_notes && <li>Parking: {profile.parking_notes}</li>}
+                    {profile.parking_notes && (
+                      <li>{t('Parking: {text}', { text: profile.parking_notes })}</li>
+                    )}
                     {profile.turn_restrictions && (
-                      <li>Turn restrictions: {profile.turn_restrictions}</li>
+                      <li>{t('Turn restrictions: {text}', { text: profile.turn_restrictions })}</li>
                     )}
-                    {profile.driver_notes && <li>Driver notes: {profile.driver_notes}</li>}
+                    {profile.driver_notes && (
+                      <li>{t('Driver notes: {text}', { text: profile.driver_notes })}</li>
+                    )}
                   </ul>
                 )}
                 <div className="driver-run-status">
-                  Trip status:{' '}
+                  {t('Trip status:')}{' '}
                   <Badge tone={trip.status === 'completed' ? 'success' : 'info'}>
-                    {trip.status.replace(/_/g, ' ')}
+                    {t(TRIP_STATUSES[trip.status])}
                   </Badge>
                 </div>
               </li>
@@ -433,21 +502,25 @@ export function DriverPage() {
                 {formatMinuteOfDay(a.start_minute)} – {formatMinuteOfDay(a.end_minute)}
               </div>
               <div className="driver-run-school">{a.school_name}</div>
-              <div className="driver-run-vehicle">Vehicle: {a.vehicle_label}</div>
+              <div className="driver-run-vehicle">
+                {t('Vehicle: {vehicle}', { vehicle: a.vehicle_label })}
+              </div>
               <div className="driver-run-status">
-                Status: <Badge tone={STATUS_TONES[a.status]}>{STATUS_LABELS[a.status]}</Badge>
+                {t('Status:')}{' '}
+                <Badge tone={STATUS_TONES[a.status]}>{t(STATUS_LABELS[a.status])}</Badge>
               </div>
               <div className="driver-run-roster">
                 {a.roster_ambiguous ? (
                   <p>
-                    Rider list unavailable — more than one bus serves this school today, so it can't
-                    be split between them.
+                    {t(
+                      "Rider list unavailable — more than one bus serves this school today, so it can't be split between them.",
+                    )}
                   </p>
                 ) : a.stops.length === 0 ? (
-                  <p>No riders expected today.</p>
+                  <p>{t('No riders expected today.')}</p>
                 ) : a.stops_ordered ? (
                   <>
-                    <h3>Stops in order</h3>
+                    <h3>{t('Stops in order')}</h3>
                     <ol className="driver-route-stops">
                       {a.stops
                         .filter((stop) => stop.on_route !== false)
@@ -466,16 +539,18 @@ export function DriverPage() {
                             <strong>{stop.stop_label}</strong>
                             {': '}
                             {stop.skipped
-                              ? 'skip, nobody riding today'
+                              ? t('skip, nobody riding today')
                               : stop.student_names.length > 0
                                 ? stop.student_names.join(', ')
-                                : 'nobody expected today'}
+                                : t('nobody expected today')}
                             {stop.eta_minute != null &&
                               stop.planned_minute != null &&
                               stop.eta_minute !== stop.planned_minute && (
                                 <span className="driver-stop-planned">
                                   {' '}
-                                  (planned {formatMinuteOfDay(stop.planned_minute)})
+                                  {t('(planned {time})', {
+                                    time: formatMinuteOfDay(stop.planned_minute),
+                                  })}
                                 </span>
                               )}
                           </li>
@@ -483,7 +558,8 @@ export function DriverPage() {
                     </ol>
                     {(a.closure_notes ?? []).length > 0 && (
                       <div className="driver-closure" role="status">
-                        <strong>Road closure near your route.</strong> Directions go around it.
+                        <strong>{t('Road closure near your route.')}</strong>{' '}
+                        {t('Directions go around it.')}
                         <ul>
                           {(a.closure_notes ?? []).map((n) => (
                             <li key={n}>{n}</li>
@@ -495,14 +571,14 @@ export function DriverPage() {
                     {a.stops.some((stop) => stop.on_route === false) && (
                       <>
                         <p className="driver-run-roster-note">
-                          Also expected, at stops not on this route:
+                          {t('Also expected, at stops not on this route:')}
                         </p>
                         <ul>
                           {a.stops
                             .filter((stop) => stop.on_route === false)
                             .map((stop) => (
                               <li key={`off-${stop.stop_label ?? '__no_stop__'}`}>
-                                {stop.stop_label ?? 'No stop assigned'}:{' '}
+                                {stop.stop_label ?? t('No stop assigned')}:{' '}
                                 {stop.student_names.join(', ')}
                               </li>
                             ))}
@@ -512,14 +588,15 @@ export function DriverPage() {
                   </>
                 ) : (
                   <>
-                    <h3>Expected riders by stop</h3>
+                    <h3>{t('Expected riders by stop')}</h3>
                     <p className="driver-run-roster-note">
-                      Not a route order: this run's route has no stop list yet.
+                      {t("Not a route order: this run's route has no stop list yet.")}
                     </p>
                     <ul>
                       {a.stops.map((stop) => (
                         <li key={stop.stop_label ?? '__no_stop__'}>
-                          {stop.stop_label ?? 'No stop assigned'}: {stop.student_names.join(', ')}
+                          {stop.stop_label ?? t('No stop assigned')}:{' '}
+                          {stop.student_names.join(', ')}
                         </li>
                       ))}
                     </ul>
@@ -534,7 +611,7 @@ export function DriverPage() {
                     disabled={busyKey === item.key}
                     onClick={() => void handleSetStatus(a.id, NEXT_STEP[a.status]!.to)}
                   >
-                    {NEXT_STEP[a.status]!.label}
+                    {t(NEXT_STEP[a.status]!.label)}
                   </button>
                 )}
                 {!FINISHED.includes(a.status) && (
@@ -542,15 +619,15 @@ export function DriverPage() {
                     type="button"
                     className="btn-danger"
                     disabled={busyKey === item.key || locked}
-                    title={locked ? 'Stop the bus first' : undefined}
+                    title={locked ? t('Stop the bus first') : undefined}
                     onClick={() => void handleSetStatus(a.id, 'no_show')}
                   >
-                    No-show
+                    {t('No-show')}
                   </button>
                 )}
                 <button type="button" onClick={() => speakAssignment(a)}>
                   {/* The name is the visible words (WCAG 2.5.3); the icon is decoration. */}
-                  <span aria-hidden="true">🔊</span> Read aloud
+                  <span aria-hidden="true">🔊</span> {t('Read aloud')}
                 </button>
               </div>
             </li>
@@ -559,18 +636,18 @@ export function DriverPage() {
       </ul>
 
       <section className="driver-absence-section">
-        <h2>Report an absence</h2>
+        <h2>{t('Report an absence')}</h2>
         <form onSubmit={(event) => void handleReportAbsence(event)}>
           <fieldset className="motion-lockable" disabled={locked}>
-            <label htmlFor="driver-absence-reason">Reason</label>
+            <label htmlFor="driver-absence-reason">{t('Reason')}</label>
             <select
               id="driver-absence-reason"
               value={absenceReason}
               onChange={(event) => setAbsenceReason(event.target.value as AbsenceReason)}
             >
-              {ABSENCE_REASONS.map((reason) => (
+              {(Object.keys(ABSENCE_REASONS) as AbsenceReason[]).map((reason) => (
                 <option key={reason} value={reason}>
-                  {reason.replace(/_/g, ' ')}
+                  {t(ABSENCE_REASONS[reason])}
                 </option>
               ))}
             </select>
@@ -580,11 +657,11 @@ export function DriverPage() {
                 checked={absenceWholeDay}
                 onChange={(event) => setAbsenceWholeDay(event.target.checked)}
               />
-              Whole day
+              {t('Whole day')}
             </label>
             {!absenceWholeDay && (
               <>
-                <label htmlFor="driver-absence-start">Start (minute of day)</label>
+                <label htmlFor="driver-absence-start">{t('Start (minute of day)')}</label>
                 <input
                   id="driver-absence-start"
                   type="number"
@@ -594,7 +671,7 @@ export function DriverPage() {
                   onChange={(event) => setAbsenceStartMinute(event.target.value)}
                   required
                 />
-                <label htmlFor="driver-absence-end">End (minute of day)</label>
+                <label htmlFor="driver-absence-end">{t('End (minute of day)')}</label>
                 <input
                   id="driver-absence-end"
                   type="number"
@@ -611,28 +688,28 @@ export function DriverPage() {
                 {absenceError}
               </p>
             )}
-            {absenceSuccess && <p className="status">Absence reported.</p>}
+            {absenceSuccess && <p className="status">{t('Absence reported.')}</p>}
             <button type="submit" disabled={isSavingAbsence}>
-              {isSavingAbsence ? 'Reporting…' : 'Report absence'}
+              {isSavingAbsence ? t('Reporting…') : t('Report absence')}
             </button>
           </fieldset>
         </form>
       </section>
 
       <section className="driver-report-section">
-        <h2>Report an incident or vehicle defect</h2>
+        <h2>{t('Report an incident or vehicle defect')}</h2>
         <form onSubmit={(event) => void handleSubmitReport(event)}>
           <fieldset className="motion-lockable" disabled={locked}>
-            <label htmlFor="driver-report-type">Type</label>
+            <label htmlFor="driver-report-type">{t('Type')}</label>
             <select
               id="driver-report-type"
               value={reportType}
               onChange={(event) => setReportType(event.target.value as DriverReportType)}
             >
-              <option value="incident">Incident</option>
-              <option value="vehicle_defect">Vehicle defect</option>
+              <option value="incident">{t('Incident')}</option>
+              <option value="vehicle_defect">{t('Vehicle defect')}</option>
             </select>
-            <label htmlFor="driver-report-description">Description</label>
+            <label htmlFor="driver-report-description">{t('Description')}</label>
             <textarea
               id="driver-report-description"
               value={reportDescription}
@@ -644,9 +721,9 @@ export function DriverPage() {
                 {reportError}
               </p>
             )}
-            {reportSuccess && <p className="status">Report submitted.</p>}
+            {reportSuccess && <p className="status">{t('Report submitted.')}</p>}
             <button type="submit" disabled={isSavingReport}>
-              {isSavingReport ? 'Submitting…' : 'Submit report'}
+              {isSavingReport ? t('Submitting…') : t('Submit report')}
             </button>
           </fieldset>
         </form>

@@ -1,5 +1,6 @@
 import type { DriverAssignment, DriverDispatchTask, DriverFieldTrip, TripStatus } from './api/types'
 import { FINISHED, UNDERWAY } from './assignmentStatus'
+import type { Phrase } from './i18n'
 
 // Spec sections 11 and 14: a driver's day is one sequence of jobs (regular
 // runs, field trips, dispatch tasks), shown as Current, Next and Later.
@@ -10,7 +11,7 @@ export type DayItem =
 
 export type QueueSlot = 'current' | 'next' | 'later' | 'done' | 'cancelled'
 
-export const SLOT_LABELS: Record<QueueSlot, string> = {
+export const SLOT_LABELS: Record<QueueSlot, Phrase> = {
   current: 'Current',
   next: 'Next',
   later: 'Later',

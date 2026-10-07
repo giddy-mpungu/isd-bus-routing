@@ -1,6 +1,7 @@
 import { cleanup, configure } from '@testing-library/react'
 import { afterEach } from 'vitest'
 import '@testing-library/jest-dom/vitest'
+import { resetLanguageForTests } from '../i18n'
 
 // Without vitest's `globals: true` (deliberately not set — explicit
 // imports are clearer than ambient globals), @testing-library/react's
@@ -9,6 +10,8 @@ import '@testing-library/jest-dom/vitest'
 // leaks into the next within the same file.
 afterEach(() => {
   cleanup()
+  // A test that switches to Spanish leaves the next one in English.
+  resetLanguageForTests()
 })
 
 // Maps load lazily (components/LazyMapView.tsx), and the first import of
