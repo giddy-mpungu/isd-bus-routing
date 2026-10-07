@@ -191,6 +191,13 @@ npm run build          # tsc -b && vite build (type-checks + bundles)
 npm run test           # vitest run
 ```
 
+The web app aims for WCAG 2.1 AA (the ADA Title II level). Each page
+test checks every state it reaches with axe-core
+(`src/test/axe.ts`), so a new page test should keep the same
+`afterEach` hook. Colour contrast can't be measured in jsdom; check it
+in a real browser with axe (or the browser's own accessibility tools)
+when changing colours.
+
 CI (`.github/workflows/ci.yml`) runs all of this for all three
 services on every PR and every push to `main` — run it locally before
 pushing so CI is confirmation, not discovery.
