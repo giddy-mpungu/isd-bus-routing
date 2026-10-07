@@ -197,6 +197,13 @@ export function FamilyPage() {
 
             {renderLeg(member, 'am', member.riding_am)}
             {renderLeg(member, 'pm', member.riding_pm)}
+            <p className="family-records">
+              <a className="button-link" href={api.studentRecordsUrl(member.student_id)} download>
+                Download {member.full_name.split(' ')[0]}&apos;s records
+              </a>{' '}
+              Everything the bus system holds about {member.full_name.split(' ')[0]}, including who
+              at the district has viewed it.
+            </p>
           </li>
         ))}
       </ul>

@@ -899,6 +899,19 @@ fieldset.motion-lockable:disabled {
   color: var(--muted);
 }
 
+/* FERPA: who viewed a student; a family's records download. */
+.access-log-panel {
+  flex-basis: 100%;
+  margin: 0.4rem 0;
+  font-size: 0.9rem;
+}
+
+.family-records {
+  margin: 0.6rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
 /* Scheduled SIS sync. */
 .sis-sync-panel {
   margin: 1rem 0 1.5rem;

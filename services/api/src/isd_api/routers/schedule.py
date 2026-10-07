@@ -46,7 +46,7 @@ from isd_solver import (
 )
 from sqlalchemy.orm import Session
 
-from isd_api import closures
+from isd_api import access_log, closures
 from isd_api.assignment_states import driver_transition_problem, resets_on_new_driver
 from isd_api.audit import record as record_audit
 from isd_api.availability import (
@@ -746,7 +746,7 @@ def _assignment_read(db: Session, assignment: Assignment) -> AssignmentRead:
 
 
 def _stop_roster_for(
-    db: Session, run: DBRun, start_minute: int
+    db: Session, run: DBRun, start_minute: int, seen: set[int] | None = None
 ) -> tuple[bool, bool, list[AssignmentStopRoster]]:
     """(ambiguous, ordered, stops) for the driver's roster, shared by
     list_my_assignments and the status endpoints so it looks the same
@@ -757,6 +757,8 @@ def _stop_roster_for(
     riding_students, ambiguous = _resolve_riding_students(db, run)
     if ambiguous:
         return True, False, []
+    if seen is not None:  # for the FERPA access log (isd_api/access_log.py)
+        seen.update(s.id for s in riding_students)
     by_stop: dict[int | None, list[Student]] = {}
     for s in riding_students:
         by_stop.setdefault(s.stop_id, []).append(s)
@@ -829,8 +831,9 @@ def list_my_assignments(
         .all()
     )
     results = []
+    seen: set[int] = set()
     for a in assignments:
-        ambiguous, ordered, stops = _stop_roster_for(db, a.run, a.start_minute)
+        ambiguous, ordered, stops = _stop_roster_for(db, a.run, a.start_minute, seen)
         results.append(
             DriverAssignmentRead(
                 id=a.id,
@@ -848,6 +851,7 @@ def list_my_assignments(
                 closure_notes=_closure_notes(db, a),
             )
         )
+    access_log.record_views(db, current_user, seen, "roster")
     return results
 
 

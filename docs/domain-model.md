@@ -1184,6 +1184,31 @@ password" email once email exists (5.2); minimum length 8; links last
   link" shows the link once with Copy; `/reset-password`; the sign-in
   page says to ask the transportation office.
 
+## FERPA (Phase 5)
+
+Decisions by the product owner on 2026-10-07. Part 1 is PR #76
+(migration `c9a4d7e2f568`); part 2 (correction requests, withdrawal and
+deletion) follows.
+
+- **Who viewed a student** (`isd_api/access_log.py`, `StudentAccess`):
+  every staff view of a student's information is recorded once per person,
+  student, kind of view and day (unique key, the first time kept): the
+  student list (`GET /students`), a home address (`GET .../home`),
+  guardians (`GET .../guardians`), a run's expected riders, a driver's
+  roster (`my-assignments`), stop proposals, a records download. Parents
+  and students looking at their own family aren't staff views. Transportation
+  admins read it per student: `GET /students/{id}/access-log` and "Who
+  viewed" on Setup's student list (that read isn't itself logged).
+- **Right to inspect** (`isd_api/student_records.py`,
+  `GET /students/{id}/records`): a printable HTML page (every value escaped,
+  no scripts, `Cache-Control: no-store`, downloaded as an attachment) with
+  everything held about the student: details, home address, guardians,
+  ridership changes, bus-time emails, who viewed it, and the change history,
+  in district time. A parent for their own child, a student for themself, a
+  transportation admin for anyone; every download audited
+  (`records_downloaded`). "Download <name>'s records" on each Family page
+  card.
+
 ## Bus-time emails to families (Phase 5.5)
 
 PR #72, migration `a7d2e5f9b346`. Decisions by the product owner on

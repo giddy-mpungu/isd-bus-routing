@@ -5,6 +5,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from isd_api import access_log
 from isd_api.audit import record as record_audit
 from isd_api.db import get_db
 from isd_api.models import (
@@ -223,7 +224,7 @@ def _resolve_riding_students(db: Session, run: Run) -> tuple[list[Student], bool
 def get_expected_riders(
     run_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(*_WRITE_ROLES)),
+    current_user: User = Depends(require_role(*_WRITE_ROLES)),
 ) -> ExpectedRidersRead:
     """Decision support (spec section 21: never autonomous) for setting
     Run.passenger_count from real Student/RidershipOverride data,
@@ -236,6 +237,7 @@ def get_expected_riders(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
 
     riding_students, ambiguous = _resolve_riding_students(db, run)
+    access_log.record_views(db, current_user, (s.id for s in riding_students), "riders")
     return ExpectedRidersRead(
         expected_passenger_count=len(riding_students),
         ambiguous=ambiguous,

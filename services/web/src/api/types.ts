@@ -1140,3 +1140,14 @@ export interface SisSyncStatus {
   sync_time: string
   runs: SisSyncRun[]
 }
+
+// FERPA: one line of "who viewed this student".
+export interface StudentAccess {
+  day: string
+  first_at: string
+  user_id: number
+  user_name: string
+  user_role: Role
+  what: string
+  what_label: string
+}

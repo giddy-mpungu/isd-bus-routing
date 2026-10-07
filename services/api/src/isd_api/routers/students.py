@@ -11,9 +11,10 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from isd_api import eligibility
+from isd_api import access_log, eligibility, student_records
 from isd_api.audit import record as record_audit
 from isd_api.daily_trip import daily_trip
 from isd_api.db import get_db
@@ -27,6 +28,7 @@ from isd_api.models import (
     School,
     Stop,
     Student,
+    StudentAccess,
     StudentHome,
     User,
     VehiclePosition,
@@ -44,6 +46,7 @@ from isd_api.schemas import (
     QualificationRead,
     RidershipOverrideUpdate,
     StopEtaRead,
+    StudentAccessRead,
     StudentCreate,
     StudentHomeRead,
     StudentHomeUpdate,
@@ -112,16 +115,18 @@ def create_student(
 @router.get("", response_model=list[StudentRead])
 def list_students(
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(Role.TRANSPORTATION_ADMIN, Role.DISPATCHER)),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN, Role.DISPATCHER)),
 ) -> list[StudentRead]:
     """Dispatchers see each student's eligibility and distance band, never
     their home."""
     rules = eligibility.load_rules(db)
     homes = {h.student_id: h for h in db.query(StudentHome)}
-    return [
+    reads = [
         _student_read(s, homes.get(s.id), rules)
         for s in db.query(Student).order_by(Student.id).all()
     ]
+    access_log.record_views(db, current_user, (r.id for r in reads), "list")
+    return reads
 
 
 @router.patch("/{student_id}", response_model=StudentRead)
@@ -234,12 +239,13 @@ def _home_audit(
 def get_student_home(
     student_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
 ) -> StudentHome:
     _student_or_404(db, student_id)
     home = db.get(StudentHome, student_id)
     if home is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No home on file")
+    access_log.record_views(db, current_user, [student_id], "home")
     return home
 
 
@@ -321,12 +327,45 @@ def _student_or_404(db: Session, student_id: int) -> Student:
 def list_guardians(
     student_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
 ) -> list[GuardianRead]:
     student = _student_or_404(db, student_id)
-    return [
+    guardians = [
         GuardianRead(user_id=g.id, full_name=g.full_name, email=g.email)
         for g in sorted(student.guardians, key=lambda g: g.full_name)
+    ]
+    access_log.record_views(db, current_user, [student_id], "guardians")
+    return guardians
+
+
+@router.get("/{student_id}/access-log", response_model=list[StudentAccessRead])
+def student_access_log(
+    student_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
+) -> list[StudentAccessRead]:
+    """FERPA: who at the district saw this student's information, newest
+    first (isd_api/access_log.py). Viewing this list isn't itself logged."""
+    _student_or_404(db, student_id)
+    rows = (
+        db.query(StudentAccess, User)
+        .join(User, StudentAccess.user_id == User.id)
+        .filter(StudentAccess.student_id == student_id)
+        .order_by(StudentAccess.first_at.desc(), StudentAccess.id.desc())
+        .limit(1000)
+        .all()
+    )
+    return [
+        StudentAccessRead(
+            day=a.day,
+            first_at=a.first_at,
+            user_id=u.id,
+            user_name=u.full_name,
+            user_role=u.role,
+            what=a.what,
+            what_label=access_log.WHAT.get(a.what, a.what),
+        )
+        for a, u in rows
     ]
 
 
@@ -407,6 +446,44 @@ def _linked_students(db: Session, current_user: User) -> list[Student]:
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail=f"Role '{current_user.role.value}' cannot access family data",
+    )
+
+
+@router.get("/{student_id}/records", response_class=HTMLResponse)
+def download_records(
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_role(Role.PARENT, Role.STUDENT, Role.TRANSPORTATION_ADMIN)
+    ),
+) -> HTMLResponse:
+    """FERPA's right to inspect and review (isd_api/student_records.py):
+    everything held about a student, as a file. A parent for their own
+    child, a student for themself, a transportation admin for anyone
+    (for a request made another way). Every download is audited."""
+    student = _student_or_404(db, student_id)
+    if current_user.role != Role.TRANSPORTATION_ADMIN and student not in _linked_students(
+        db, current_user
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
+    now = datetime.now(UTC)
+    page = student_records.build(db, student, now)
+    record_audit(
+        db,
+        entity_type="student",
+        entity_id=student.id,
+        action="records_downloaded",
+        actor=current_user,
+    )
+    db.commit()
+    access_log.record_views(db, current_user, [student.id], "records")
+    filename = f"transportation-records-{student.id}-{now.date().isoformat()}.html"
+    return HTMLResponse(
+        page,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
     )
 
 

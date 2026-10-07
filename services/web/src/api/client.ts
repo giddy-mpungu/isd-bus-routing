@@ -88,6 +88,7 @@ import type {
   SchoolUpdate,
   SisImportResult,
   SisSyncRun,
+  StudentAccess,
   SisSyncStatus,
   Stop,
   StopCreate,
@@ -245,6 +246,16 @@ export async function updateNotificationSettings(
 
 export async function optOutOfEtaEmails(token: string): Promise<void> {
   await request<void>('/notifications/eta/opt-out', jsonInit('POST', { token }))
+}
+
+// FERPA: who viewed a student (transportation admins), and a family's
+// download of everything held about their child (a link, like the CSVs).
+export async function getStudentAccessLog(studentId: number): Promise<StudentAccess[]> {
+  return request<StudentAccess[]>(`/students/${studentId}/access-log`)
+}
+
+export function studentRecordsUrl(studentId: number): string {
+  return `${API_BASE_URL}/students/${studentId}/records`
 }
 
 export async function getSisSyncStatus(): Promise<SisSyncStatus> {

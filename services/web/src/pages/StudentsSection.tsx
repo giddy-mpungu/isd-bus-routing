@@ -11,6 +11,7 @@ import type {
   User,
 } from '../api/types'
 import { Badge } from '../components/Badge'
+import { AccessLogPanel } from './AccessLogPanel'
 import { StudentHomePanel } from './StudentHomePanel'
 
 const GRADES = ['PK', 'K', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
@@ -424,6 +425,7 @@ export function StudentsSection({
                     school={schoolsById.get(s.school_id)}
                     onChanged={onChanged}
                   />
+                  <AccessLogPanel student={s} />
                 </span>
               )}
             </li>

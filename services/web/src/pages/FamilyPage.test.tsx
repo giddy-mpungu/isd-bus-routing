@@ -218,4 +218,13 @@ describe('FamilyPage', () => {
     await screen.findByText('Jamie Student')
     expect(screen.queryByText(/Bus due at/)).not.toBeInTheDocument()
   })
+
+  it('offers a download of everything held about each child', async () => {
+    vi.mocked(api.getMyFamily).mockResolvedValue([child])
+    render(<FamilyPage />)
+    const link = await screen.findByRole('link', { name: /records$/ })
+    expect(link).toHaveAttribute('href', api.studentRecordsUrl(child.student_id))
+    expect(link).toHaveAttribute('download')
+    expect(link.getAttribute('href')).toMatch(/\/students\/\d+\/records$/)
+  })
 })

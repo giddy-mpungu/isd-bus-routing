@@ -1225,6 +1225,23 @@ class AuditLogEntry(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class StudentAccess(Base):
+    """A staff member saw a student's information (FERPA; isd_api/access_log.py):
+    once per person, student, kind of view and day, with the first time."""
+
+    __tablename__ = "student_access_log"
+    __table_args__ = (
+        UniqueConstraint("student_id", "user_id", "what", "day", name="uq_student_access_daily"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("students.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    what: Mapped[str] = mapped_column(String(32), nullable=False)
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    first_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class SisSyncRun(Base):
     """One run of the SIS roster sync (isd_api/sis_sync.py): when, how it
     went, the counts, and the rows that wait for a person. A scheduled run
