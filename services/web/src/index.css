@@ -49,7 +49,8 @@
   /* Aliases used throughout the app's own components */
   --border: var(--gray-200);
   --text: var(--gray-900);
-  --muted: var(--gray-500);
+  /* gray-600, not 500: 500 is under 4.5:1 on the tinted backgrounds (WCAG 1.4.3). */
+  --muted: var(--gray-600);
   --accent: var(--brand-600);
   --danger: var(--danger-600);
   --bg: var(--gray-50);
@@ -176,7 +177,7 @@ button:disabled {
    bar. Additive to existing markup — no JSX class changes needed for the
    vast majority of "Add X" / "Save" buttons across every page. */
 button[type='submit'] {
-  background: linear-gradient(180deg, var(--brand-500), var(--brand-600));
+  background: linear-gradient(180deg, var(--brand-600), var(--brand-700));
   border-color: var(--brand-700);
   color: white;
   box-shadow:
@@ -185,8 +186,8 @@ button[type='submit'] {
 }
 
 button[type='submit']:hover:not(:disabled) {
-  background: linear-gradient(180deg, var(--brand-600), var(--brand-700));
-  border-color: var(--brand-700);
+  background: linear-gradient(180deg, var(--brand-700), var(--brand-900));
+  border-color: var(--brand-900);
 }
 
 /* Explicit danger buttons (Deactivate / Delete / Log out / No-show) —
@@ -323,7 +324,7 @@ legend {
 }
 
 .app-nav a {
-  color: var(--gray-500);
+  color: var(--gray-600);
   text-decoration: none;
   font-weight: 600;
   font-size: 0.9rem;
@@ -393,7 +394,7 @@ legend {
 }
 
 [class$='-page'] > p:first-of-type {
-  color: var(--gray-500);
+  color: var(--gray-600);
   max-width: 60ch;
   margin-bottom: 1.75rem;
 }
@@ -511,13 +512,13 @@ legend {
   font-size: 1.15rem;
   padding: 0.9rem 1.6rem;
   min-height: 3.25rem;
-  background: linear-gradient(180deg, var(--brand-500), var(--brand-600));
+  background: linear-gradient(180deg, var(--brand-600), var(--brand-700));
   border-color: var(--brand-700);
   color: white;
 }
 
 .driver-run-actions .driver-next-step:hover:not(:disabled) {
-  background: linear-gradient(180deg, var(--brand-600), var(--brand-700));
+  background: linear-gradient(180deg, var(--brand-700), var(--brand-900));
 }
 
 /* The driver's day queue (spec sections 11 and 14): runs, field trips and
@@ -723,14 +724,14 @@ a.button-link {
   padding: 0.5rem 1rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--brand-700);
-  background: linear-gradient(180deg, var(--brand-500), var(--brand-600));
+  background: linear-gradient(180deg, var(--brand-600), var(--brand-700));
   color: white;
   font-weight: 600;
   text-decoration: none;
 }
 
 a.button-link:hover {
-  background: linear-gradient(180deg, var(--brand-600), var(--brand-700));
+  background: linear-gradient(180deg, var(--brand-700), var(--brand-900));
 }
 
 /* Wide reports scroll inside their box, not the page. */
@@ -1091,7 +1092,7 @@ fieldset.motion-lockable:disabled {
   white-space: nowrap;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--gray-500);
+  color: var(--gray-600);
   font-size: 0.9rem;
   padding: 0.5rem 0.95rem;
   border-radius: var(--radius-sm);
@@ -1178,7 +1179,7 @@ fieldset.motion-lockable:disabled {
 .setup-stat-label {
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--gray-500);
+  color: var(--gray-600);
 }
 
 .add-forms {
@@ -1264,7 +1265,7 @@ table {
 thead th {
   text-align: left;
   padding: 0.6rem 0.9rem;
-  color: var(--gray-500);
+  color: var(--gray-600);
   font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -1400,7 +1401,7 @@ table input {
 .login-page p {
   margin-top: -0.3rem;
   margin-bottom: 0.5rem;
-  color: var(--gray-500);
+  color: var(--gray-600);
 }
 
 .login-page label {
@@ -1431,7 +1432,7 @@ table input {
   display: block;
   font-size: 0.78rem;
   font-weight: 600;
-  color: var(--gray-500);
+  color: var(--gray-600);
   margin-bottom: 0.25rem;
 }
 
@@ -1691,4 +1692,57 @@ table input {
    ========================================================================== */
 [role='alert'].error {
   display: block;
+}
+
+/* Accessibility (WCAG 2.1 AA). */
+.skip-link {
+  position: absolute;
+  left: 0.75rem;
+  top: -3rem;
+  z-index: 1000;
+  padding: 0.5rem 0.9rem;
+  border-radius: var(--radius-sm);
+  background: var(--brand-700);
+  color: white;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  top: 0.75rem;
+}
+
+.app-body:focus {
+  outline: none;
+}
+
+.map-pick {
+  position: relative;
+}
+
+.map-crosshair {
+  position: absolute;
+  left: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border: 2px solid var(--danger-600);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 500;
+}
+
+.map-pick-centre {
+  margin-top: 0.4rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

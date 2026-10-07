@@ -490,13 +490,15 @@ export function FieldTripsPage() {
                   <p className="status">No conflicts.</p>
                 )}
                 {trip_conflicts && trip_conflicts.length > 0 && (
-                  <ul className="field-trip-conflicts">
-                    {trip_conflicts.map((c, i) => (
-                      <li key={i} role="alert" className="error">
-                        {c}
-                      </li>
-                    ))}
-                  </ul>
+                  <div role="alert">
+                    <ul className="field-trip-conflicts">
+                      {trip_conflicts.map((c, i) => (
+                        <li key={i} className="error">
+                          {c}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </div>
             </li>

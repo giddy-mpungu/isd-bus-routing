@@ -13,6 +13,7 @@ import type {
 import { AuthProvider } from '../auth/AuthContext'
 import { DriverPage } from './DriverPage'
 import { stubGeolocation } from '../test/geolocation'
+import { axeViolations } from '../test/axe'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -70,6 +71,11 @@ function renderPage() {
     </AuthProvider>,
   )
 }
+
+// Every state these tests reach is checked against WCAG 2.1 A/AA.
+afterEach(async () => {
+  expect(await axeViolations()).toEqual([])
+})
 
 describe('DriverPage', () => {
   beforeEach(() => {
@@ -729,7 +735,7 @@ describe('DriverPage: locked while the bus is moving (spec section 9)', () => {
     expect(screen.getByRole('button', { name: 'Report absence' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'No-show' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Arrived' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Read run aloud' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Read aloud' })).toBeEnabled()
   })
 
   it('stays locked at a crawl and unlocks once stopped', async () => {

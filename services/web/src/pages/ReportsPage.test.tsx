@@ -1,10 +1,11 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { Report } from '../api/types'
 import { ReportsPage } from './ReportsPage'
+import { axeViolations } from '../test/axe'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -35,6 +36,11 @@ async function showReport(name = 'assignments') {
   await user.click(screen.getByRole('button', { name: 'Show report' }))
   return user
 }
+
+// Every state these tests reach is checked against WCAG 2.1 A/AA.
+afterEach(async () => {
+  expect(await axeViolations()).toEqual([])
+})
 
 describe('ReportsPage', () => {
   beforeEach(() => {

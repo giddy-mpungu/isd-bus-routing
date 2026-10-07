@@ -370,8 +370,8 @@ export function DriverPage() {
                       {taskStepLabel(step.to, step.label)}
                     </button>
                   )}
-                  <button type="button" onClick={() => speakTask(t)} aria-label="Read task aloud">
-                    🔊 Read aloud
+                  <button type="button" onClick={() => speakTask(t)}>
+                    <span aria-hidden="true">🔊</span> Read aloud
                   </button>
                 </div>
               </li>
@@ -548,12 +548,9 @@ export function DriverPage() {
                     No-show
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => speakAssignment(a)}
-                  aria-label="Read run aloud"
-                >
-                  🔊 Read aloud
+                <button type="button" onClick={() => speakAssignment(a)}>
+                  {/* The name is the visible words (WCAG 2.5.3); the icon is decoration. */}
+                  <span aria-hidden="true">🔊</span> Read aloud
                 </button>
               </div>
             </li>

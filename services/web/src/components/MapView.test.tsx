@@ -56,6 +56,20 @@ describe('MapView', () => {
     expect(screen.getByRole('region', { name: 'Fleet map' })).not.toHaveClass('is-pickable')
   })
 
+  it('picks the centre of the map without a mouse', () => {
+    const onPick = vi.fn()
+    render(<MapView markers={[bus, school]} label="Fleet map" onPick={onPick} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Place it at the centre of the map' }))
+    expect(onPick).toHaveBeenCalledTimes(1)
+    const [lat, lon] = onPick.mock.calls[0]
+    expect(Number.isFinite(lat) && Number.isFinite(lon)).toBe(true)
+  })
+
+  it('offers the centre button only when picking is on', () => {
+    render(<MapView markers={[bus]} label="Fleet map" />)
+    expect(screen.queryByRole('button', { name: /centre of the map/ })).not.toBeInTheDocument()
+  })
+
   it("keeps Leaflet's own classes when picking turns on and off", () => {
     // leaflet-container carries Leaflet's overflow: hidden, which keeps
     // the tiles inside the map's box.

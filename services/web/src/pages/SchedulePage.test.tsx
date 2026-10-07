@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type {
@@ -17,6 +17,7 @@ import type {
 } from '../api/types'
 import { SchedulePage } from './SchedulePage'
 import { findMap } from '../test/map'
+import { axeViolations } from '../test/axe'
 
 // Matches SchedulePage's own today() default for `serviceDate` — the
 // component doesn't use the fixtures' own service_date fields for
@@ -186,6 +187,11 @@ function mockLoad() {
     alerts: [],
   })
 }
+
+// Every state these tests reach is checked against WCAG 2.1 A/AA.
+afterEach(async () => {
+  expect(await axeViolations()).toEqual([])
+})
 
 describe('SchedulePage', () => {
   beforeEach(() => {
