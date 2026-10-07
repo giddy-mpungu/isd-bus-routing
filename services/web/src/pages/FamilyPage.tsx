@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { Announcement, BusPosition, FamilyMember, RideDirection } from '../api/types'
+import type {
+  Announcement,
+  AnnouncementCategory,
+  BusPosition,
+  FamilyMember,
+  RideDirection,
+} from '../api/types'
 import { LazyMapView } from '../components/LazyMapView'
+import { useTranslation, type Phrase } from '../i18n'
 import { CorrectionRequests } from './CorrectionRequests'
 import { EtaEmailSetting } from './EtaEmailSetting'
 
@@ -15,7 +22,16 @@ function hhmm(minute: number): string {
   return `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`
 }
 
+// The announcement's text is written by staff and shown as written.
+const CATEGORIES: Record<AnnouncementCategory, Phrase> = {
+  general: 'general',
+  delay: 'delay',
+  substitution: 'substitution',
+  route_change: 'route change',
+}
+
 export function FamilyPage() {
+  const { t, locale } = useTranslation()
   const [serviceDate] = useState(today)
   const [family, setFamily] = useState<FamilyMember[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -32,14 +48,17 @@ export function FamilyPage() {
   // routers/announcements.py).
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
 
-  const loadFamily = useCallback(async (date: string) => {
-    setErrorMessage(null)
-    try {
-      setFamily(await api.getMyFamily(date))
-    } catch (err) {
-      setErrorMessage(err instanceof ApiError ? err.message : 'Failed to load family data.')
-    }
-  }, [])
+  const loadFamily = useCallback(
+    async (date: string) => {
+      setErrorMessage(null)
+      try {
+        setFamily(await api.getMyFamily(date))
+      } catch (err) {
+        setErrorMessage(err instanceof ApiError ? err.message : t('Failed to load family data.'))
+      }
+    },
+    [t],
+  )
 
   useEffect(() => {
     void loadFamily(serviceDate)
@@ -64,7 +83,7 @@ export function FamilyPage() {
       })
       await loadFamily(serviceDate)
     } catch (err) {
-      setErrorMessage(err instanceof ApiError ? err.message : 'Failed to update ridership.')
+      setErrorMessage(err instanceof ApiError ? err.message : t('Failed to update ridership.'))
     } finally {
       setBusyKey(null)
     }
@@ -80,7 +99,7 @@ export function FamilyPage() {
     } catch (err) {
       setBusPositionErrors((prev) => ({
         ...prev,
-        [key]: err instanceof ApiError ? err.message : 'Failed to locate bus.',
+        [key]: err instanceof ApiError ? err.message : t('Failed to locate bus.'),
       }))
     } finally {
       setLocatingKey(null)
@@ -96,7 +115,7 @@ export function FamilyPage() {
     return (
       <div className="family-leg">
         <span>
-          {direction.toUpperCase()}: {isRiding ? 'Riding' : 'Not riding'}
+          {direction.toUpperCase()}: {isRiding ? t('Riding') : t('Not riding')}
         </span>
         <button
           type="button"
@@ -105,22 +124,25 @@ export function FamilyPage() {
           onClick={() => void handleSetRiding(member.student_id, direction, !isRiding)}
         >
           {isRiding
-            ? `Mark not riding ${direction.toUpperCase()}`
-            : `Mark riding ${direction.toUpperCase()}`}
+            ? t('Mark not riding {leg}', { leg: direction.toUpperCase() })
+            : t('Mark riding {leg}', { leg: direction.toUpperCase() })}
         </button>
         <button
           type="button"
           disabled={locatingKey === legKey}
           onClick={() => void handleLocateBus(member.student_id, direction)}
         >
-          {locatingKey === legKey ? 'Locating…' : 'Locate bus'}
+          {locatingKey === legKey ? t('Locating…') : t('Locate bus')}
         </button>
         {eta && (
           <p className={`family-eta${eta.changed ? ' is-changed' : ''}`}>
-            Bus due at {eta.stop_label} around {hhmm(eta.eta_minute)}
+            {t('Bus due at {stop} around {time}', {
+              stop: eta.stop_label,
+              time: hhmm(eta.eta_minute),
+            })}
             {eta.changed &&
               eta.planned_minute != null &&
-              ` (changed from ${hhmm(eta.planned_minute)} today)`}
+              t(' (changed from {time} today)', { time: hhmm(eta.planned_minute) })}
           </p>
         )}
         {closed && <p className="status family-leg-closed">{closed}</p>}
@@ -132,27 +154,37 @@ export function FamilyPage() {
         {position && (
           <p className="bus-position">
             {position.ambiguous &&
-              "Can't show a single bus — more than one run serves this school/leg today."}
-            {!position.ambiguous && !position.available && 'No live position yet.'}
+              t("Can't show a single bus — more than one run serves this school/leg today.")}
+            {!position.ambiguous && !position.available && t('No live position yet.')}
             {position.available &&
-              `${position.vehicle_label} was near ${position.location_lat?.toFixed(3)}, ${position.location_lon?.toFixed(3)}${
+              t(
                 position.recorded_at
-                  ? ` at ${new Date(position.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                  : ''
-              }`}
+                  ? '{bus} was near {place} at {time}'
+                  : '{bus} was near {place}',
+                {
+                  bus: position.vehicle_label ?? '',
+                  place: `${position.location_lat?.toFixed(3)}, ${position.location_lon?.toFixed(3)}`,
+                  time: position.recorded_at
+                    ? new Date(position.recorded_at).toLocaleTimeString(locale, {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : '',
+                },
+              )}
           </p>
         )}
         {position?.available && position.location_lat != null && position.location_lon != null && (
           // Spec section 18: approximate only. The API rounds to about
           // 100 m, and the zoom stops short of street-level detail.
           <LazyMapView
-            label={`Approximate location of ${position.vehicle_label}`}
+            label={t('Approximate location of {bus}', { bus: position.vehicle_label ?? '' })}
             markers={[
               {
                 id: 'bus',
                 lat: position.location_lat,
                 lon: position.location_lon,
-                label: `${position.vehicle_label} (approximate)`,
+                label: t('{bus} (approximate)', { bus: position.vehicle_label ?? '' }),
                 tone: 'approx',
               },
             ]}
@@ -166,16 +198,16 @@ export function FamilyPage() {
 
   return (
     <div className="family-page">
-      <h1>My family — {serviceDate}</h1>
+      <h1>{t('My family — {date}', { date: serviceDate })}</h1>
       <EtaEmailSetting />
 
       {announcements.length > 0 && (
         <section className="announcements-panel">
-          <h2>Transportation announcements</h2>
+          <h2>{t('Transportation announcements')}</h2>
           <ul>
             {announcements.map((a) => (
               <li key={a.id}>
-                [{a.category.replace(/_/g, ' ')}] {a.message}
+                [{t(CATEGORIES[a.category])}] {a.message}
               </li>
             ))}
           </ul>
@@ -187,23 +219,29 @@ export function FamilyPage() {
           {errorMessage}
         </p>
       )}
-      {family.length === 0 && !errorMessage && <p className="status">No linked students found.</p>}
+      {family.length === 0 && !errorMessage && (
+        <p className="status">{t('No linked students found.')}</p>
+      )}
 
       <ul className="family-list">
         {family.map((member) => (
           <li key={member.student_id} className="family-card">
             <div className="family-name">{member.full_name}</div>
             <div className="family-school">{member.school_name}</div>
-            <div className="family-stop">Stop: {member.stop_label ?? 'Not yet assigned'}</div>
+            <div className="family-stop">
+              {t('Stop: {stop}', { stop: member.stop_label ?? t('Not yet assigned') })}
+            </div>
 
             {renderLeg(member, 'am', member.riding_am)}
             {renderLeg(member, 'pm', member.riding_pm)}
             <p className="family-records">
               <a className="button-link" href={api.studentRecordsUrl(member.student_id)} download>
-                Download {member.full_name.split(' ')[0]}&apos;s records
+                {t("Download {name}'s records", { name: member.full_name.split(' ')[0] })}
               </a>{' '}
-              Everything the bus system holds about {member.full_name.split(' ')[0]}, including who
-              at the district has viewed it.
+              {t(
+                'Everything the bus system holds about {name}, including who at the district has viewed it.',
+                { name: member.full_name.split(' ')[0] },
+              )}
             </p>
             <CorrectionRequests
               studentId={member.student_id}

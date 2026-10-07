@@ -19,6 +19,8 @@ export interface CurrentUser {
   mfa_required?: boolean
   // Phase 5.4: signs in with the district account (single sign-on).
   sso_linked?: boolean
+  // The language they chose for screens and emails (src/i18n), if any.
+  preferred_language?: string | null
 }
 
 export interface User extends CurrentUser {
@@ -34,6 +36,8 @@ export interface UserCreate {
   driver_id?: number
   school_id?: number
   student_id?: number
+  // The language of their emails until they choose one (src/i18n).
+  preferred_language?: string
 }
 
 export interface UserUpdate {

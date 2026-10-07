@@ -1,7 +1,9 @@
 import type { AssignmentStatus } from './api/types'
 import type { BadgeTone } from './components/Badge'
+import type { Phrase } from './i18n'
 
-export const STATUS_LABELS: Record<AssignmentStatus, string> = {
+// Phrases (src/i18n): the driver app shows them translated.
+export const STATUS_LABELS: Record<AssignmentStatus, Phrase> = {
   sent: 'Sent',
   received: 'Received',
   acknowledged: 'Acknowledged',
@@ -24,7 +26,7 @@ export const STATUS_TONES: Record<AssignmentStatus, BadgeTone> = {
 }
 
 // The driver's single next step for each state (large, one tap).
-export const NEXT_STEP: Partial<Record<AssignmentStatus, { label: string; to: AssignmentStatus }>> =
+export const NEXT_STEP: Partial<Record<AssignmentStatus, { label: Phrase; to: AssignmentStatus }>> =
   {
     sent: { label: 'Acknowledge', to: 'acknowledged' },
     received: { label: 'Acknowledge', to: 'acknowledged' },

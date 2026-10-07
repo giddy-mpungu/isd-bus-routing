@@ -3,9 +3,13 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from isd_api import i18n
 from isd_api.config import settings
 from isd_api.db import Base, engine
 from isd_api.routers import (
@@ -79,6 +83,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def translated_http_exception(request: Request, exc: StarletteHTTPException) -> Response:
+    """Errors in the language the request asked for (isd_api/i18n), when
+    the message is a known phrase; otherwise as they were."""
+    lang = i18n.request_language(request)
+    if lang != i18n.DEFAULT and isinstance(exc.detail, str):
+        exc = StarletteHTTPException(
+            status_code=exc.status_code,
+            detail=i18n.translate_message(lang, exc.detail),
+            headers=exc.headers,
+        )
+    return await http_exception_handler(request, exc)
+
 
 app.include_router(auth.router)
 app.include_router(users.router)

@@ -3,8 +3,9 @@ import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { Correction } from '../api/types'
 import { Badge, type BadgeTone } from '../components/Badge'
+import { useTranslation, type Phrase } from '../i18n'
 
-const STATUS: Record<Correction['status'], { label: string; tone: BadgeTone }> = {
+const STATUS: Record<Correction['status'], { label: Phrase; tone: BadgeTone }> = {
   open: { label: 'Waiting for an answer', tone: 'info' },
   accepted: { label: 'Corrected', tone: 'success' },
   declined: { label: 'Declined', tone: 'warning' },
@@ -21,6 +22,7 @@ export function CorrectionRequests({
   studentId: number
   firstName: string
 }) {
+  const { t } = useTranslation()
   const [requests, setRequests] = useState<Correction[]>([])
   const [open, setOpen] = useState(false)
   const [wrong, setWrong] = useState('')
@@ -59,7 +61,7 @@ export function CorrectionRequests({
       setOpen(false)
       setSent(true)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to send the request.')
+      setError(err instanceof ApiError ? err.message : t('Failed to send the request.'))
     } finally {
       setIsSaving(false)
     }
@@ -69,18 +71,18 @@ export function CorrectionRequests({
     <div className="correction-requests">
       {!open && (
         <button type="button" onClick={() => setOpen(true)}>
-          Something&apos;s wrong?
+          {t("Something's wrong?")}
         </button>
       )}
       {sent && !open && (
         <p role="status" className="status">
-          Sent. The transportation office will look at it and you&apos;ll see the answer here.
+          {t("Sent. The transportation office will look at it and you'll see the answer here.")}
         </p>
       )}
       {open && (
         <form onSubmit={(event) => void submit(event)}>
           <label htmlFor={`wrong-${studentId}`}>
-            What&apos;s wrong in {firstName}&apos;s record?
+            {t("What's wrong in {name}'s record?", { name: firstName })}
           </label>
           <textarea
             id={`wrong-${studentId}`}
@@ -89,7 +91,7 @@ export function CorrectionRequests({
             onChange={(event) => setWrong(event.target.value)}
             required
           />
-          <label htmlFor={`should-${studentId}`}>What should it say?</label>
+          <label htmlFor={`should-${studentId}`}>{t('What should it say?')}</label>
           <textarea
             id={`should-${studentId}`}
             maxLength={1000}
@@ -103,10 +105,10 @@ export function CorrectionRequests({
             </p>
           )}
           <button type="submit" disabled={isSaving}>
-            {isSaving ? 'Sending…' : 'Send to the transportation office'}
+            {isSaving ? t('Sending…') : t('Send to the transportation office')}
           </button>{' '}
           <button type="button" onClick={() => setOpen(false)}>
-            Cancel
+            {t('Cancel')}
           </button>
         </form>
       )}
@@ -114,13 +116,18 @@ export function CorrectionRequests({
         <ul className="correction-list">
           {requests.map((r) => (
             <li key={r.id}>
-              <Badge tone={STATUS[r.status].tone}>{STATUS[r.status].label}</Badge> “
+              <Badge tone={STATUS[r.status].tone}>{t(STATUS[r.status].label)}</Badge> “
               {r.what_is_wrong}” → “{r.should_say}”
-              {r.response && <div className="correction-answer">Answer: {r.response}</div>}
+              {r.response && (
+                <div className="correction-answer">
+                  {t('Answer: {answer}', { answer: r.response })}
+                </div>
+              )}
               {r.status === 'declined' && (
                 <div className="correction-answer">
-                  If you disagree, you can ask the district for a hearing, and add a statement to
-                  the record.
+                  {t(
+                    'If you disagree, you can ask the district for a hearing, and add a statement to the record.',
+                  )}
                 </div>
               )}
             </li>

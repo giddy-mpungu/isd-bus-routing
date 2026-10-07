@@ -115,6 +115,7 @@ def ors_directions(
     size_restrictions: tuple[SizeRestriction, ...] = (),
     base_url: str = "https://api.openrouteservice.org",
     profile: str = "driving-hgv",
+    language: str = "en",
     timeout_seconds: float = 10.0,
     http_post: Callable[[str, dict, dict[str, str], float], dict] | None = None,
 ) -> Directions:
@@ -136,7 +137,7 @@ def ors_directions(
     body: dict = {
         "coordinates": [[w.lon, w.lat] for w in waypoints],
         "instructions": True,
-        "language": "en",
+        "language": language,
         "units": "m",
         "continue_straight": True,
     }

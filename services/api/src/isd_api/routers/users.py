@@ -6,12 +6,12 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from isd_api import account_emails, mailer, mfa, passwords
+from isd_api import account_emails, i18n, mailer, mfa, passwords
 from isd_api.audit import record as record_audit
 from isd_api.config import settings
 from isd_api.db import get_db
 from isd_api.models import Driver, Role, School, Student, User
-from isd_api.schemas import ResetLinkRead, UserCreate, UserRead, UserUpdate
+from isd_api.schemas import LanguageChoice, ResetLinkRead, UserCreate, UserRead, UserUpdate
 from isd_api.security import UNUSABLE_PASSWORD, get_current_user, hash_password, require_role
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -46,6 +46,8 @@ def create_user(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown school_id")
     if payload.student_id is not None and db.get(Student, payload.student_id) is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown student_id")
+    if payload.preferred_language is not None and payload.preferred_language not in i18n.LANGUAGES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown language")
 
     user = User(
         email=payload.email,
@@ -57,6 +59,7 @@ def create_user(
         driver_id=payload.driver_id,
         school_id=payload.school_id,
         student_id=payload.student_id,
+        preferred_language=payload.preferred_language,
     )
     db.add(user)
     try:
@@ -93,6 +96,22 @@ def create_user(
 
 @router.get("/me", response_model=UserRead)
 def read_current_user(current_user: User = Depends(get_current_user)) -> User:
+    return current_user
+
+
+@router.put("/me/language", response_model=UserRead)
+def set_my_language(
+    payload: LanguageChoice,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """The language someone chose for their screens and emails (isd_api/i18n)."""
+    if payload.language not in i18n.LANGUAGES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown language")
+    if payload.language != current_user.preferred_language:
+        current_user.preferred_language = payload.language
+        db.commit()
+        db.refresh(current_user)
     return current_user
 
 

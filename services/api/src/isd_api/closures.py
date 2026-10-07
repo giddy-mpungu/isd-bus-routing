@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from isd_api import ridership_rules
 from isd_api.daily_trip import daily_trip
+from isd_api.i18n import tr
 from isd_api.models import Assignment, RideDirection, RoadClosure, Run
 
 ROUTE_BUFFER_M = 250
@@ -130,5 +131,7 @@ def impacts(db: Session, assignment: Assignment, closures: list[RoadClosure]) ->
     return found
 
 
-def describe(closure: RoadClosure) -> str:
-    return f"{KIND_LABELS.get(closure.kind.value, 'closure')}: {closure.note}"
+def describe(closure: RoadClosure, lang: str = "en") -> str:
+    """The kind, in `lang`, and staff's note as they wrote it."""
+    kind = KIND_LABELS.get(closure.kind.value, "closure")
+    return f"{tr(lang, kind)}: {closure.note}"

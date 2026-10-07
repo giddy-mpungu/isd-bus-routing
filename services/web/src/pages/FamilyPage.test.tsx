@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { BusPosition, FamilyMember } from '../api/types'
+import { chooseLanguage } from '../i18n'
 import { FamilyPage } from './FamilyPage'
 import { findMap } from '../test/map'
 import { axeViolations } from '../test/axe'
@@ -59,6 +60,21 @@ describe('FamilyPage', () => {
     expect(screen.getByText('Stop: Oak & 5th')).toBeInTheDocument()
     expect(screen.getByText('AM: Riding')).toBeInTheDocument()
     expect(screen.getByText('PM: Riding')).toBeInTheDocument()
+  })
+
+  it('speaks Spanish when the family chose it', async () => {
+    chooseLanguage('es')
+    vi.mocked(api.getMyFamily).mockResolvedValue([child])
+    render(<FamilyPage />)
+
+    expect(await screen.findByText('Parada: Oak & 5th')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(`Mi familia — ${today()}`)
+    expect(screen.getByText('AM: Viaja')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Ubicar el autobús' })).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'Marcar que no viaja AM' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'Descargar el expediente de Jamie' }),
+    ).toBeInTheDocument()
   })
 
   it('renders transportation announcements for the family audience', async () => {

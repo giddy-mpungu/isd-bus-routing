@@ -17,9 +17,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from isd_api import mailer
+from isd_api.account_emails import compose, language_of
 from isd_api.audit import record as record_audit
 from isd_api.config import settings
 from isd_api.db import get_db
+from isd_api.i18n import tr
 from isd_api.mailer import Email
 from isd_api.models import RecordCorrection, Role, Student, User
 from isd_api.routers.students import _linked_students
@@ -187,24 +189,27 @@ def decide_correction(
     requester = db.get(User, correction.requested_by_user_id)
     student = db.get(Student, correction.student_id)
     if mailer.is_configured() and requester is not None and requester.is_active:
-        first = student.full_name.split(" ")[0] if student else "your child"
+        lang = language_of(requester)
+        first = student.full_name.split(" ")[0] if student else tr(lang, "your child")
         outcome = (
-            "accepted, and the record has been corrected"
+            "Your request to correct {name}'s transportation record was accepted, and the "
+            "record has been corrected."
             if payload.decision == "accepted"
-            else "declined"
+            else "Your request to correct {name}'s transportation record was declined."
         )
-        extra = f"\n\n{HEARING}" if payload.decision == "declined" else ""
+        paragraphs = [
+            tr(lang, outcome, name=first),
+            tr(lang, "The office wrote: {response}", response=correction.response),
+        ]
+        if payload.decision == "declined":
+            paragraphs.append(tr(lang, HEARING))
+        paragraphs.append(
+            tr(lang, "See it on the Family page: {url}", url=f"{settings.web_url}/family")
+        )
         background.add_task(
             mailer.send_quietly,
-            Email(
-                to=requester.email,
-                subject="Your record correction request was answered",
-                body=(
-                    f"Hello {requester.full_name},\n\nYour request to correct {first}'s "
-                    f"transportation record was {outcome}.\n\nThe office wrote: "
-                    f"{correction.response}{extra}\n\nSee it on the Family page: "
-                    f"{settings.web_url}/family" + SIGNATURE
-                ),
+            compose(
+                lang, requester, tr(lang, "Your record correction request was answered"), paragraphs
             ),
         )
     return _read(db, correction)

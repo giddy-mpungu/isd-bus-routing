@@ -269,6 +269,9 @@ class User(Base):
     eta_emails_enabled: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=sa_true(), nullable=False
     )
+    # The language they chose for screens and emails (isd_api/i18n), or
+    # None if they never chose: emails are then in English.
+    preferred_language: Mapped[str | None] = mapped_column(String(8), nullable=True)
 
     driver: Mapped[Driver | None] = relationship(back_populates="user")
 

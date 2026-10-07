@@ -112,6 +112,7 @@ import type {
   VehiclePosition,
   VehicleUpdate,
 } from './types'
+import { currentLanguage } from '../i18n'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 
@@ -128,6 +129,8 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
+    // So messages from the server come back in the language on screen.
+    headers: { 'Accept-Language': currentLanguage(), ...(init?.headers as Record<string, string>) },
     credentials: 'include',
   })
   if (!response.ok) {
@@ -173,6 +176,11 @@ export async function logout(): Promise<void> {
 
 export async function getCurrentUser(): Promise<CurrentUser> {
   return request<CurrentUser>('/users/me')
+}
+
+// The language for this account's screens and emails (src/i18n).
+export async function setMyLanguage(language: string): Promise<CurrentUser> {
+  return request<CurrentUser>('/users/me/language', jsonInit('PUT', { language }))
 }
 
 // Ends the account's other sessions; the response renews this one's cookie.

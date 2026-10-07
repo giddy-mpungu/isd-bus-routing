@@ -4,6 +4,7 @@ import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import type { Driver, ResetLink, Role, School, Student, User } from '../api/types'
 import { Badge } from '../components/Badge'
+import { LANGUAGES, type Language } from '../i18n'
 
 // spec section 17: "User permissions" is a Transportation Administrator
 // responsibility, not a dispatcher one -- narrower than the rest of the
@@ -176,6 +177,7 @@ export function UsersPage() {
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [role, setRole] = useState<Role>('dispatcher')
+  const [emailLanguage, setEmailLanguage] = useState<Language>('en')
   const [links, setLinks] = useState<LinkFields>(emptyLinks())
   const [createError, setCreateError] = useState<string | null>(null)
   const [sendSetup, setSendSetup] = useState(true)
@@ -197,6 +199,7 @@ export function UsersPage() {
         driver_id: links.driver_id ? Number(links.driver_id) : undefined,
         school_id: links.school_id ? Number(links.school_id) : undefined,
         student_id: links.student_id ? Number(links.student_id) : undefined,
+        preferred_language: emailLanguage,
       })
       setCreatedNotice(
         setupByEmail
@@ -207,6 +210,7 @@ export function UsersPage() {
       setPassword('')
       setFullName('')
       setRole('dispatcher')
+      setEmailLanguage('en')
       setLinks(emptyLinks())
       await load()
     } catch (err) {
@@ -560,6 +564,18 @@ export function UsersPage() {
           {ROLES.map((r) => (
             <option key={r} value={r}>
               {r}
+            </option>
+          ))}
+        </select>
+        <label htmlFor="user-language">Language for their emails</label>
+        <select
+          id="user-language"
+          value={emailLanguage}
+          onChange={(event) => setEmailLanguage(event.target.value as Language)}
+        >
+          {(Object.keys(LANGUAGES) as Language[]).map((code) => (
+            <option key={code} value={code} lang={code}>
+              {LANGUAGES[code]}
             </option>
           ))}
         </select>

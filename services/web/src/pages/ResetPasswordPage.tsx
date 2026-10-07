@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
+import { useTranslation } from '../i18n'
 
 function tokenFromHash(): string {
   return new URLSearchParams(window.location.hash.slice(1)).get('token') ?? ''
@@ -13,6 +14,7 @@ function tokenFromHash(): string {
  * so it doesn't linger in history or get copied along with the URL.
  */
 export function ResetPasswordPage() {
+  const { t } = useTranslation()
   const [token] = useState(tokenFromHash)
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -30,7 +32,7 @@ export function ResetPasswordPage() {
     event.preventDefault()
     setError(null)
     if (next !== confirm) {
-      setError("The passwords don't match.")
+      setError(t("The passwords don't match."))
       return
     }
     setIsSaving(true)
@@ -38,7 +40,7 @@ export function ResetPasswordPage() {
       await api.resetPassword(token, next)
       setDone(true)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to set the password.')
+      setError(err instanceof ApiError ? err.message : t('Failed to set the password.'))
     } finally {
       setIsSaving(false)
     }
@@ -47,18 +49,18 @@ export function ResetPasswordPage() {
   return (
     <main className="login-page">
       <form onSubmit={(event) => void handleSubmit(event)}>
-        <h1>Choose a password</h1>
+        <h1>{t('Choose a password')}</h1>
         {done ? (
           <p role="status">
-            Your password is set. <Link to="/login">Sign in</Link> with it.
+            {t('Your password is set.')} <Link to="/login">{t('Sign in with it.')}</Link>
           </p>
         ) : token === '' ? (
           <p role="alert" className="error">
-            This link is incomplete. Ask your transportation office for a new one.
+            {t('This link is incomplete. Ask your transportation office for a new one.')}
           </p>
         ) : (
           <>
-            <label htmlFor="reset-new-password">New password</label>
+            <label htmlFor="reset-new-password">{t('New password')}</label>
             <input
               id="reset-new-password"
               type="password"
@@ -67,7 +69,7 @@ export function ResetPasswordPage() {
               onChange={(event) => setNext(event.target.value)}
               required
             />
-            <label htmlFor="reset-confirm-password">New password again</label>
+            <label htmlFor="reset-confirm-password">{t('New password again')}</label>
             <input
               id="reset-confirm-password"
               type="password"
@@ -82,7 +84,7 @@ export function ResetPasswordPage() {
               </p>
             )}
             <button type="submit" disabled={isSaving}>
-              {isSaving ? 'Saving…' : 'Set password'}
+              {isSaving ? t('Saving…') : t('Set password')}
             </button>
           </>
         )}

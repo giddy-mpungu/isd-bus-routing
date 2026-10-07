@@ -12,6 +12,7 @@ import type {
 } from '../api/types'
 import { AuthProvider } from '../auth/AuthContext'
 import { DriverPage } from './DriverPage'
+import { currentLanguage } from '../i18n'
 import { stubGeolocation } from '../test/geolocation'
 import { axeViolations } from '../test/axe'
 
@@ -115,6 +116,23 @@ describe('DriverPage', () => {
     expect(screen.getByText('Vehicle: Bus 101')).toBeInTheDocument()
     expect(screen.getByText('06:00 – 06:50')).toBeInTheDocument()
     expect(screen.getByText('Received')).toBeInTheDocument()
+  })
+
+  it("shows the run in the driver's chosen language", async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([assignment])
+    vi.mocked(api.getCurrentUser).mockResolvedValue({ ...driverUser, preferred_language: 'es' })
+    render(
+      <AuthProvider>
+        <DriverPage />
+      </AuthProvider>,
+    )
+
+    expect(await screen.findByText('Vehículo: Bus 101')).toBeInTheDocument()
+    expect(currentLanguage()).toBe('es')
+    expect(screen.getByText('Recibida')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Leer en voz alta' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Informar una ausencia' })).toBeInTheDocument()
   })
 
   it('shows expected riders grouped by stop, and notes it is not a route order', async () => {

@@ -44,7 +44,7 @@ describe('ResetPasswordPage', () => {
     await submit('yellow-bus-7')
     await waitFor(() => expect(api.resetPassword).toHaveBeenCalledWith('abc123', 'yellow-bus-7'))
     expect(await screen.findByRole('status')).toHaveTextContent('Your password is set.')
-    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login')
+    expect(screen.getByRole('link', { name: 'Sign in with it.' })).toHaveAttribute('href', '/login')
   })
 
   it('explains an expired or used link', async () => {

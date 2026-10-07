@@ -41,22 +41,23 @@ LABELS = {
 }
 
 
+ALREADY_FINISHED = "This assignment is already {status}."
+NO_GOING_BACK = "Can't go back from {current} to {target}. Ask dispatch to correct it."
+
+
 def driver_transition_problem(current: AssignmentStatus, target: AssignmentStatus) -> str | None:
     """Why a driver can't move an assignment from `current` to `target`,
     or None if they can."""
     if current == target:
         return None
     if current in TERMINAL:
-        return f"This assignment is already {LABELS[current].lower()}."
+        return ALREADY_FINISHED.format(status=LABELS[current].lower())
     if target == S.NO_SHOW:
         return None
     if target == S.SENT:
         return "Only dispatch can send an assignment again."
     if LIFECYCLE.index(target) < LIFECYCLE.index(current):
-        return (
-            f"Can't go back from {LABELS[current].lower()} to {LABELS[target].lower()}. "
-            "Ask dispatch to correct it."
-        )
+        return NO_GOING_BACK.format(current=LABELS[current].lower(), target=LABELS[target].lower())
     return None
 
 

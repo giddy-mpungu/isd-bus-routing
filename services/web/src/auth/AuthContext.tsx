@@ -1,6 +1,22 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import * as api from '../api/client'
-import type { CurrentUser, MfaStep } from '../api/types'
+import type { CurrentUser, MfaStep, Role } from '../api/types'
+import { chooseLanguage, chosenLanguage, isLanguage, setEnglishOnly } from '../i18n'
+
+// The staff console isn't translated (src/i18n).
+const STAFF: ReadonlySet<Role> = new Set(['dispatcher', 'transportation_admin', 'school_admin'])
+
+/** Show this account's language, or save the one chosen before signing in. */
+function syncLanguage(user: CurrentUser | null) {
+  setEnglishOnly(user !== null && STAFF.has(user.role))
+  if (user === null || STAFF.has(user.role)) return
+  if (isLanguage(user.preferred_language)) {
+    chooseLanguage(user.preferred_language)
+  } else if (chosenLanguage() !== 'en') {
+    // So their emails come in it too.
+    api.setMyLanguage(chosenLanguage()).catch(() => undefined)
+  }
+}
 
 interface AuthContextValue {
   user: CurrentUser | null
@@ -23,8 +39,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // No token is ever read, stored, or handled by this client.
   const refreshUser = useCallback(async () => {
     try {
-      setUser(await api.getCurrentUser())
+      const current = await api.getCurrentUser()
+      syncLanguage(current)
+      setUser(current)
     } catch {
+      syncLanguage(null)
       setUser(null)
     }
   }, [])
@@ -45,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     await api.logout()
+    syncLanguage(null)
     setUser(null)
   }, [])
 

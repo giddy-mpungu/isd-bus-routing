@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from isd_api import access_log, eligibility, retention, student_records
+from isd_api import access_log, eligibility, i18n, retention, student_records
 from isd_api.audit import record as record_audit
 from isd_api.daily_trip import daily_trip
 from isd_api.db import get_db
@@ -515,6 +515,7 @@ def download_records(
     current_user: User = Depends(
         require_role(Role.PARENT, Role.STUDENT, Role.TRANSPORTATION_ADMIN)
     ),
+    asked_language: str = Depends(i18n.request_language),
 ) -> HTMLResponse:
     """FERPA's right to inspect and review (isd_api/student_records.py):
     everything held about a student, as a file. A parent for their own
@@ -526,7 +527,9 @@ def download_records(
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
     now = datetime.now(UTC)
-    page = student_records.build(db, student, now)
+    # A plain link, so the browser's language unless they chose one here.
+    lang = i18n.normalize(current_user.preferred_language or asked_language)
+    page = student_records.build(db, student, now, lang)
     record_audit(
         db,
         entity_type="student",
@@ -551,6 +554,7 @@ def get_my_family(
     service_date: date,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(Role.STUDENT, Role.PARENT)),
+    lang: str = Depends(i18n.request_language),
 ) -> list[FamilyMemberRead]:
     students = _linked_students(db, current_user)
     overrides = {
@@ -566,6 +570,10 @@ def get_my_family(
     rules = load_rules(db)
     am_closed = change_closed_reason(rules, service_date, RideDirection.AM)
     pm_closed = change_closed_reason(rules, service_date, RideDirection.PM)
+    if am_closed is not None:
+        am_closed = i18n.translate_message(lang, am_closed)
+    if pm_closed is not None:
+        pm_closed = i18n.translate_message(lang, pm_closed)
 
     def riding(s: Student, direction: RideDirection) -> bool:
         return overrides.get((s.id, direction), default_riding[s.id])
@@ -662,6 +670,12 @@ def get_bus_position(
     )
 
 
+BUS_FULL = (
+    "The {leg} bus for {school} on {date} is full ({riders} of {capacity} seats). "
+    "Please contact the transportation office."
+)
+
+
 def _bus_full_reason(
     db: Session, student: Student, service_date: date, direction: RideDirection
 ) -> str | None:
@@ -678,9 +692,12 @@ def _bus_full_reason(
     capacity = run.assignment.crew.vehicle.allowable_capacity()
     if capacity is None or len(riders) < capacity:
         return None
-    return (
-        f"The {direction.value.upper()} bus for {student.school.name} on {service_date} is full "
-        f"({len(riders)} of {capacity} seats). Please contact the transportation office."
+    return BUS_FULL.format(
+        leg=direction.value.upper(),
+        school=student.school.name,
+        date=service_date,
+        riders=len(riders),
+        capacity=capacity,
     )
 
 

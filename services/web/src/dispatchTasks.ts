@@ -1,4 +1,5 @@
 import type { DispatchTaskKind } from './api/types'
+import type { Phrase } from './i18n'
 
 // Spec section 14's unplanned assignments, in the order dispatch picks them.
 export const TASK_KINDS: DispatchTaskKind[] = [
@@ -12,7 +13,8 @@ export const TASK_KINDS: DispatchTaskKind[] = [
   'other',
 ]
 
-export const TASK_KIND_LABELS: Record<DispatchTaskKind, string> = {
+// Phrases (src/i18n): the driver app shows them translated.
+export const TASK_KIND_LABELS: Record<DispatchTaskKind, Phrase> = {
   cover_route: 'Cover another route',
   assist_disabled_bus: 'Assist a disabled bus',
   transfer_passengers: 'Pick up transferred passengers',

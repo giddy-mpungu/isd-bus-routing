@@ -43,6 +43,8 @@ class UserCreate(BaseModel):
     driver_id: int | None = None
     school_id: int | None = None
     student_id: int | None = None
+    # The language of their emails until they choose one themselves.
+    preferred_language: str | None = None
 
 
 class PasswordChange(BaseModel):
@@ -134,6 +136,13 @@ class UserRead(BaseModel):
     mfa_enabled: bool = False
     mfa_required: bool = False
     sso_linked: bool = False
+    preferred_language: str | None = None
+
+
+class LanguageChoice(BaseModel):
+    """PUT /users/me/language: one of isd_api.i18n.LANGUAGES."""
+
+    language: str = Field(min_length=2, max_length=8)
 
 
 class NotificationSettings(BaseModel):

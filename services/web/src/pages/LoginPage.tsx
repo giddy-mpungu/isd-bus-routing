@@ -5,9 +5,10 @@ import { ApiError } from '../api/client'
 import type { MfaStep } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { MfaSetup } from '../components/MfaSetup'
+import { useTranslation, type Phrase } from '../i18n'
 
 // Why single sign-on sent the browser back here (routers/sso.py).
-const SSO_ERRORS: Record<string, string> = {
+const SSO_ERRORS: Record<string, Phrase> = {
   no_account:
     "There's no account for that district email here. Ask your transportation office to add you.",
   not_for_role: 'Your account signs in with its email and password, not the district account.',
@@ -27,14 +28,18 @@ function stepFrom(value: string | null): MfaStep | null {
 
 export function LoginPage() {
   const { user, login, completeSignIn } = useAuth()
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [searchParams] = useSearchParams()
-  const [error, setError] = useState<string | null>(() => {
+  const [error, setError] = useState<string | null>(null)
+  // Why single sign-on failed, shown until the next attempt.
+  const [ssoError, setSsoError] = useState<Phrase | null>(() => {
     const reason = searchParams.get('sso_error')
     return reason ? (SSO_ERRORS[reason] ?? SSO_ERRORS.failed) : null
   })
+  const shownError = error ?? (ssoError ? t(ssoError) : null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [emailEnabled, setEmailEnabled] = useState(false)
   const [ssoLabel, setSsoLabel] = useState<string | null>(null)
@@ -76,6 +81,7 @@ export function LoginPage() {
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     setError(null)
+    setSsoError(null)
     setIsSubmitting(true)
     try {
       const next = await login(email, password)
@@ -86,7 +92,7 @@ export function LoginPage() {
         navigate('/')
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Login failed.')
+      setError(err instanceof ApiError ? err.message : t('Login failed.'))
     } finally {
       setIsSubmitting(false)
     }
@@ -100,7 +106,12 @@ export function LoginPage() {
       const result = await api.verifyMfa(code)
       if (result.recovery_codes_left !== null && result.recovery_codes_left <= 3) {
         window.alert(
-          `You have ${result.recovery_codes_left} recovery codes left. Make new ones on your Account page.`,
+          t(
+            result.recovery_codes_left === 1
+              ? 'You have 1 recovery code left. Make new ones on your Account page.'
+              : 'You have {count} recovery codes left. Make new ones on your Account page.',
+            { count: result.recovery_codes_left },
+          ),
         )
       }
       await finish()
@@ -109,7 +120,7 @@ export function LoginPage() {
         // The 5-minute window after the password ran out.
         setStep(null)
       }
-      setError(err instanceof ApiError ? err.message : 'Sign-in failed.')
+      setError(err instanceof ApiError ? err.message : t('Sign-in failed.'))
     } finally {
       setIsSubmitting(false)
     }
@@ -119,10 +130,11 @@ export function LoginPage() {
     return (
       <main className="login-page login-page-wide">
         <div className="login-card">
-          <h1>Set up two-step sign-in</h1>
+          <h1>{t('Set up two-step sign-in')}</h1>
           <p>
-            Your role can see student information, so signing in needs a code from an authenticator
-            app as well as your password. This takes about a minute.
+            {t(
+              'Your role can see student information, so signing in needs a code from an authenticator app as well as your password. This takes about a minute.',
+            )}
           </p>
           <MfaSetup onDone={() => void finish()} />
         </div>
@@ -134,9 +146,9 @@ export function LoginPage() {
     return (
       <main className="login-page">
         <form onSubmit={(event) => void handleVerify(event)}>
-          <h1>Two-step sign-in</h1>
-          <p>Enter the 6-digit code from your authenticator app.</p>
-          <label htmlFor="mfa-code">Code</label>
+          <h1>{t('Two-step sign-in')}</h1>
+          <p>{t('Enter the 6-digit code from your authenticator app.')}</p>
+          <label htmlFor="mfa-code">{t('Code')}</label>
           <input
             id="mfa-code"
             inputMode="numeric"
@@ -147,17 +159,18 @@ export function LoginPage() {
             required
             autoFocus
           />
-          {error && (
+          {shownError && (
             <p role="alert" className="error">
-              {error}
+              {shownError}
             </p>
           )}
           <button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Checking…' : 'Sign in'}
+            {isSubmitting ? t('Checking…') : t('Sign in')}
           </button>
           <p className="login-help">
-            Lost your phone? Enter one of your recovery codes instead, or ask your transportation
-            office to reset two-step sign-in.
+            {t(
+              'Lost your phone? Enter one of your recovery codes instead, or ask your transportation office to reset two-step sign-in.',
+            )}
           </p>
         </form>
       </main>
@@ -168,18 +181,18 @@ export function LoginPage() {
     <main className="login-page">
       <form onSubmit={(event) => void handleSubmit(event)}>
         <h1>isd-bus-routing</h1>
-        <p>Dispatcher console</p>
+        <p>{t('School transportation')}</p>
 
         {ssoLabel && (
           <>
             <a className="sso-button" href={api.ssoStartUrl()}>
-              Sign in with {ssoLabel}
+              {t('Sign in with {provider}', { provider: ssoLabel })}
             </a>
-            <p className="login-or">or with your email and password</p>
+            <p className="login-or">{t('or with your email and password')}</p>
           </>
         )}
 
-        <label htmlFor="email">Email</label>
+        <label htmlFor="email">{t('Email')}</label>
         <input
           id="email"
           type="email"
@@ -189,7 +202,7 @@ export function LoginPage() {
           required
         />
 
-        <label htmlFor="password">Password</label>
+        <label htmlFor="password">{t('Password')}</label>
         <input
           id="password"
           type="password"
@@ -199,20 +212,20 @@ export function LoginPage() {
           required
         />
 
-        {error && (
+        {shownError && (
           <p role="alert" className="error">
-            {error}
+            {shownError}
           </p>
         )}
 
         <button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? 'Signing in…' : 'Sign in'}
+          {isSubmitting ? t('Signing in…') : t('Sign in')}
         </button>
         <p className="login-help">
           {emailEnabled ? (
-            <Link to="/forgot-password">Forgot your password?</Link>
+            <Link to="/forgot-password">{t('Forgot your password?')}</Link>
           ) : (
-            'Forgot your password? Ask your transportation office for a reset link.'
+            t('Forgot your password? Ask your transportation office for a reset link.')
           )}
         </p>
       </form>
