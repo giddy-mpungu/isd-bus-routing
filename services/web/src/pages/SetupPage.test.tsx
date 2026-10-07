@@ -1,12 +1,13 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { CurrentUser, Driver, Qualification, School, Vehicle } from '../api/types'
 import { AuthProvider } from '../auth/AuthContext'
 import { SetupPage } from './SetupPage'
+import { axeViolations } from '../test/axe'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -138,6 +139,11 @@ function renderAsRole(user: CurrentUser, initialEntry = '/setup') {
 async function openTab(name: RegExp) {
   await userEvent.setup().click(screen.getByRole('tab', { name }))
 }
+
+// Every state these tests reach is checked against WCAG 2.1 A/AA.
+afterEach(async () => {
+  expect(await axeViolations()).toEqual([])
+})
 
 describe('SetupPage', () => {
   beforeEach(() => {

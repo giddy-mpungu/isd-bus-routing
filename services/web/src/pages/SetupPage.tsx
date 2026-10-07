@@ -316,12 +316,12 @@ export function SetupPage() {
             key={s.label}
             type="button"
             className="setup-stat"
-            // The two spans stack visually with no text between them, so
-            // spell the name out rather than leave it as "1Schools".
-            aria-label={`${s.value} ${s.label}`}
             onClick={() => selectTab(s.tab)}
           >
-            <span className="setup-stat-value">{s.value}</span>
+            {/* The space keeps the name "5 Schools", not "5Schools"; the
+                spans stack, so it doesn't show (WCAG 2.5.3: visible text is
+                the accessible name). */}
+            <span className="setup-stat-value">{s.value}</span>{' '}
             <span className="setup-stat-label">{s.label}</span>
           </button>
         ))}

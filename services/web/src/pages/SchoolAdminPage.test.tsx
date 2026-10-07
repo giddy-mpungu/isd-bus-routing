@@ -1,9 +1,10 @@
 import { render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
 import type { CurrentUser, SchoolAssignment } from '../api/types'
 import { AuthProvider } from '../auth/AuthContext'
 import { SchoolAdminPage } from './SchoolAdminPage'
+import { axeViolations } from '../test/axe'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -53,6 +54,11 @@ function renderPage() {
     </AuthProvider>,
   )
 }
+
+// Every state these tests reach is checked against WCAG 2.1 A/AA.
+afterEach(async () => {
+  expect(await axeViolations()).toEqual([])
+})
 
 describe('SchoolAdminPage', () => {
   beforeEach(() => {

@@ -42,8 +42,9 @@ function markerIcon(marker: MapMarker): L.DivIcon {
 
 /**
  * A Leaflet map of labelled points. Pass `onPick` to let the user click the
- * map to choose a location (the typed coordinates stay the accessible way
- * in). `maxZoom` caps how far in the view goes, e.g. for an approximate
+ * map to choose a location; without a mouse (WCAG 2.1.1), the map pans with
+ * the arrow keys once focused, a crosshair marks its centre, and "Place it
+ * at the centre of the map" picks that spot. `maxZoom` caps how far in the view goes, e.g. for an approximate
  * position that shouldn't look exact.
  */
 export function MapView({
@@ -137,13 +138,31 @@ export function MapView({
     }
   }, [markers, tracks, maxZoom])
 
+  function pickCentre() {
+    const centre = mapRef.current?.getCenter()
+    const pick = onPickRef.current
+    if (centre && pick) pick(Number(centre.lat.toFixed(6)), Number(centre.lng.toFixed(6)))
+  }
+
+  // The wrapper is always there, so turning picking on or off never swaps
+  // the element Leaflet is drawn into.
   return (
-    <div
-      ref={containerRef}
-      className="map-view"
-      role="region"
-      aria-label={label}
-      style={{ height }}
-    />
+    <div className="map-pick">
+      <div
+        ref={containerRef}
+        className="map-view"
+        role="region"
+        aria-label={label}
+        style={{ height }}
+      />
+      {onPick && (
+        <>
+          <div className="map-crosshair" style={{ top: height / 2 }} aria-hidden="true" />
+          <button type="button" className="map-pick-centre" onClick={pickCentre}>
+            Place it at the centre of the map
+          </button>
+        </>
+      )}
+    </div>
   )
 }

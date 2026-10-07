@@ -1,10 +1,11 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import { AuthProvider } from '../auth/AuthContext'
 import { AccountPage } from './AccountPage'
+import { axeViolations } from '../test/axe'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -26,6 +27,11 @@ async function fill(current: string, next: string, confirm: string) {
   await user.type(screen.getByLabelText('New password again'), confirm)
   await user.click(screen.getByRole('button', { name: 'Change password' }))
 }
+
+// Every state these tests reach is checked against WCAG 2.1 A/AA.
+afterEach(async () => {
+  expect(await axeViolations()).toEqual([])
+})
 
 describe('AccountPage', () => {
   beforeEach(() => {
