@@ -1464,6 +1464,18 @@ class SisImportRow(BaseModel):
     student_id: int | None = None
 
 
+class StudentAccessRead(BaseModel):
+    """One line of "who viewed this student" (FERPA)."""
+
+    day: date
+    first_at: datetime
+    user_id: int
+    user_name: str
+    user_role: Role
+    what: str
+    what_label: str
+
+
 class SisSyncRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

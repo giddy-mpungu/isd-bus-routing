@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from isd_api import eligibility
+from isd_api import access_log, eligibility
 from isd_api.audit import record as record_audit
 from isd_api.db import get_db
 from isd_api.models import (
@@ -219,7 +219,7 @@ def generate_stop_proposals(
 def list_stop_proposals(
     school_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(_ADMIN),
+    current_user: User = Depends(_ADMIN),
 ) -> list[StopProposalRead]:
     rules = eligibility.load_rules(db)
     rows = (
@@ -228,7 +228,11 @@ def list_stop_proposals(
         .order_by(StopProposal.status != StopProposalStatus.PENDING, StopProposal.id)
         .all()
     )
-    return [_read(db, r, rules) for r in rows]
+    reads = [_read(db, r, rules) for r in rows]
+    access_log.record_views(
+        db, current_user, (rider.student_id for r in reads for rider in r.riders), "stop_proposals"
+    )
+    return reads
 
 
 @router.patch("/{proposal_id}", response_model=StopProposalRead)
