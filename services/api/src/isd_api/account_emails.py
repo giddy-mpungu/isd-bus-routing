@@ -31,7 +31,7 @@ def language_of(user: User) -> str:
 def compose(lang: str, user: User, subject: str, paragraphs: list[str]) -> Email:
     """An email to `user`: a greeting, the paragraphs (already in `lang`),
     and the signature."""
-    closing = [tr(lang, REVIEW_NOTE)] if lang != i18n.DEFAULT else []
+    closing = [tr(lang, REVIEW_NOTE)] if lang in i18n.REVIEW_PENDING else []
     body = "\n\n".join(
         [tr(lang, "Hello {name},", name=user.full_name), *paragraphs, *closing, tr(lang, SIGNATURE)]
     )

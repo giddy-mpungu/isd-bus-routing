@@ -1149,6 +1149,27 @@ administrators) a planned and an expected time at the school, the delay,
 The school page shows "At school" / "Leaves school" with the expected time,
 the planned one when different, a "Running N min late" badge, and the basis.
 
+## Languages and accessibility (Phase 5)
+
+- `User.preferred_language` (`"en"`, `"es"`, or null = never chosen):
+  the language of that person's screens and emails. Set from the header
+  picker (`PUT /users/me/language`, any signed-in user), or by a
+  transportation admin when creating the account (`UserCreate.preferred_language`,
+  for the emails of someone who hasn't signed in yet). Null means English
+  emails. Unknown codes are refused (400).
+- Translated: the sign-in, family and driver screens and the emails
+  families get; staff accounts always see English. Phrases are keyed by
+  their English text, one file per language (`docs/translation.md`).
+- Server messages follow the request's `Accept-Language` (the web client
+  always sends the language on screen); the records download, being a plain
+  link, uses the account's language first.
+- Spanish is marked as awaiting review by a fluent speaker
+  (`REVIEW_PENDING`); its emails say so.
+- Accessibility target: WCAG 2.1 AA (PR #78): every page test checks its
+  states with axe-core, contrast at least 4.5:1, a skip link, a title per
+  page, focus moved to the content on navigation, and maps usable without a
+  mouse. `<html lang>` follows the language on screen.
+
 ## Passwords (Phase 5.1)
 
 PR #65, migration `d4a8b2c6e913`. Decisions by the product owner on

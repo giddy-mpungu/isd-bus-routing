@@ -32,6 +32,8 @@ DEFAULT = "en"
 # Each language's own name, for the language picker.
 LANGUAGES = {"en": "English", "es": "Español"}
 CATALOGS: dict[str, dict[str, str]] = {"es": es.PHRASES}
+# Languages a fluent speaker hasn't reviewed yet: their emails say so.
+REVIEW_PENDING = {"es"}
 
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 

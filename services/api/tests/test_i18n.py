@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 from isd_api import account_emails, eta_notifications, i18n
 from isd_api.assignment_states import LABELS, driver_transition_problem
+from isd_api.closures import KIND_LABELS
 from isd_api.daily_trip import TripStop
 from isd_api.i18n import tr, translate_message
 from isd_api.models import AssignmentStatus, RideDirection, Role, User
@@ -65,6 +66,7 @@ def _translated_literals() -> set[str]:
 DYNAMIC = {
     *(label.lower() for label in LABELS.values()),
     *(role.value.replace("_", " ") for role in Role),
+    *KIND_LABELS.values(),
     "open",
     "accepted",
     "declined",
