@@ -67,19 +67,20 @@ test.describe('email', () => {
   test('a new family gets a set-up email, chooses a password, and can reset it', async ({
     page,
     browser,
+    baseURL,
   }) => {
     const email = `family.${Date.now()}@example.org`
     await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD)
     await page.goto('/users')
-    await page.getByLabel('Email').fill(email)
+    await page.getByLabel('Email', { exact: true }).fill(email)
     await page.getByLabel('Full name').fill('Robin Fresh (test)')
     await page.getByLabel('Role').selectOption('parent')
     await page.getByRole('button', { name: 'Add user' }).click()
-    await expect(page.getByRole('status')).toContainText('emailed a link')
+    await expect(page.getByText(/has been emailed a link to choose a password/)).toBeVisible()
 
     // The set-up email, opened in a separate browser like the family's own.
     const setup = await waitForMail(email, /Set up your bus app account/)
-    const family = await browser.newContext({ ignoreHTTPSErrors: true })
+    const family = await browser.newContext({ ignoreHTTPSErrors: true, baseURL })
     const familyPage = await family.newPage()
     await familyPage.goto(linkIn(setup.text, 'https://'))
     const first = 'yellow-bus-' + Date.now()
@@ -93,7 +94,7 @@ test.describe('email', () => {
     // Forgot it: a reset link, a new password, and a notice it changed.
     await familyPage.getByRole('button', { name: 'Log out' }).click()
     await familyPage.getByRole('link', { name: 'Forgot your password?' }).click()
-    await familyPage.getByLabel('Email').fill(email)
+    await familyPage.getByLabel('Email', { exact: true }).fill(email)
     await familyPage.getByRole('button', { name: 'Email me a link' }).click()
     const reset = await waitForMail(email, /Reset your bus app password/)
     await familyPage.goto(linkIn(reset.text, 'https://'))
