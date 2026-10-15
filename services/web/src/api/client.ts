@@ -79,6 +79,13 @@ import type {
   RouteStopWrite,
   RouteTemplate,
   BellCalendarDay,
+  DefectReport,
+  MaintenanceDue,
+  MaintenanceWindow,
+  MaintenanceWindowCreate,
+  ServiceRecordCreate,
+  Spares,
+  VehicleMaintenance,
   BellChange,
   BellImport,
   BellOffsets,
@@ -725,6 +732,80 @@ export async function setRouteTemplateFollowsBells(
     `/route-templates/${templateId}`,
     jsonInit('PATCH', { follows_bells: followsBells }),
   )
+}
+
+// --- Fleet maintenance ---
+
+export async function getMaintenanceWindows(): Promise<MaintenanceWindow[]> {
+  return request<MaintenanceWindow[]>('/maintenance/windows')
+}
+
+export async function createMaintenanceWindow(
+  payload: MaintenanceWindowCreate,
+): Promise<MaintenanceWindow> {
+  return request<MaintenanceWindow>('/maintenance/windows', jsonInit('POST', payload))
+}
+
+// Back in service now (a window that hasn't started is cancelled).
+export async function endMaintenanceWindow(windowId: number): Promise<void> {
+  await request<void>(`/maintenance/windows/${windowId}/end`, { method: 'POST' })
+}
+
+export async function getMaintenanceDue(): Promise<MaintenanceDue[]> {
+  return request<MaintenanceDue[]>('/maintenance/due')
+}
+
+export async function getVehicleMaintenance(vehicleId: number): Promise<VehicleMaintenance> {
+  return request<VehicleMaintenance>(`/vehicles/${vehicleId}/maintenance`)
+}
+
+export async function setVehicleMaintenanceDates(
+  vehicleId: number,
+  dates: { service_due_on: string | null; inspection_expires_on: string | null },
+): Promise<VehicleMaintenance> {
+  return request<VehicleMaintenance>(
+    `/vehicles/${vehicleId}/maintenance-dates`,
+    jsonInit('PUT', dates),
+  )
+}
+
+export async function addServiceRecord(
+  vehicleId: number,
+  payload: ServiceRecordCreate,
+): Promise<VehicleMaintenance> {
+  return request<VehicleMaintenance>(
+    `/vehicles/${vehicleId}/service-records`,
+    jsonInit('POST', payload),
+  )
+}
+
+// 'open': not dealt with yet; 'active': open or the bus is out for it.
+export async function getDefectReports(
+  statusFilter: 'open' | 'active' | 'all' = 'active',
+): Promise<DefectReport[]> {
+  return request<DefectReport[]>(`/maintenance/defects?status_filter=${statusFilter}`)
+}
+
+export async function takeOutOfServiceForDefect(
+  reportId: number,
+  until: string | null,
+): Promise<DefectReport> {
+  return request<DefectReport>(
+    `/maintenance/defects/${reportId}/out-of-service`,
+    jsonInit('POST', { until }),
+  )
+}
+
+export async function markDefectFixed(reportId: number, note: string): Promise<DefectReport> {
+  return request<DefectReport>(`/maintenance/defects/${reportId}/fixed`, jsonInit('POST', { note }))
+}
+
+export async function getSpareVehicles(assignmentId: number): Promise<Spares> {
+  return request<Spares>(`/assignments/${assignmentId}/spare-vehicles`)
+}
+
+export async function swapCrewVehicle(crewId: number, vehicleId: number): Promise<Crew> {
+  return request<Crew>(`/crews/${crewId}/vehicle`, jsonInit('PUT', { vehicle_id: vehicleId }))
 }
 
 // --- Bell schedules ---

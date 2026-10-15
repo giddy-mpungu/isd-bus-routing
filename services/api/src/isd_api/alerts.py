@@ -5,8 +5,11 @@ soon as its cause is fixed.
 
 Critical:
   - a run with no bus assigned,
-  - a run whose crew can no longer do it (absence, out-of-service bus,
-    field trip or dispatch task over it): "needs cover",
+  - a run whose crew can no longer do it (absence, field trip or dispatch
+    task over it): "needs cover"; or whose bus can't (out of service, in
+    maintenance, inspection expired): "needs a bus", with spare buses
+    offered (isd_api/maintenance.py),
+  - a bus in service whose inspection has expired by that day,
   - a run or dispatch task not started `START_GRACE_MINUTES` after its
     start time, or marked no-show,
   - a field trip departing that day with no driver or no bus,
@@ -19,7 +22,9 @@ Warning:
   - work still under way `FINISH_GRACE_MINUTES` after its planned end,
   - no GPS for `GPS_STALE_MINUTES` from a bus whose run is under way,
   - a field trip past its expected return with no return recorded,
-  - a vehicle defect report,
+  - a vehicle defect report not yet dealt with (still open),
+  - a bus in service whose service or inspection falls due within
+    `maintenance.DUE_WARNING_DAYS` of that day, or whose service is overdue,
   - a run's trip passing near a road closure in force (its directions avoid it).
 
 Time-based checks use the district's clock (`ridership_rules`). For
@@ -35,19 +40,26 @@ from datetime import UTC, date, datetime
 
 from sqlalchemy.orm import Session
 
-from isd_api import closures, ridership_rules
+from isd_api import closures, maintenance, ridership_rules
 from isd_api.assignment_states import LABELS, TERMINAL, UNDERWAY
-from isd_api.availability import assignment_availability_issue, trip_return, trip_windows
+from isd_api.availability import (
+    assignment_availability_issue,
+    trip_return,
+    trip_windows,
+    vehicle_conflict_for_window,
+)
 from isd_api.models import (
     Assignment,
     AssignmentStatus,
     Crew,
+    DefectStatus,
     DispatchTask,
     DriverReport,
     DriverReportType,
     FieldTrip,
     Run,
     TripStatus,
+    Vehicle,
     VehiclePosition,
 )
 
@@ -229,7 +241,21 @@ def day_alerts(db: Session, service_date: date, now: datetime | None = None) -> 
             )
         if a.status not in TERMINAL:
             issue = assignment_availability_issue(db, a)
-            if issue is not None:
+            bus_issue = vehicle_conflict_for_window(
+                db, a.crew.vehicle, service_date, a.start_minute, a.end_minute
+            )
+            if bus_issue is not None:
+                alerts.append(
+                    Alert(
+                        "needs_bus",
+                        CRITICAL,
+                        f"Needs a bus: {label}: {bus_issue}",
+                        "assignment",
+                        a.id,
+                        a.start_minute,
+                    )
+                )
+            elif issue is not None:
                 alerts.append(
                     Alert(
                         "needs_cover",
@@ -367,11 +393,24 @@ def day_alerts(db: Session, service_date: date, now: datetime | None = None) -> 
                         )
                     )
 
+    for vehicle in (
+        db.query(Vehicle).filter(Vehicle.is_active.is_(True)).order_by(Vehicle.label).all()
+    ):
+        for severity, note in maintenance.due_notes(vehicle, service_date):
+            alerts.append(Alert("vehicle_due", severity, note, "vehicle", vehicle.id))
+
     for report in (
         db.query(DriverReport)
         .filter(DriverReport.service_date == service_date)
         .order_by(DriverReport.created_at)
     ):
+        if (
+            report.report_type == DriverReportType.VEHICLE_DEFECT
+            and report.status != DefectStatus.OPEN
+        ):
+            # Dealt with: the bus is out of service (its runs show "needs a
+            # bus") or fixed.
+            continue
         incident = report.report_type == DriverReportType.INCIDENT
         what = "Incident" if incident else "Vehicle defect"
         bus = f", {report.vehicle.label}" if report.vehicle is not None else ""

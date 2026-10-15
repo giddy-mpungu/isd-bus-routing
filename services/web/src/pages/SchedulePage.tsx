@@ -583,7 +583,11 @@ export function SchedulePage() {
         </p>
       )}
 
-      <AlertsPanel serviceDate={serviceDate} refreshToken={dataVersion} />
+      <AlertsPanel
+        serviceDate={serviceDate}
+        refreshToken={dataVersion}
+        onScheduleChanged={() => void loadAll(serviceDate)}
+      />
 
       <table>
         <thead>

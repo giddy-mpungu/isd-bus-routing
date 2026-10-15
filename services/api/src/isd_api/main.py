@@ -27,6 +27,7 @@ from isd_api.routers import (
     drivers,
     field_trips,
     geographic_knowledge,
+    maintenance,
     mfa,
     notifications,
     optimization_settings,
@@ -124,6 +125,7 @@ app.include_router(reports.router)
 app.include_router(destination_profiles.router)
 app.include_router(announcements.router)
 app.include_router(bell_schedules.router)
+app.include_router(maintenance.router)
 app.include_router(driver_reports.router)
 app.include_router(driver_reports.all_reports_router)
 app.include_router(audit_log.router)

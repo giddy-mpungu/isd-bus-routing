@@ -12,11 +12,13 @@ from isd_api.models import (
     AnnouncementCategory,
     AssignmentStatus,
     ClosureKind,
+    DefectStatus,
     DispatchTaskKind,
     DriverReportType,
     GeocodeSource,
     GeographicKnowledgeCategory,
     LicenseClass,
+    MaintenanceKind,
     QualificationKind,
     RestrictedVehicleDimension,
     RideDirection,
@@ -1059,6 +1061,9 @@ class DriverReportRead(BaseModel):
     report_type: DriverReportType
     description: str
     created_at: datetime
+    # Vehicle defects: open, out_of_service or fixed (isd_api/maintenance.py).
+    status: DefectStatus = DefectStatus.OPEN
+    resolution_note: str | None = None
 
 
 class GeographicKnowledgeOverrideCreate(BaseModel):
@@ -1680,3 +1685,109 @@ class BellImportRead(BaseModel):
     applied: bool
     rows: list[BellImportRow]
     change: BellChange | None = None
+
+
+# --- Fleet maintenance (isd_api/maintenance.py) ----------------------------
+
+
+class MaintenanceWindowCreate(BaseModel):
+    vehicle_id: int
+    kind: MaintenanceKind = MaintenanceKind.PLANNED
+    # District wall-clock times, like field trips. No end: until marked back
+    # in service.
+    starts_at: datetime
+    ends_at: datetime | None = None
+    reason: str = Field(min_length=1, max_length=255)
+
+    @model_validator(mode="after")
+    def _order(self) -> MaintenanceWindowCreate:
+        if self.ends_at is not None and self.ends_at <= self.starts_at:
+            raise ValueError("The window must end after it starts")
+        return self
+
+
+class MaintenanceWindowRead(BaseModel):
+    id: int
+    vehicle_id: int
+    vehicle_label: str
+    kind: MaintenanceKind
+    starts_at: datetime
+    ends_at: datetime | None
+    reason: str
+    driver_report_id: int | None
+    # Going on now (district time).
+    current: bool
+
+
+class VehicleMaintenanceDates(BaseModel):
+    service_due_on: date | None = None
+    inspection_expires_on: date | None = None
+
+
+class ServiceRecordCreate(BaseModel):
+    performed_on: date
+    work: str = Field(min_length=1, max_length=1000)
+    performed_by: str = Field(min_length=1, max_length=255)
+    # Optionally move the bus's dates on at the same time.
+    next_service_due_on: date | None = None
+    inspection_expires_on: date | None = None
+
+
+class ServiceRecordRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    vehicle_id: int
+    performed_on: date
+    work: str
+    performed_by: str
+    created_at: datetime
+
+
+class VehicleMaintenanceRead(BaseModel):
+    vehicle_id: int
+    vehicle_label: str
+    service_due_on: date | None
+    inspection_expires_on: date | None
+    service_log: list[ServiceRecordRead]
+    windows: list[MaintenanceWindowRead]
+
+
+class MaintenanceDueRead(BaseModel):
+    vehicle_id: int
+    vehicle_label: str
+    severity: str
+    message: str
+
+
+class DefectOutOfService(BaseModel):
+    # District wall-clock time it's expected back; none = until marked fixed.
+    until: datetime | None = None
+
+
+class DefectFixed(BaseModel):
+    note: str = Field(default="", max_length=500)
+
+
+class SpareVehicleRead(BaseModel):
+    vehicle_id: int
+    label: str
+    allowable_capacity: int | None
+    # Seats left over on the crew's busiest run; None when capacity is unknown.
+    spare_seats: int | None
+
+
+class SparesRead(BaseModel):
+    """Spare buses for the crew doing an assignment."""
+
+    crew_id: int
+    current_vehicle_label: str
+    spares: list[SpareVehicleRead]
+
+
+class CrewVehicleUpdate(BaseModel):
+    vehicle_id: int
+
+
+class DefectReportRead(DriverReportRead):
+    driver_name: str
+    vehicle_label: str | None

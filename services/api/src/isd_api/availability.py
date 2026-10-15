@@ -12,7 +12,9 @@ Five things make a crew unavailable:
     ``FIELD_TRIP_TURNAROUND_MINUTES`` on each side,
   - a dispatch task (spec section 14's unplanned work) for that driver or
     that vehicle, unless it was cancelled. Not padded: dispatch sets the
-    window it needs.
+    window it needs,
+  - its vehicle in a maintenance window (spec section 12.1 "Maintenance"),
+    or past its inspection's expiry date (isd_api/maintenance.py).
 A block that covers only part of the crew's available window is busy
 time; one covering the whole window makes the crew unavailable all day.
 """
@@ -33,6 +35,7 @@ from isd_api.models import (
     Driver,
     DriverAbsence,
     FieldTrip,
+    MaintenanceWindow,
     Vehicle,
 )
 
@@ -176,6 +179,55 @@ def resource_unavailable_reason(driver: Driver, vehicle: Vehicle) -> str | None:
     return None
 
 
+def _maintenance_label(vehicle: Vehicle, window: MaintenanceWindow) -> str:
+    until = window.ends_at.strftime("%Y-%m-%d %H:%M") if window.ends_at else "fixed"
+    return f"bus {vehicle.label} in maintenance ({window.reason}, until {until})"
+
+
+def vehicle_blocks(db: Session, vehicle: Vehicle, service_date: date) -> list[tuple[int, int, str]]:
+    """Times on `service_date` a bus can't run for maintenance: its
+    maintenance windows, and the whole day once its inspection has expired."""
+    blocks: list[tuple[int, int, str]] = []
+    if vehicle.inspection_expires_on is not None and service_date > vehicle.inspection_expires_on:
+        blocks.append(
+            (
+                0,
+                1439,
+                f"bus {vehicle.label}'s inspection expired on {vehicle.inspection_expires_on}",
+            )
+        )
+    day_start = datetime.combine(service_date, datetime.min.time())
+    day_end = day_start + timedelta(days=1)
+    windows = (
+        db.query(MaintenanceWindow)
+        .filter(
+            MaintenanceWindow.vehicle_id == vehicle.id,
+            MaintenanceWindow.starts_at < day_end,
+            or_(MaintenanceWindow.ends_at.is_(None), MaintenanceWindow.ends_at > day_start),
+        )
+        .order_by(MaintenanceWindow.starts_at)
+    )
+    for window in windows:
+        start = _minute_of_day(window.starts_at) if window.starts_at >= day_start else 0
+        ends_today = window.ends_at is not None and window.ends_at < day_end
+        end = _minute_of_day(window.ends_at) if ends_today and window.ends_at else 1439
+        blocks.append((start, end, _maintenance_label(vehicle, window)))
+    return blocks
+
+
+def vehicle_conflict_for_window(
+    db: Session, vehicle: Vehicle, service_date: date, start_minute: int, end_minute: int
+) -> str | None:
+    """Why this bus can't run during [start_minute, end_minute] for
+    reasons of its own (out of service, maintenance, inspection), or None."""
+    if not vehicle.is_active:
+        return f"vehicle {vehicle.label} is out of service"
+    for start, end, label in vehicle_blocks(db, vehicle, service_date):
+        if start_minute < end and start < end_minute:
+            return label
+    return None
+
+
 def driver_absences(db: Session, driver_id: int, service_date: date) -> list[DriverAbsence]:
     return (
         db.query(DriverAbsence)
@@ -213,6 +265,7 @@ def crew_availability(db: Session, crew: Crew) -> CrewAvailability:
                 db, crew.service_date, driver_id=crew.driver_id, vehicle_id=crew.vehicle_id
             )
         ]
+        + vehicle_blocks(db, crew.vehicle, crew.service_date)
     )
     earliest, latest = crew.available_window_earliest, crew.available_window_latest
     busy: list[BusyWindow] = []

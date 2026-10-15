@@ -616,6 +616,11 @@ class Vehicle(Base):
     # FieldTrip/CrewTemplate rows referencing it, and everything derived
     # from them (audit log, observed-duration learning), stay intact.
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Fleet maintenance (isd_api/maintenance.py): when the next service is
+    # due (a warning ahead of it) and the last day the inspection is valid
+    # (after it, the bus isn't scheduled).
+    service_due_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    inspection_expires_on: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     qualifications: Mapped[list[Qualification]] = relationship(secondary=vehicle_qualifications)
     crews: Mapped[list[Crew]] = relationship(back_populates="vehicle")
@@ -626,6 +631,52 @@ class Vehicle(Base):
             if self.effective_capacity is not None
             else self.nominal_capacity
         )
+
+
+class MaintenanceKind(enum.StrEnum):
+    PLANNED = "planned"
+    REPAIR = "repair"
+    INSPECTION = "inspection"
+
+
+class MaintenanceWindow(Base):
+    """A period a bus can't run (spec sections 2.1, 12.1 "Maintenance"):
+    the scheduler, generation and field-trip checks treat it as busy.
+    Wall-clock times in the district's time zone, like field trips. No end
+    means until someone marks it back in service."""
+
+    __tablename__ = "maintenance_windows"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"), nullable=False)
+    kind: Mapped[MaintenanceKind] = mapped_column(
+        SAEnum(MaintenanceKind, native_enum=False, length=16), nullable=False
+    )
+    starts_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reason: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Set when the window was opened from a driver's defect report.
+    driver_report_id: Mapped[int | None] = mapped_column(
+        ForeignKey("driver_reports.id"), nullable=True
+    )
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    vehicle: Mapped[Vehicle] = relationship()
+
+
+class ServiceRecord(Base):
+    """One entry in a bus's service log: what was done, when, by whom."""
+
+    __tablename__ = "service_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"), nullable=False)
+    performed_on: Mapped[date] = mapped_column(Date, nullable=False)
+    work: Mapped[str] = mapped_column(String(1000), nullable=False)
+    performed_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    recorded_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class Driver(Base):
@@ -679,6 +730,14 @@ class DriverReportType(enum.StrEnum):
     VEHICLE_DEFECT = "vehicle_defect"
 
 
+class DefectStatus(enum.StrEnum):
+    """Where a vehicle defect report stands (isd_api/maintenance.py)."""
+
+    OPEN = "open"
+    OUT_OF_SERVICE = "out_of_service"
+    FIXED = "fixed"
+
+
 class DriverReport(Base):
     """spec section 9. `vehicle_id` is deliberately not driver-supplied
     -- the router resolves it from the driver's own Crew for
@@ -698,6 +757,18 @@ class DriverReport(Base):
     )
     description: Mapped[str] = mapped_column(String(1000), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    # Vehicle defects only: open until dispatch takes the bus out of
+    # service or marks it fixed.
+    status: Mapped[DefectStatus] = mapped_column(
+        SAEnum(DefectStatus, native_enum=False, length=16),
+        nullable=False,
+        default=DefectStatus.OPEN,
+        # Enum columns store the member's name (as every enum here does).
+        server_default=DefectStatus.OPEN.name,
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    resolution_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     driver: Mapped[Driver] = relationship()
     vehicle: Mapped[Vehicle | None] = relationship()

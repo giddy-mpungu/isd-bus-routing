@@ -20,6 +20,7 @@ import type {
 import { useAuth } from '../auth/AuthContext'
 import { TabList, TabPanel, type TabItem } from '../components/Tabs'
 import { BellSchedulesSection } from './BellSchedulesSection'
+import { MaintenanceSection } from './MaintenanceSection'
 import { CorrectionsQueue } from './CorrectionsQueue'
 import { DriversSection } from './DriversSection'
 import { OptimizationSettingsSection } from './OptimizationSettingsSection'
@@ -60,6 +61,7 @@ const ANNOUNCEMENT_AUDIENCES: AnnouncementAudience[] = ['all', 'family', 'driver
 type SetupTab =
   | 'schools'
   | 'bells'
+  | 'maintenance'
   | 'fleet'
   | 'district-knowledge'
   | 'announcements'
@@ -232,6 +234,7 @@ export function SetupPage() {
     { id: 'schools', label: 'Schools & students' },
     { id: 'fleet', label: 'Fleet & drivers' },
     { id: 'bells', label: 'Bell schedules' },
+    { id: 'maintenance', label: 'Maintenance' },
     { id: 'district-knowledge', label: 'District knowledge', count: geoOverrides.length },
     { id: 'announcements', label: 'Announcements', count: announcements.length },
     { id: 'optimization', label: 'Rules & optimization' },
@@ -357,6 +360,10 @@ export function SetupPage() {
 
       <TabPanel id="bells" activeId={activeTab} idPrefix={TAB_PREFIX}>
         <BellSchedulesSection schools={schools} canEdit={canCreate} />
+      </TabPanel>
+
+      <TabPanel id="maintenance" activeId={activeTab} idPrefix={TAB_PREFIX}>
+        <MaintenanceSection vehicles={vehicles} />
       </TabPanel>
 
       <TabPanel id="fleet" activeId={activeTab} idPrefix={TAB_PREFIX}>

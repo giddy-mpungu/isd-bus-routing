@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { AlertSeverity, DayAlerts } from '../api/types'
+import type { AlertSeverity, DayAlerts, Spares } from '../api/types'
 import { Badge } from '../components/Badge'
 
 const REFRESH_MS = 60_000
@@ -9,6 +9,85 @@ const REFRESH_MS = 60_000
 const SEVERITY_LABELS: Record<AlertSeverity, string> = {
   critical: 'Critical',
   warning: 'Warning',
+}
+
+/**
+ * For a run that lost its bus: the spare buses that could take over the
+ * crew's day (services/api/src/isd_api/maintenance.py), and a swap.
+ */
+function SpareBusPicker({
+  assignmentId,
+  onSwapped,
+}: {
+  assignmentId: number
+  onSwapped: () => void
+}) {
+  const [spares, setSpares] = useState<Spares | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [isBusy, setIsBusy] = useState(false)
+
+  async function find() {
+    setError(null)
+    setIsBusy(true)
+    try {
+      setSpares(await api.getSpareVehicles(assignmentId))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to find spare buses.')
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  async function swap(crewId: number, vehicleId: number) {
+    setError(null)
+    setIsBusy(true)
+    try {
+      await api.swapCrewVehicle(crewId, vehicleId)
+      setSpares(null)
+      onSwapped()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to swap the bus.')
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  return (
+    <div className="spare-bus-picker">
+      {spares === null ? (
+        <button type="button" disabled={isBusy} onClick={() => void find()}>
+          Find a spare bus
+        </button>
+      ) : spares.spares.length === 0 ? (
+        <p className="status">
+          No spare bus fits this crew&apos;s day. Run the schedule again, or pair the driver with
+          another bus.
+        </p>
+      ) : (
+        <ul>
+          {spares.spares.map((s) => (
+            <li key={s.vehicle_id}>
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={() => void swap(spares.crew_id, s.vehicle_id)}
+              >
+                Swap {s.label} in for {spares.current_vehicle_label}
+              </button>{' '}
+              {s.allowable_capacity != null
+                ? `${s.allowable_capacity} seats${s.spare_seats != null ? `, ${s.spare_seats} to spare` : ''}`
+                : 'capacity not recorded'}
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+    </div>
+  )
 }
 
 /**
@@ -20,9 +99,12 @@ const SEVERITY_LABELS: Record<AlertSeverity, string> = {
 export function AlertsPanel({
   serviceDate,
   refreshToken,
+  onScheduleChanged,
 }: {
   serviceDate: string
   refreshToken: number
+  // After a change made from an alert (a spare bus swapped in).
+  onScheduleChanged?: () => void
 }) {
   const [data, setData] = useState<DayAlerts | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -82,6 +164,12 @@ export function AlertsPanel({
                 {SEVERITY_LABELS[alert.severity]}
               </Badge>{' '}
               {alert.message}
+              {alert.kind === 'needs_bus' && alert.entity_type === 'assignment' && (
+                <SpareBusPicker
+                  assignmentId={alert.entity_id}
+                  onSwapped={() => onScheduleChanged?.()}
+                />
+              )}
             </li>
           ))}
         </ul>

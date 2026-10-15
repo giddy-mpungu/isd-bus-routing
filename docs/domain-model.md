@@ -1151,6 +1151,39 @@ administrators) a planned and an expected time at the school, the delay,
 The school page shows "At school" / "Leaves school" with the expected time,
 the planned one when different, a "Running N min late" badge, and the basis.
 
+## Fleet maintenance (Phase 5, PR #81)
+
+- `MaintenanceWindow`: `vehicle`, `kind` (planned, repair, inspection),
+  `starts_at`, `ends_at` (null = until marked back in service), `reason`,
+  optional `driver_report_id`. District wall-clock times, like field trips.
+  Busy time for any crew using the bus (`availability.vehicle_blocks`),
+  so the solver, manual reassignment, field-trip conflict checks and the
+  alerts all respect it; one covering a crew template's whole window means
+  no crew is generated (the driver is left free). "End" puts a bus back in
+  service now; a window that hasn't started is cancelled (deleted).
+- `Vehicle.service_due_on` (warning `DUE_WARNING_DAYS` = 14 ahead, and when
+  overdue) and `Vehicle.inspection_expires_on` (valid through that date;
+  after it the whole day is blocked and the alert is critical).
+  `ServiceRecord`: `performed_on`, `work`, `performed_by`; logging one can
+  move both dates on.
+- `DriverReport.status` for vehicle defects: `open` → `out_of_service`
+  (opens a repair window from now, linked to the report) → `fixed` (closes
+  it; ending the window marks the report fixed). Only open defect reports
+  raise their alert; once the bus is out, its runs show `needs_bus`.
+  Enum columns store member names, so existing rows default to `OPEN`.
+- Alerts: `needs_bus` (critical) when an assignment's bus can't run it
+  (out of service, maintenance, inspection) — distinct from `needs_cover`
+  (the driver side); `vehicle_due` for every in-service bus with service or
+  inspection due within 14 days of the date, or overdue/expired.
+- Spare buses (`maintenance.spare_vehicles`, `GET
+  /assignments/{id}/spare-vehicles`): in service, no crew that day, no
+  maintenance, trip or dispatch task over any of the crew's assignments,
+  allowable capacity at least the busiest run's passenger count, the runs'
+  required capabilities, a license the crew's driver holds; smallest fit
+  first. `PUT /crews/{id}/vehicle` swaps one in (only a listed spare),
+  keeping the crew's driver and assignments.
+- Roles: transportation admin and dispatcher for all of it.
+
 ## Bell schedules (Phase 5, PR #80)
 
 - `BellSchedule` (per school): `name` (unique per school, case-insensitive),
