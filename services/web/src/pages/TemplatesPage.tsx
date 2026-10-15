@@ -12,6 +12,7 @@ import type {
   Vehicle,
   Stop,
 } from '../api/types'
+import { Badge } from '../components/Badge'
 import { RouteStopsEditor } from './RouteStopsEditor'
 
 // Python weekday numbers, matching the backend: Monday=0 .. Sunday=6.
@@ -133,6 +134,7 @@ export function TemplatesPage() {
   // --- Route template form ---
   const [rtSchoolId, setRtSchoolId] = useState('')
   const [rtDirection, setRtDirection] = useState<RideDirection>('am')
+  const [rtFollowsBells, setRtFollowsBells] = useState(false)
   const [rtEarliest, setRtEarliest] = useState('')
   const [rtLatest, setRtLatest] = useState('')
   const [rtDuration, setRtDuration] = useState('')
@@ -152,8 +154,9 @@ export function TemplatesPage() {
       await api.createRouteTemplate({
         school_id: Number(rtSchoolId),
         direction: rtDirection,
-        window_earliest: Number(rtEarliest),
-        window_latest: Number(rtLatest),
+        ...(rtFollowsBells
+          ? { follows_bells: true }
+          : { window_earliest: Number(rtEarliest), window_latest: Number(rtLatest) }),
         duration_minutes: Number(rtDuration),
         buffer_minutes: Number(rtBuffer),
         days_of_week: [...rtDays].sort((a, b) => a - b),
@@ -173,6 +176,16 @@ export function TemplatesPage() {
       setRtError(err instanceof ApiError ? err.message : 'Failed to create route template.')
     } finally {
       setIsSavingRt(false)
+    }
+  }
+
+  async function handleToggleBells(template: RouteTemplate) {
+    setLoadError(null)
+    try {
+      await api.setRouteTemplateFollowsBells(template.id, !template.follows_bells)
+      await load()
+    } catch (err) {
+      setLoadError(err instanceof ApiError ? err.message : 'Failed to update route template.')
     }
   }
 
@@ -272,6 +285,12 @@ export function TemplatesPage() {
                   <td>{t.direction.toUpperCase()}</td>
                   <td>
                     {formatMinuteOfDay(t.window_earliest)}–{formatMinuteOfDay(t.window_latest)}
+                    {t.follows_bells && (
+                      <>
+                        {' '}
+                        <Badge tone="info">Follows bells</Badge>
+                      </>
+                    )}
                   </td>
                   <td>
                     {t.duration_minutes} + {t.buffer_minutes} min
@@ -294,6 +313,9 @@ export function TemplatesPage() {
                     </button>{' '}
                     <button type="button" onClick={() => void handleToggleRoute(t)}>
                       {t.is_active ? 'Deactivate' : 'Reactivate'}
+                    </button>{' '}
+                    <button type="button" onClick={() => void handleToggleBells(t)}>
+                      {t.follows_bells ? 'Stop following bells' : 'Follow bells'}
                     </button>
                   </td>
                 </tr>,
@@ -357,26 +379,38 @@ export function TemplatesPage() {
             <option value="am">AM (to school)</option>
             <option value="pm">PM (from school)</option>
           </select>
-          <label htmlFor="rt-earliest">Window start (minute of day)</label>
-          <input
-            id="rt-earliest"
-            type="number"
-            min="0"
-            max="1439"
-            value={rtEarliest}
-            onChange={(event) => setRtEarliest(event.target.value)}
-            required
-          />
-          <label htmlFor="rt-latest">Window end (minute of day)</label>
-          <input
-            id="rt-latest"
-            type="number"
-            min="0"
-            max="1439"
-            value={rtLatest}
-            onChange={(event) => setRtLatest(event.target.value)}
-            required
-          />
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={rtFollowsBells}
+              onChange={(event) => setRtFollowsBells(event.target.checked)}
+            />{' '}
+            Follow the school&apos;s bells (Setup, Bell schedules) for the window
+          </label>
+          {!rtFollowsBells && (
+            <>
+              <label htmlFor="rt-earliest">Window start (minute of day)</label>
+              <input
+                id="rt-earliest"
+                type="number"
+                min="0"
+                max="1439"
+                value={rtEarliest}
+                onChange={(event) => setRtEarliest(event.target.value)}
+                required
+              />
+              <label htmlFor="rt-latest">Window end (minute of day)</label>
+              <input
+                id="rt-latest"
+                type="number"
+                min="0"
+                max="1439"
+                value={rtLatest}
+                onChange={(event) => setRtLatest(event.target.value)}
+                required
+              />
+            </>
+          )}
           <label htmlFor="rt-duration">Duration (minutes)</label>
           <input
             id="rt-duration"

@@ -360,8 +360,11 @@ def _validate_days_of_week(value: list[int]) -> list[int]:
 class RouteTemplateCreate(BaseModel):
     school_id: int
     direction: RideDirection
-    window_earliest: int = Field(ge=0, lt=1440)
-    window_latest: int = Field(ge=0, lt=1440)
+    # Needed unless the route follows the school's bells (isd_api/bells.py),
+    # which then set its window each day.
+    window_earliest: int | None = Field(default=None, ge=0, lt=1440)
+    window_latest: int | None = Field(default=None, ge=0, lt=1440)
+    follows_bells: bool = False
     duration_minutes: int = Field(gt=0)
     buffer_minutes: int = Field(ge=0, default=0)
     days_of_week: list[int]
@@ -410,8 +413,17 @@ class RouteTemplateRead(BaseModel):
     active_from: date | None
     active_until: date | None
     is_active: bool
+    follows_bells: bool = False
     required_qualifications: list[QualificationRead]
     stops: list[RouteStopRead] = []
+
+
+class RouteTemplateUpdate(BaseModel):
+    """Deactivate/reactivate a route, or have it follow its school's bells
+    (or stop). Leave a field out to keep it."""
+
+    is_active: bool | None = None
+    follows_bells: bool | None = None
 
 
 class RoutePlanRequest(BaseModel):
@@ -1545,3 +1557,126 @@ class SisImportResult(BaseModel):
     rows: list[SisImportRow]
     rows_truncated: bool
     ignored_non_student_rows: int
+
+
+# --- Bell schedules (isd_api/bells.py) ------------------------------------
+
+
+class BellOffsets(BaseModel):
+    """Minutes around the bells: morning buses arrive between
+    arrive_earliest_before and arrive_latest_before minutes before the
+    first bell; afternoon buses leave between leave_earliest_after and
+    leave_latest_after minutes after dismissal."""
+
+    arrive_earliest_before: int = Field(ge=0, le=180)
+    arrive_latest_before: int = Field(ge=0, le=180)
+    leave_earliest_after: int = Field(ge=0, le=180)
+    leave_latest_after: int = Field(ge=0, le=180)
+
+
+class BellRulesRead(BellOffsets):
+    is_default: bool
+
+
+class SchoolOffsetsUpdate(BaseModel):
+    # None: use the district's.
+    offsets: BellOffsets | None = None
+
+
+class BellScheduleRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    school_id: int
+    name: str
+    first_bell_minute: int
+    dismissal_minute: int
+    is_regular: bool
+
+
+class BellScheduleCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    first_bell_minute: int = Field(ge=0, lt=1440)
+    dismissal_minute: int = Field(ge=0, lt=1440)
+    is_regular: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("name can't be blank")
+        return value
+
+    @model_validator(mode="after")
+    def _order(self) -> BellScheduleCreate:
+        if self.first_bell_minute >= self.dismissal_minute:
+            raise ValueError("The first bell must come before dismissal")
+        return self
+
+
+class BellScheduleUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=60)
+    first_bell_minute: int | None = Field(default=None, ge=0, lt=1440)
+    dismissal_minute: int | None = Field(default=None, ge=0, lt=1440)
+    # True makes it the school's regular schedule (the old one stops being).
+    is_regular: bool | None = None
+
+
+class BellCalendarDayRead(BaseModel):
+    id: int
+    school_id: int
+    school_name: str
+    service_date: date
+    bell_schedule_id: int
+    schedule_name: str
+
+
+class BellCalendarSet(BaseModel):
+    """Use a named schedule on a date, at the listed schools, or at every
+    school that has a schedule by that name."""
+
+    service_date: date
+    schedule_name: str = Field(min_length=1, max_length=60)
+    school_ids: list[int] | None = None
+
+
+class SchoolBellsRead(BaseModel):
+    school_id: int
+    school_name: str
+    schedules: list[BellScheduleRead]
+    # The school's own windows, or None when it uses the district's.
+    own_offsets: BellOffsets | None
+    offsets_in_use: BellOffsets
+    # Special days from today on.
+    upcoming_days: list[BellCalendarDayRead]
+
+
+class BellChange(BaseModel):
+    """What a change to bells did to runs already generated for today and
+    later: how many got a new window, and how many of those were already
+    assigned (dispatch sees an alert where the assignment no longer fits)."""
+
+    runs_updated: int
+    assigned_runs_moved: int
+    # Calendar: schools that have no schedule by that name.
+    skipped_schools: list[str] = []
+
+
+class BellImportRequest(BaseModel):
+    # The CSV text: school, schedule, first_bell, dismissal (HH:MM).
+    csv: str = Field(min_length=1, max_length=1_000_000)
+
+
+class BellImportRow(BaseModel):
+    line: int
+    school: str
+    schedule: str
+    # created, updated, unchanged or error
+    outcome: str
+    message: str | None = None
+
+
+class BellImportRead(BaseModel):
+    applied: bool
+    rows: list[BellImportRow]
+    change: BellChange | None = None

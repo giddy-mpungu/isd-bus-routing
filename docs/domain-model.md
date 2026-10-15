@@ -12,7 +12,9 @@ to keep Phase 1 small and testable.
 - `name`
 - `bell_windows`: list of `TimeWindow` (an arrival or dismissal window
   the run must satisfy) — a school may have more than one (e.g. AM
-  arrival and PM dismissal are separate windows, spec §5).
+  arrival and PM dismissal are separate windows, spec §5). In the API
+  these come from the school's bell schedules since PR #80 (see "Bell
+  schedules" below); the solver itself still only sees each run's window.
 - `location`: `(lat, lon)`
 
 ### TimeWindow
@@ -1148,6 +1150,47 @@ administrators) a planned and an expected time at the school, the delay,
 
 The school page shows "At school" / "Leaves school" with the expected time,
 the planned one when different, a "Running N min late" badge, and the basis.
+
+## Bell schedules (Phase 5, PR #80)
+
+- `BellSchedule` (per school): `name` (unique per school, case-insensitive),
+  `first_bell_minute`, `dismissal_minute` (first bell before dismissal),
+  `is_regular` (exactly one per school; a school's first schedule is it).
+  The regular one can't be deleted; an alternate can (its special days
+  go back to regular).
+- `BellCalendarDay`: `(school, service_date)` unique, naming the alternate
+  that school keeps that day. Setting the regular schedule on a date
+  removes the special day. Set for one or listed schools, or for every
+  school with a schedule by that name.
+- Bus windows around the bells: `BellRules` (singleton id 1; absent = 25/10
+  minutes before the first bell, 5/15 after dismissal) and four optional
+  per-school overrides on `School` (`arrive_earliest_before`,
+  `arrive_latest_before`, `leave_earliest_after`, `leave_latest_after`;
+  all null = the district's). Earliest arrival at least as far before the
+  bell as the latest; each 0..180.
+- A run's window is the whole span it must start and finish in, so:
+  AM `[first_bell - arrive_earliest_before - (duration + buffer),
+  first_bell - arrive_latest_before]`; PM `[dismissal + leave_earliest_after,
+  dismissal + leave_latest_after + (duration + buffer)]` (clamped to the day).
+  Wherever the solver places the run, it reaches/leaves the school in range.
+- `RouteTemplate.follows_bells`: its window comes from the bells for each
+  day; its stored window then shows the regular day's. Needs the school to
+  have a regular schedule. Generated runs use that date's bells; a route
+  not following bells (or a school with none) keeps its typed window.
+  Unlike other template fields, it can be switched on or off later.
+- Any change to bells, special days or windows moves the bell-following
+  runs for today and later whose assignment hasn't started (no assignment,
+  or Sent/Received/Acknowledged), each audited `window_from_bells`; a run
+  under way or finished keeps its window. Assigned runs that no longer fit
+  surface as the derived `outside_window` critical alert until the schedule
+  is run again; nothing re-solves automatically (spec §21).
+- CSV import (`school,schedule,first_bell,dismissal`, HH:MM): preview by
+  default; schools matched by name and never guessed between two with one
+  name; "Regular" is the regular schedule.
+- Roles: transportation admin edits; dispatcher reads; a school admin reads
+  their own school (`GET /schools/{id}/bells`).
+- Not covered: no-school days (holidays) — templates' weekdays and active
+  ranges still decide which days generate.
 
 ## Languages and accessibility (Phase 5)
 

@@ -19,6 +19,7 @@ import type {
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { TabList, TabPanel, type TabItem } from '../components/Tabs'
+import { BellSchedulesSection } from './BellSchedulesSection'
 import { CorrectionsQueue } from './CorrectionsQueue'
 import { DriversSection } from './DriversSection'
 import { OptimizationSettingsSection } from './OptimizationSettingsSection'
@@ -58,6 +59,7 @@ const ANNOUNCEMENT_AUDIENCES: AnnouncementAudience[] = ['all', 'family', 'driver
 
 type SetupTab =
   | 'schools'
+  | 'bells'
   | 'fleet'
   | 'district-knowledge'
   | 'announcements'
@@ -229,6 +231,7 @@ export function SetupPage() {
   const allTabs: (TabItem & { id: SetupTab })[] = [
     { id: 'schools', label: 'Schools & students' },
     { id: 'fleet', label: 'Fleet & drivers' },
+    { id: 'bells', label: 'Bell schedules' },
     { id: 'district-knowledge', label: 'District knowledge', count: geoOverrides.length },
     { id: 'announcements', label: 'Announcements', count: announcements.length },
     { id: 'optimization', label: 'Rules & optimization' },
@@ -350,6 +353,10 @@ export function SetupPage() {
         />
 
         {canCreate && <StopProposalsSection schools={schools} stops={stops} onChanged={loadAll} />}
+      </TabPanel>
+
+      <TabPanel id="bells" activeId={activeTab} idPrefix={TAB_PREFIX}>
+        <BellSchedulesSection schools={schools} canEdit={canCreate} />
       </TabPanel>
 
       <TabPanel id="fleet" activeId={activeTab} idPrefix={TAB_PREFIX}>

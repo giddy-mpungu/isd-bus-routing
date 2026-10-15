@@ -12,6 +12,7 @@ vi.mock('../api/client', async (importOriginal) => {
     ...actual,
     getCurrentUser: vi.fn(),
     getSchoolAssignments: vi.fn(),
+    getSchoolBells: vi.fn(),
     getMyAnnouncements: vi.fn(),
   }
 })
@@ -64,6 +65,50 @@ describe('SchoolAdminPage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.mocked(api.getMyAnnouncements).mockResolvedValue([])
+    vi.mocked(api.getSchoolBells).mockRejectedValue(new Error('not loaded in this test'))
+  })
+
+  it("shows the school's bell times and coming special days, read-only", async () => {
+    vi.mocked(api.getSchoolAssignments).mockResolvedValue([])
+    vi.mocked(api.getSchoolBells).mockResolvedValue({
+      school_id: 1,
+      school_name: 'Riverside Elementary',
+      schedules: [
+        {
+          id: 10,
+          school_id: 1,
+          name: 'Regular',
+          first_bell_minute: 480,
+          dismissal_minute: 900,
+          is_regular: true,
+        },
+      ],
+      own_offsets: null,
+      offsets_in_use: {
+        arrive_earliest_before: 25,
+        arrive_latest_before: 10,
+        leave_earliest_after: 5,
+        leave_latest_after: 15,
+      },
+      upcoming_days: [
+        {
+          id: 3,
+          school_id: 1,
+          school_name: 'Riverside Elementary',
+          service_date: '2026-10-30',
+          bell_schedule_id: 11,
+          schedule_name: 'Early release',
+        },
+      ],
+    })
+    renderPage()
+    expect(await screen.findByRole('heading', { name: 'Bell schedule' })).toBeInTheDocument()
+    expect(
+      screen.getByText('Regular: first bell 08:00, dismissal 15:00 (regular)'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('2026-10-30: Early release')).toBeInTheDocument()
+    expect(api.getSchoolBells).toHaveBeenCalledWith(1)
+    expect(screen.queryByRole('button', { name: /Edit/ })).not.toBeInTheDocument()
   })
 
   it('renders a bus card with resolved driver/vehicle names, direction, and time window', async () => {

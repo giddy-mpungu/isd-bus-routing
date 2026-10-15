@@ -29,6 +29,7 @@ vi.mock('../api/client', async (importOriginal) => {
     createRouteTemplate: vi.fn(),
     createCrewTemplate: vi.fn(),
     setRouteTemplateActive: vi.fn(),
+    setRouteTemplateFollowsBells: vi.fn(),
     setCrewTemplateActive: vi.fn(),
   }
 })
@@ -163,6 +164,38 @@ describe('TemplatesPage', () => {
         required_qualification_codes: ['lift'],
       }),
     )
+  })
+
+  it("creates a route that follows the school's bells, with no window to type", async () => {
+    vi.mocked(api.createRouteTemplate).mockResolvedValue({ ...routeTemplate, follows_bells: true })
+    const user = userEvent.setup()
+    render(<TemplatesPage />)
+    await screen.findByRole('option', { name: 'Riverside Elementary' })
+
+    await user.selectOptions(screen.getByLabelText('School'), '1')
+    await user.click(screen.getByLabelText(/Follow the school's bells/))
+    expect(screen.queryByLabelText('Window start (minute of day)')).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('Duration (minutes)'), '40')
+    await user.click(screen.getByRole('button', { name: 'Add route template' }))
+
+    await waitFor(() =>
+      expect(api.createRouteTemplate).toHaveBeenCalledWith(
+        expect.objectContaining({ follows_bells: true, duration_minutes: 40 }),
+      ),
+    )
+    const sent = vi.mocked(api.createRouteTemplate).mock.calls[0][0]
+    expect(sent.window_earliest).toBeUndefined()
+  })
+
+  it('switches an existing route to follow the bells', async () => {
+    vi.mocked(api.setRouteTemplateFollowsBells).mockResolvedValue({
+      ...routeTemplate,
+      follows_bells: true,
+    })
+    const user = userEvent.setup()
+    render(<TemplatesPage />)
+    await user.click(await screen.findByRole('button', { name: 'Follow bells' }))
+    await waitFor(() => expect(api.setRouteTemplateFollowsBells).toHaveBeenCalledWith(7, true))
   })
 
   it('shows the API error when creating a route template fails', async () => {

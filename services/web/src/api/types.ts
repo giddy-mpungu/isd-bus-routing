@@ -804,6 +804,9 @@ export interface RouteTemplate {
   active_from: string | null
   active_until: string | null
   is_active: boolean
+  // Its window comes from the school's bells each day; the window above
+  // is then the regular day's.
+  follows_bells?: boolean
   required_qualifications: Qualification[]
   // In visiting order.
   stops?: RouteStop[]
@@ -849,8 +852,10 @@ export interface RouteStopWrite {
 export interface RouteTemplateCreate {
   school_id: number
   direction: RideDirection
-  window_earliest: number
-  window_latest: number
+  // Left out when the route follows the school's bells.
+  window_earliest?: number
+  window_latest?: number
+  follows_bells?: boolean
   duration_minutes: number
   buffer_minutes: number
   days_of_week: number[]
@@ -1171,4 +1176,78 @@ export interface Correction {
   status: 'open' | 'accepted' | 'declined'
   decided_at: string | null
   response: string | null
+}
+
+// --- Bell schedules (services/api/src/isd_api/bells.py) ---
+
+// Minutes around the bells: morning buses arrive between
+// arrive_earliest_before and arrive_latest_before minutes before the first
+// bell; afternoon buses leave between leave_earliest_after and
+// leave_latest_after minutes after dismissal.
+export interface BellOffsets {
+  arrive_earliest_before: number
+  arrive_latest_before: number
+  leave_earliest_after: number
+  leave_latest_after: number
+}
+
+export interface BellRules extends BellOffsets {
+  is_default: boolean
+}
+
+export interface BellSchedule {
+  id: number
+  school_id: number
+  name: string
+  first_bell_minute: number
+  dismissal_minute: number
+  is_regular: boolean
+}
+
+export interface BellScheduleCreate {
+  name: string
+  first_bell_minute: number
+  dismissal_minute: number
+  is_regular?: boolean
+}
+
+export type BellScheduleUpdate = Partial<BellScheduleCreate>
+
+export interface BellCalendarDay {
+  id: number
+  school_id: number
+  school_name: string
+  service_date: string
+  bell_schedule_id: number
+  schedule_name: string
+}
+
+export interface SchoolBells {
+  school_id: number
+  school_name: string
+  schedules: BellSchedule[]
+  own_offsets: BellOffsets | null
+  offsets_in_use: BellOffsets
+  upcoming_days: BellCalendarDay[]
+}
+
+// What a change to bells did to runs already generated for today and later.
+export interface BellChange {
+  runs_updated: number
+  assigned_runs_moved: number
+  skipped_schools: string[]
+}
+
+export interface BellImportRow {
+  line: number
+  school: string
+  schedule: string
+  outcome: 'created' | 'updated' | 'unchanged' | 'error'
+  message: string | null
+}
+
+export interface BellImport {
+  applied: boolean
+  rows: BellImportRow[]
+  change: BellChange | null
 }
