@@ -1,4 +1,7 @@
 import { createHmac } from 'node:crypto'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { OUT } from './env'
 
 /**
  * The 6-digit code an authenticator app shows (RFC 6238: 30-second steps,
@@ -31,15 +34,23 @@ export function totp(secret: string, at: number = Date.now()): string {
   return String(value).padStart(6, '0')
 }
 
-const lastUsed = new Map<string, number>()
+// Kept in a file, not memory: Playwright starts a fresh worker after a
+// failed test, and a code used before that must still count as used.
+const usedSteps = () => join(OUT, 'state', 'totp-used.json')
+
+function lastUsed(): Record<string, number> {
+  return existsSync(usedSteps())
+    ? (JSON.parse(readFileSync(usedSteps(), 'utf8')) as Record<string, number>)
+    : {}
+}
 
 /** A code from a time step this run hasn't used for this secret yet. */
 export async function nextCode(secret: string): Promise<string> {
   let step = Math.floor(Date.now() / 30_000)
-  while (lastUsed.get(secret) === step) {
+  while (lastUsed()[secret] !== undefined && lastUsed()[secret] >= step) {
     await new Promise((resolve) => setTimeout(resolve, 1000))
     step = Math.floor(Date.now() / 30_000)
   }
-  lastUsed.set(secret, step)
+  writeFileSync(usedSteps(), JSON.stringify({ ...lastUsed(), [secret]: step }))
   return totp(secret)
 }

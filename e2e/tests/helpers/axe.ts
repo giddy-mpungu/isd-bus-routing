@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import type { Page } from '@playwright/test'
 
@@ -9,7 +10,10 @@ const require = createRequire(import.meta.url)
  * readable lines; empty when there are none.
  */
 export async function axeViolations(page: Page): Promise<string[]> {
-  await page.addScriptTag({ path: require.resolve('axe-core/axe.min.js') })
+  // Evaluated over the browser's devtools channel rather than added as a
+  // <script>: the production Content-Security-Policy rightly blocks inline
+  // scripts, and the page should keep its real policy while it's checked.
+  await page.evaluate(readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8'))
   return page.evaluate(async () => {
     const results = await (
       window as unknown as {

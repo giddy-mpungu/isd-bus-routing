@@ -198,6 +198,10 @@ and deletes older ones. Every Sunday it also restores the latest backup
 into a throwaway database to prove it works. These were the product
 owner's choices (2026-10-04).
 
+The two secret files stay `chmod 600`: the backup container starts as
+root only to copy them where its own `postgres` user alone can read them,
+then does everything else as that user (`services/backup/entrypoint.sh`).
+
 Set up before go-live:
 
 1. Create a bucket with any S3-compatible provider (Backblaze B2, about
