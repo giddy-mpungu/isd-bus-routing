@@ -7,6 +7,7 @@
 #
 # Usage: backup.sh [reason]   reason: nightly (default), pre-migration, manual
 set -euo pipefail
+. /usr/local/lib/as-postgres.sh
 
 reason="${1:-nightly}"
 case "$reason" in nightly|pre-migration|manual) ;; *) echo "unknown reason: $reason" >&2; exit 2 ;; esac

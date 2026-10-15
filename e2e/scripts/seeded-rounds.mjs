@@ -22,7 +22,15 @@
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { createWriteStream, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -62,13 +70,20 @@ function parseArgs(argv) {
 
 const step = (text) => console.log(`\n==> ${text}`)
 
-function run(command, args, { cwd, env, capture = false } = {}) {
+// A stuck step fails rather than hanging the run. On Linux and macOS it's
+// stopped with SIGABRT, which makes Python print where it was stuck
+// (PYTHONFAULTHANDLER, set in apiEnv).
+function run(command, args, { cwd, env, capture = false, minutes = 10 } = {}) {
   const result = spawnSync(command, args, {
     cwd,
     env: env ?? process.env,
     stdio: capture ? ['ignore', 'pipe', 'inherit'] : 'inherit',
     shell: WINDOWS && command.endsWith('.cmd'),
+    timeout: minutes * 60_000,
+    killSignal: WINDOWS ? 'SIGTERM' : 'SIGABRT',
   })
+  if (result.error?.code === 'ETIMEDOUT')
+    console.error(`${command} ${args.join(' ')}: gave up after ${minutes} minutes`)
   return { code: result.status ?? 1, stdout: result.stdout?.toString() ?? '' }
 }
 
@@ -79,15 +94,18 @@ function must(result, what) {
 
 /** A server in the background, logging to a file; stop() ends it and its children. */
 function start(command, args, { cwd, env, log }) {
-  const out = createWriteStream(log)
+  // Straight into the file, not piped through this script: the seed and the
+  // tests run with spawnSync, which blocks this script, and a server whose
+  // output pipe nobody drains stops when the pipe fills.
+  const fd = openSync(log, 'w')
   const child = spawn(command, args, {
     cwd,
     env,
     detached: !WINDOWS,
+    stdio: ['ignore', fd, fd],
     shell: WINDOWS && command.endsWith('.cmd'),
   })
-  child.stdout.pipe(out)
-  child.stderr.pipe(out)
+  closeSync(fd)
   return {
     stop() {
       if (child.exitCode !== null) return
@@ -120,6 +138,8 @@ function apiEnv(database, mailpit) {
     ISD_API_CORS_ALLOWED_ORIGINS: JSON.stringify([WEB_URL]),
     ISD_API_PUBLIC_WEB_URL: WEB_URL,
     PYTHONPATH: join(API_DIR, 'src'),
+    PYTHONUNBUFFERED: '1',
+    PYTHONFAULTHANDLER: '1',
   }
   if (mailpit) {
     Object.assign(env, {
@@ -194,6 +214,15 @@ async function runRound(number, { mailpit, python }, extra) {
         },
       },
     ).code
+  } catch (error) {
+    // What the API said is usually the answer.
+    try {
+      const tail = readFileSync(join(out, 'api.log'), 'utf8').split('\n').slice(-60).join('\n')
+      console.error(`\n--- api.log (last 60 lines) ---\n${tail}`)
+    } catch {
+      // No log yet.
+    }
+    throw error
   } finally {
     for (const server of servers.reverse()) server.stop()
     // Give Windows a moment to release the database file.
