@@ -16,19 +16,21 @@ import json
 import os
 import sys
 import urllib.error
-import urllib.parse
 import urllib.request
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from isd_api.db import SessionLocal
 from isd_api.demo_seed import (
+    ADMIN_EMAIL,
     AlreadySeededError,
     create_demo_admin,
     generate_password,
     seed_demo,
 )
+from isd_api.models import User
+from isd_api.security import create_access_token
 
 API = os.environ.get("ISD_DEMO_SEED_API", "http://localhost:8000")
 
@@ -54,19 +56,26 @@ def main() -> int:
     db = SessionLocal()
     try:
         admin = create_demo_admin(db, admin_password)
+        user = db.query(User).filter(User.email == ADMIN_EMAIL).one()
+        # The admin's role needs two-step sign-in, so a password login
+        # gives no token until an authenticator is set up (isd_api/mfa.py).
+        # This script runs on the server with database access, the same
+        # trust as scripts/bootstrap_admin.py, so it issues its own
+        # short-lived token instead. The admin still sets up two-step
+        # sign-in at their first browser sign-in.
+        token = create_access_token(
+            user_id=user.id,
+            role=user.role,
+            token_version=user.token_version,
+            mfa=True,
+            expires_delta=timedelta(minutes=30),
+        )
     except AlreadySeededError as err:
         print(f"Skipping demo seed: {err}", file=sys.stderr)
         return 3
     finally:
         db.close()
 
-    form = urllib.parse.urlencode({"username": admin.email, "password": admin_password})
-    token = _call(
-        "POST",
-        "/auth/login",
-        form.encode(),
-        {"Content-Type": "application/x-www-form-urlencoded"},
-    )["access_token"]
     auth = {"Authorization": f"Bearer {token}"}
 
     # UTC "today", matching what the web app itself treats as today
