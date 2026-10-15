@@ -36,6 +36,9 @@ from sqlalchemy import (
     Enum as SAEnum,
 )
 from sqlalchemy import (
+    false as sa_false,
+)
+from sqlalchemy import (
     true as sa_true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -306,8 +309,69 @@ class School(Base):
     # by an administrator, never inferred: a roster row can only be
     # placed at a school someone has explicitly mapped (ADR 0007).
     external_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    # This school's own bus windows around its bells (isd_api/bells.py),
+    # in minutes; None = the district's (BellRules).
+    arrive_earliest_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    arrive_latest_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    leave_earliest_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    leave_latest_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     runs: Mapped[list[Run]] = relationship(back_populates="school")
+    bell_schedules: Mapped[list[BellSchedule]] = relationship(
+        back_populates="school", order_by="BellSchedule.name", cascade="all, delete-orphan"
+    )
+
+
+class BellSchedule(Base):
+    """A school's bell times (spec sections 1, 5, 19): its Regular day and
+    named alternates (Early release, Late start, ...). Exactly one per
+    school is the regular one, used on any day the calendar doesn't name
+    another. Minutes of the day, in the district's time zone."""
+
+    __tablename__ = "bell_schedules"
+    __table_args__ = (UniqueConstraint("school_id", "name", name="uq_bell_schedule_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    school_id: Mapped[int] = mapped_column(ForeignKey("schools.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    first_bell_minute: Mapped[int] = mapped_column(Integer, nullable=False)
+    dismissal_minute: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_regular: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    school: Mapped[School] = relationship(back_populates="bell_schedules")
+
+
+class BellCalendarDay(Base):
+    """A date on which a school uses a schedule other than its regular one
+    (an early-release or late-start day)."""
+
+    __tablename__ = "bell_calendar_days"
+    __table_args__ = (UniqueConstraint("school_id", "service_date", name="uq_bell_calendar_day"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    school_id: Mapped[int] = mapped_column(ForeignKey("schools.id"), nullable=False)
+    service_date: Mapped[date] = mapped_column(Date, nullable=False)
+    bell_schedule_id: Mapped[int] = mapped_column(
+        ForeignKey("bell_schedules.id", ondelete="CASCADE"), nullable=False
+    )
+
+    schedule: Mapped[BellSchedule] = relationship()
+
+
+class BellRules(Base):
+    """The district's bus windows around school bells (isd_api/bells.py).
+    A singleton: at most one row, id 1; absent = the defaults there."""
+
+    __tablename__ = "bell_rules"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    arrive_earliest_before: Mapped[int] = mapped_column(Integer, nullable=False)
+    arrive_latest_before: Mapped[int] = mapped_column(Integer, nullable=False)
+    leave_earliest_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    leave_latest_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
 
 
 class Stop(Base):
@@ -780,6 +844,12 @@ class RouteTemplate(Base):
     active_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     active_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Its window comes from the school's bells for each day (isd_api/bells.py)
+    # rather than the fixed window above, which then only shows the
+    # regular day's.
+    follows_bells: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=sa_false()
+    )
 
     school: Mapped[School] = relationship()
     required_qualifications: Mapped[list[Qualification]] = relationship(

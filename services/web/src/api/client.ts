@@ -78,6 +78,15 @@ import type {
   RouteStop,
   RouteStopWrite,
   RouteTemplate,
+  BellCalendarDay,
+  BellChange,
+  BellImport,
+  BellOffsets,
+  BellRules,
+  BellSchedule,
+  BellScheduleCreate,
+  BellScheduleUpdate,
+  SchoolBells,
   RouteTemplateCreate,
   Run,
   RunCreate,
@@ -705,6 +714,87 @@ export async function setRouteTemplateActive(
   return request<RouteTemplate>(
     `/route-templates/${templateId}`,
     jsonInit('PATCH', { is_active: isActive }),
+  )
+}
+
+export async function setRouteTemplateFollowsBells(
+  templateId: number,
+  followsBells: boolean,
+): Promise<RouteTemplate> {
+  return request<RouteTemplate>(
+    `/route-templates/${templateId}`,
+    jsonInit('PATCH', { follows_bells: followsBells }),
+  )
+}
+
+// --- Bell schedules ---
+
+export async function getBellRules(): Promise<BellRules> {
+  return request<BellRules>('/bell-rules')
+}
+
+export async function updateBellRules(payload: BellOffsets): Promise<BellChange> {
+  return request<BellChange>('/bell-rules', jsonInit('PUT', payload))
+}
+
+export async function getSchoolBells(schoolId: number): Promise<SchoolBells> {
+  return request<SchoolBells>(`/schools/${schoolId}/bells`)
+}
+
+// null: the school uses the district's windows.
+export async function setSchoolBellOffsets(
+  schoolId: number,
+  offsets: BellOffsets | null,
+): Promise<BellChange> {
+  return request<BellChange>(`/schools/${schoolId}/bell-offsets`, jsonInit('PUT', { offsets }))
+}
+
+export async function createBellSchedule(
+  schoolId: number,
+  payload: BellScheduleCreate,
+): Promise<BellSchedule> {
+  return request<BellSchedule>(`/schools/${schoolId}/bell-schedules`, jsonInit('POST', payload))
+}
+
+export async function updateBellSchedule(
+  scheduleId: number,
+  payload: BellScheduleUpdate,
+): Promise<BellChange> {
+  return request<BellChange>(`/bell-schedules/${scheduleId}`, jsonInit('PATCH', payload))
+}
+
+export async function deleteBellSchedule(scheduleId: number): Promise<BellChange> {
+  return request<BellChange>(`/bell-schedules/${scheduleId}`, { method: 'DELETE' })
+}
+
+export async function getBellCalendar(): Promise<BellCalendarDay[]> {
+  return request<BellCalendarDay[]>('/bell-calendar')
+}
+
+// schoolIds null: every school that has a schedule by that name.
+export async function setBellCalendarDay(
+  serviceDate: string,
+  scheduleName: string,
+  schoolIds: number[] | null,
+): Promise<BellChange> {
+  return request<BellChange>(
+    '/bell-calendar',
+    jsonInit('PUT', {
+      service_date: serviceDate,
+      schedule_name: scheduleName,
+      school_ids: schoolIds,
+    }),
+  )
+}
+
+export async function deleteBellCalendarDay(dayId: number): Promise<BellChange> {
+  return request<BellChange>(`/bell-calendar/${dayId}`, { method: 'DELETE' })
+}
+
+export async function importBellSchedules(csv: string, apply: boolean): Promise<BellImport> {
+  return request<BellImport>(
+    `/bell-schedules/import?dry_run=${apply ? 'false' : 'true'}`,
+    jsonInit('POST', { csv }),
   )
 }
 

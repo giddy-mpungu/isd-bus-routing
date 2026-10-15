@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from isd_solver import Location, StopDemand, plan_route
 from sqlalchemy.orm import Session
 
-from isd_api import eligibility
+from isd_api import bells, eligibility
 from isd_api.audit import record as record_audit
 from isd_api.availability import resource_unavailable_reason
 from isd_api.db import get_db
@@ -47,6 +47,7 @@ from isd_api.schemas import (
     RouteStopsUpdate,
     RouteTemplateCreate,
     RouteTemplateRead,
+    RouteTemplateUpdate,
     TemplateUpdate,
 )
 from isd_api.security import require_role
@@ -81,27 +82,48 @@ def create_route_template(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(*_WRITE_ROLES)),
 ) -> RouteTemplate:
-    if payload.window_earliest > payload.window_latest:
+    school = db.get(School, payload.school_id)
+    if school is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown school_id")
+    if payload.follows_bells:
+        regular = bells.regular_schedule(school)
+        if regular is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This school has no regular bell schedule to follow yet",
+            )
+        earliest, latest = bells.window(
+            regular,
+            bells.offsets_for(db, school),
+            payload.direction,
+            payload.duration_minutes,
+            payload.buffer_minutes,
+        )
+    elif payload.window_earliest is None or payload.window_latest is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Give the route's window, or have it follow the school's bells",
+        )
+    else:
+        earliest, latest = payload.window_earliest, payload.window_latest
+    if earliest > latest:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="window_earliest must be <= window_latest",
         )
-    if payload.duration_minutes + payload.buffer_minutes > (
-        payload.window_latest - payload.window_earliest
-    ):
+    if payload.duration_minutes + payload.buffer_minutes > latest - earliest:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="duration_minutes + buffer_minutes exceeds the route's own window length",
         )
     _check_active_range(payload.active_from, payload.active_until)
-    if db.get(School, payload.school_id) is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown school_id")
 
     template = RouteTemplate(
         school_id=payload.school_id,
         direction=payload.direction,
-        window_earliest=payload.window_earliest,
-        window_latest=payload.window_latest,
+        window_earliest=earliest,
+        window_latest=latest,
+        follows_bells=payload.follows_bells,
         duration_minutes=payload.duration_minutes,
         buffer_minutes=payload.buffer_minutes,
         days_of_week=payload.days_of_week,
@@ -139,7 +161,7 @@ def list_route_templates(
 @route_router.patch("/{template_id}", response_model=RouteTemplateRead)
 def update_route_template(
     template_id: int,
-    payload: TemplateUpdate,
+    payload: RouteTemplateUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(*_WRITE_ROLES)),
 ) -> RouteTemplate:
@@ -148,9 +170,20 @@ def update_route_template(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Route template not found"
         )
-    before = {"is_active": template.is_active}
-    template.is_active = payload.is_active
+    before = {"is_active": template.is_active, "follows_bells": template.follows_bells}
+    if payload.is_active is not None:
+        template.is_active = payload.is_active
+    if payload.follows_bells is not None and payload.follows_bells != template.follows_bells:
+        if payload.follows_bells and bells.regular_schedule(template.school) is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This school has no regular bell schedule to follow yet",
+            )
+        # Its own window stays as it is (the regular day's, while it
+        # followed the bells) for days it no longer follows them.
+        template.follows_bells = payload.follows_bells
     db.flush()
+    moved = bells.refresh_windows(db, {template.school_id}) if template.follows_bells else []
     record_audit(
         db,
         entity_type="route_template",
@@ -158,8 +191,9 @@ def update_route_template(
         action="updated",
         actor=current_user,
         before_state=before,
-        after_state={"is_active": template.is_active},
+        after_state={"is_active": template.is_active, "follows_bells": template.follows_bells},
     )
+    bells.audit_moved_runs(db, moved, current_user)
     db.commit()
     db.refresh(template)
     return template
@@ -516,12 +550,18 @@ def generate_from_templates(
         if already is not None:
             runs_existing += 1
             continue
+        # A route that follows the bells takes that day's (an early-release
+        # day moves it); otherwise, or with no bells set, its own window.
+        earliest, latest = bells.template_window(db, rt, service_date) or (
+            rt.window_earliest,
+            rt.window_latest,
+        )
         run = Run(
             service_date=service_date,
             school_id=rt.school_id,
             direction=rt.direction,
-            window_earliest=rt.window_earliest,
-            window_latest=rt.window_latest,
+            window_earliest=earliest,
+            window_latest=latest,
             duration_minutes=rt.duration_minutes,
             buffer_minutes=rt.buffer_minutes,
             passenger_count=0,

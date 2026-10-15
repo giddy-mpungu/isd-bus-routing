@@ -18,6 +18,7 @@ from isd_api.routers import (
     announcements,
     audit_log,
     auth,
+    bell_schedules,
     corrections,
     crews,
     destination_profiles,
@@ -122,6 +123,7 @@ app.include_router(alerts.router)
 app.include_router(reports.router)
 app.include_router(destination_profiles.router)
 app.include_router(announcements.router)
+app.include_router(bell_schedules.router)
 app.include_router(driver_reports.router)
 app.include_router(driver_reports.all_reports_router)
 app.include_router(audit_log.router)

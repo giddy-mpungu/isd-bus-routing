@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { Announcement, SchoolAssignment } from '../api/types'
+import type { Announcement, SchoolAssignment, SchoolBells } from '../api/types'
+import { useAuth } from '../auth/AuthContext'
 import { STATUS_LABELS, STATUS_TONES } from '../assignmentStatus'
 import { Badge } from '../components/Badge'
 
@@ -15,7 +16,64 @@ function formatMinuteOfDay(minute: number): string {
   return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
 }
 
+/** The school's bell times and coming special days, as transportation has them. */
+function SchoolBellsPanel({ schoolId }: { schoolId: number }) {
+  const [bells, setBells] = useState<SchoolBells | null>(null)
+
+  useEffect(() => {
+    let current = true
+    api.getSchoolBells(schoolId).then(
+      (read) => {
+        if (current) setBells(read)
+      },
+      () => {
+        // Nothing to show; the rest of the page still works.
+      },
+    )
+    return () => {
+      current = false
+    }
+  }, [schoolId])
+
+  if (bells === null) return null
+  return (
+    <section className="school-bells">
+      <h2>Bell schedule</h2>
+      {bells.schedules.length === 0 ? (
+        <p>Transportation hasn&apos;t entered this school&apos;s bell times yet.</p>
+      ) : (
+        <ul>
+          {bells.schedules.map((s) => (
+            <li key={s.id}>
+              {s.name}: first bell {formatMinuteOfDay(s.first_bell_minute)}, dismissal{' '}
+              {formatMinuteOfDay(s.dismissal_minute)}
+              {s.is_regular && ' (regular)'}
+            </li>
+          ))}
+        </ul>
+      )}
+      {bells.upcoming_days.length > 0 && (
+        <>
+          <h3>Coming special days</h3>
+          <ul>
+            {bells.upcoming_days.map((d) => (
+              <li key={d.id}>
+                {d.service_date}: {d.schedule_name}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <p className="status">
+        Something wrong here? Tell the transportation office, which keeps the bell times buses run
+        to.
+      </p>
+    </section>
+  )
+}
+
 export function SchoolAdminPage() {
+  const { user } = useAuth()
   const [serviceDate] = useState(today)
   const [assignments, setAssignments] = useState<SchoolAssignment[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -95,6 +153,7 @@ export function SchoolAdminPage() {
           </li>
         ))}
       </ul>
+      {user?.school_id != null && <SchoolBellsPanel schoolId={user.school_id} />}
     </div>
   )
 }

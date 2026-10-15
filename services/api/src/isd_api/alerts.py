@@ -11,7 +11,9 @@ Critical:
     start time, or marked no-show,
   - a field trip departing that day with no driver or no bus,
   - an incident report,
-  - a stop of a run's trip inside a road closure in force (spec section 10).
+  - a stop of a run's trip inside a road closure in force (spec section 10),
+  - a run whose assigned times fall outside its window, not yet started
+    (its school's bells changed after it was scheduled, isd_api/bells.py).
 Warning:
   - work not yet acknowledged within `ACK_WARNING_MINUTES` of its start,
   - work still under way `FINISH_GRACE_MINUTES` after its planned end,
@@ -210,6 +212,21 @@ def day_alerts(db: Session, service_date: date, now: datetime | None = None) -> 
             f"({hhmm(a.start_minute)}-{hhmm(a.end_minute)})"
         )
         who = a.crew.driver.full_name
+        if a.status in _NOT_STARTED and (
+            a.start_minute < a.run.window_earliest or a.end_minute > a.run.window_latest
+        ):
+            alerts.append(
+                Alert(
+                    "outside_window",
+                    CRITICAL,
+                    f"{label} no longer fits its window "
+                    f"({hhmm(a.run.window_earliest)}-{hhmm(a.run.window_latest)}), "
+                    "probably after a bell change. Run the schedule again for this day.",
+                    "assignment",
+                    a.id,
+                    a.start_minute,
+                )
+            )
         if a.status not in TERMINAL:
             issue = assignment_availability_issue(db, a)
             if issue is not None:
