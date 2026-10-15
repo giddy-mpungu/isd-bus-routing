@@ -80,6 +80,15 @@ construction. A future fleet-maintenance integration would drive
 *which vehicles get a Crew row created*, not add a new state field to
 `Vehicle` itself.
 
+*Addendum (PR #81, 2026-10-15):* time-bounded maintenance turned out to
+need more than "no Crew row": a bus can go to the shop mid-day, after its
+crew exists and has assignments. So maintenance windows (and an expired
+inspection) are busy time for whichever crew uses the bus
+(`isd_api/availability.vehicle_blocks`), exactly like field trips; a
+whole-day window still means no Crew row at generation. A future
+fleet-maintenance integration would write `MaintenanceWindow` rows and
+the two due dates, which stay the scheduling-facing shape.
+
 **Integration code shape, when each is actually built:** each external
 system gets one adapter behind an interface this system defines (not
 the vendor's shape), living under `services/api/src/isd_api/integrations/`
