@@ -649,7 +649,12 @@ export interface DriverReport {
   report_type: DriverReportType
   description: string
   created_at: string
+  // Vehicle defects: where the report stands.
+  status?: DefectStatus
+  resolution_note?: string | null
 }
+
+export type DefectStatus = 'open' | 'out_of_service' | 'fixed'
 
 export interface DriverReportCreate {
   service_date: string
@@ -1250,4 +1255,81 @@ export interface BellImport {
   applied: boolean
   rows: BellImportRow[]
   change: BellChange | null
+}
+
+// --- Fleet maintenance (services/api/src/isd_api/maintenance.py) ---
+
+export type MaintenanceKind = 'planned' | 'repair' | 'inspection'
+
+export interface MaintenanceWindow {
+  id: number
+  vehicle_id: number
+  vehicle_label: string
+  kind: MaintenanceKind
+  // District wall-clock times ("2026-10-20T06:00:00"); no end: until
+  // marked back in service.
+  starts_at: string
+  ends_at: string | null
+  reason: string
+  driver_report_id: number | null
+  current: boolean
+}
+
+export interface MaintenanceWindowCreate {
+  vehicle_id: number
+  kind: MaintenanceKind
+  starts_at: string
+  ends_at: string | null
+  reason: string
+}
+
+export interface ServiceRecord {
+  id: number
+  vehicle_id: number
+  performed_on: string
+  work: string
+  performed_by: string
+  created_at: string
+}
+
+export interface ServiceRecordCreate {
+  performed_on: string
+  work: string
+  performed_by: string
+  next_service_due_on?: string | null
+  inspection_expires_on?: string | null
+}
+
+export interface VehicleMaintenance {
+  vehicle_id: number
+  vehicle_label: string
+  service_due_on: string | null
+  inspection_expires_on: string | null
+  service_log: ServiceRecord[]
+  windows: MaintenanceWindow[]
+}
+
+export interface MaintenanceDue {
+  vehicle_id: number
+  vehicle_label: string
+  severity: 'critical' | 'warning'
+  message: string
+}
+
+export interface DefectReport extends DriverReport {
+  driver_name: string
+  vehicle_label: string | null
+}
+
+export interface SpareVehicle {
+  vehicle_id: number
+  label: string
+  allowable_capacity: number | null
+  spare_seats: number | null
+}
+
+export interface Spares {
+  crew_id: number
+  current_vehicle_label: string
+  spares: SpareVehicle[]
 }

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from isd_api import bells, eligibility
 from isd_api.audit import record as record_audit
-from isd_api.availability import resource_unavailable_reason
+from isd_api.availability import resource_unavailable_reason, vehicle_blocks
 from isd_api.db import get_db
 from isd_api.licensing import license_violation
 from isd_api.models import (
@@ -596,7 +596,12 @@ def generate_from_templates(
         if clash is not None:
             crews_existing += 1
             continue
-        if resource_unavailable_reason(ct.driver, ct.vehicle) is not None:
+        if resource_unavailable_reason(ct.driver, ct.vehicle) is not None or any(
+            # In maintenance (or past its inspection) the whole day: the
+            # driver stays free to be paired with a spare bus instead.
+            start <= ct.available_window_earliest and end >= ct.available_window_latest
+            for start, end, _ in vehicle_blocks(db, ct.vehicle, service_date)
+        ):
             out_of_service_template_ids.append(ct.id)
             continue
         if license_violation(ct.driver, ct.vehicle) is not None:

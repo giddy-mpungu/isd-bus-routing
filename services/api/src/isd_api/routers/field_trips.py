@@ -42,6 +42,7 @@ from isd_api.availability import (
     tasks_blocking,
     trip_return,
     trip_windows,
+    vehicle_blocks,
 )
 from isd_api.db import get_db
 from isd_api.licensing import license_violation
@@ -411,6 +412,11 @@ def _trip_conflicts(
     vehicle = db.get(Vehicle, vehicle_id) if vehicle_id is not None else None
     if vehicle is not None and not vehicle.is_active:
         blocking.append(f"Vehicle {vehicle.label} is out of service")
+    elif vehicle is not None:
+        for day, start, end in windows:
+            for block_start, block_end, label in vehicle_blocks(db, vehicle, day):
+                if start < block_end and block_start < end:
+                    blocking.append(f"{label[0].upper()}{label[1:]} on {day}")
     if driver is not None:
         if not driver.is_active:
             blocking.append(f"Driver {driver.full_name} is deactivated")
