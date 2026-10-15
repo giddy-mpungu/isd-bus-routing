@@ -206,6 +206,11 @@ CI (`.github/workflows/ci.yml`) runs all of this for all three
 services on every PR and every push to `main` — run it locally before
 pushing so CI is confirmation, not discovery.
 
+End-to-end tests (`e2e/`, Playwright) drive the whole system in a real
+browser: a fresh install that follows `docs/deployment.md` step by step,
+and fresh seeded API + web rounds, both on every PR. See `e2e/README.md`
+to run them locally (`node e2e/scripts/seeded-rounds.mjs --rounds 1`).
+
 ## Non-negotiables (carried from spec)
 
 - Hard constraints (capacity, qualification, legal time windows,

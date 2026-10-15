@@ -8,12 +8,16 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends restic ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY backup.sh restore.sh check-restore.sh schedule.sh /usr/local/bin/
+COPY backup.sh restore.sh check-restore.sh schedule.sh entrypoint.sh /usr/local/bin/
+COPY as-postgres.sh /usr/local/lib/
 RUN chmod 0755 /usr/local/bin/backup.sh /usr/local/bin/restore.sh \
         /usr/local/bin/check-restore.sh /usr/local/bin/schedule.sh \
+        /usr/local/bin/entrypoint.sh \
     && mkdir -p /backups && chown postgres:postgres /backups
 
-USER postgres
+# Starts as root only to copy the secrets where the postgres user can read
+# them (entrypoint.sh), then works as that user (gosu, from the postgres
+# image).
 WORKDIR /backups
-ENTRYPOINT []
+ENTRYPOINT ["entrypoint.sh"]
 CMD ["schedule.sh"]

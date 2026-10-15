@@ -3,6 +3,7 @@
 # database: restores it into a throwaway database, checks the tables are
 # there and hold rows, and drops it. Run weekly by schedule.sh.
 set -euo pipefail
+. /usr/local/lib/as-postgres.sh
 
 : "${PGHOST:?}" "${PGUSER:?}" "${PGDATABASE:?}" "${PGPASSWORD_FILE:?}" "${RESTIC_REPOSITORY:?}" "${RESTIC_PASSWORD_FILE:?}"
 PGPASSWORD="$(cat "$PGPASSWORD_FILE")"

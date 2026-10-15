@@ -1,0 +1,22 @@
+{
+  "name": "isd-bus-routing-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "End-to-end browser tests against a running isd-bus-routing (see README.md here).",
+  "scripts": {
+    "test": "playwright test",
+    "test:dev": "playwright test --project=dev",
+    "test:install": "playwright test --project=install",
+    "lint": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "24.13.3",
+    "axe-core": "4.14.0",
+    "prettier": "3.9.6",
+    "typescript": "6.0.3"
+  }
+}

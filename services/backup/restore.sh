@@ -4,6 +4,7 @@
 #
 # Usage: CONFIRM_RESTORE=<database name> restore.sh [snapshot id | latest]
 set -euo pipefail
+. /usr/local/lib/as-postgres.sh
 
 snapshot="${1:-latest}"
 : "${PGHOST:?}" "${PGUSER:?}" "${PGDATABASE:?}" "${PGPASSWORD_FILE:?}" "${RESTIC_REPOSITORY:?}" "${RESTIC_PASSWORD_FILE:?}"

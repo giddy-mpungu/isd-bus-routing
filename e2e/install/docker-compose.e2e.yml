@@ -1,0 +1,12 @@
+# The one thing the end-to-end fresh install adds to docker-compose.prod.yml:
+# a captured inbox (Mailpit) standing in for the district's mail server, so
+# the tests can read the emails people would get. .env points the api's
+# SMTP settings at it (scripts/fresh-install.sh); its web UI and API are on
+# 127.0.0.1:8025, this computer only.
+
+services:
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:8025:8025'

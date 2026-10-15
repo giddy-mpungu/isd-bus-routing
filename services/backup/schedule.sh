@@ -3,6 +3,7 @@
 # (HH:MM, in TZ), and on Sundays a restore check afterwards. A failure is
 # logged loudly and retried the next night; the container keeps running.
 set -uo pipefail
+. /usr/local/lib/as-postgres.sh
 
 BACKUP_TIME="${BACKUP_TIME:-02:00}"
 echo "$(date) backup schedule: every night at $BACKUP_TIME ($TZ); restore check on Sundays"

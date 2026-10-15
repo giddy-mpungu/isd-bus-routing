@@ -144,3 +144,75 @@ jobs:
           curl -sf http://127.0.0.1:8000/health
           docker logs isd-api-ci
           docker rm -f isd-api-ci
+
+  # End-to-end (e2e/README.md): the whole system in a real browser. Two
+  # complementary ways of starting it, both from nothing every time.
+  e2e-seeded:
+    name: e2e (fresh API + web, seeded, 2 rounds)
+    runs-on: ubuntu-latest
+    services:
+      # The captured inbox the email tests read.
+      mailpit:
+        image: axllent/mailpit:latest
+        ports:
+          - 1025:1025
+          - 8025:8025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e services/solver && pip install -e "services/api[dev]"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            services/web/package-lock.json
+            e2e/package-lock.json
+      - run: npm ci
+        working-directory: services/web
+      - run: npm ci
+        working-directory: e2e
+      - name: e2e code checks
+        working-directory: e2e
+        run: npm run lint && npm run format:check
+      - run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - run: node e2e/scripts/seeded-rounds.mjs --rounds 2 --mailpit http://127.0.0.1:8025
+      - name: Keep the report, traces and server logs (never the logins)
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-seeded
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+            e2e/.out/**/*.log
+          retention-days: 7
+
+  e2e-install:
+    name: e2e (fresh install by the runbook, then seeded)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: npm ci
+        working-directory: e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - run: bash e2e/scripts/fresh-install.sh
+      - name: Keep the report and traces (never the logins)
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-install
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          retention-days: 7

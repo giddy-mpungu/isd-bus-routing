@@ -1533,7 +1533,8 @@ table input {
 
 .driver-run-roster-note {
   font-size: 0.78rem;
-  color: var(--gray-400);
+  /* --muted (gray-600): gray-400 was 2.5:1, under WCAG 1.4.3's 4.5:1. */
+  color: var(--muted);
   font-style: italic;
   margin: 0 0 0.5rem;
 }

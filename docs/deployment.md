@@ -77,8 +77,22 @@ a real domain, Let's Encrypt, and an internet-facing host.
    `docker-compose.prod.yml` for why):
 
    ```bash
-   openssl rand -base64 32 | tr -d '\n' > secrets/postgres_password.txt
+   openssl rand -hex 32 | tr -d '\n' > secrets/postgres_password.txt
    chmod 600 secrets/postgres_password.txt
+   ```
+
+   Hex, not base64: the same password goes inside the database URL in
+   step 4, where base64's `/` and `+` would need escaping (an unescaped
+   `/` breaks the connection string).
+
+   The backup service's encryption password is a secret file too, and
+   the stack won't start without it. **Store a copy in a password
+   manager, off this server**: without it no backup can ever be read
+   (see "Backups" below for where the backups go):
+
+   ```bash
+   openssl rand -hex 32 | tr -d '\n' > secrets/restic_password.txt
+   chmod 600 secrets/restic_password.txt
    ```
 
 4. **Create the real secrets file:**
@@ -184,6 +198,10 @@ and deletes older ones. Every Sunday it also restores the latest backup
 into a throwaway database to prove it works. These were the product
 owner's choices (2026-10-04).
 
+The two secret files stay `chmod 600`: the backup container starts as
+root only to copy them where its own `postgres` user alone can read them,
+then does everything else as that user (`services/backup/entrypoint.sh`).
+
 Set up before go-live:
 
 1. Create a bucket with any S3-compatible provider (Backblaze B2, about
@@ -191,13 +209,8 @@ Set up before go-live:
    limited to that bucket. Put `RESTIC_REPOSITORY`,
    `BACKUP_S3_ACCESS_KEY_ID` and `BACKUP_S3_SECRET_ACCESS_KEY` in `.env`
    (examples in `.env.prod.example`).
-2. Generate the encryption password, and **store a copy in a password
-   manager, off this server**. Without it, no backup can ever be read:
-
-   ```bash
-   openssl rand -hex 32 > secrets/restic_password.txt
-   ```
-
+2. The encryption password is `secrets/restic_password.txt`, made in
+   first-time setup step 3; check a copy is in your password manager.
 3. Start it and take the first backup by hand:
 
    ```bash
