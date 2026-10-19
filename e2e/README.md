@@ -46,11 +46,13 @@ the SIS is a fake started by the harness, `fakes/oneroster.mjs`):
 python dev/keycloak/make_realm.py http://localhost:8090
 docker run -d --name isd-e2e-mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 axllent/mailpit:latest
 docker run -d --name isd-keycloak -p 127.0.0.1:8180:8080 -v "$PWD/dev/keycloak/out:/opt/keycloak/data/import:ro" quay.io/keycloak/keycloak:26.3 start-dev --import-realm
-E2E_SSO_USERS=dev/keycloak/out/users.txt node e2e/scripts/seeded-rounds.mjs --rounds 1 --projects setup,integrations --mailpit http://127.0.0.1:8025 --oneroster --worker --api-env dev/keycloak/out/api-sso.env
+E2E_SSO_USERS=dev/keycloak/out/users.txt node e2e/scripts/seeded-rounds.mjs --rounds 1 --projects setup,integrations --mailpit http://127.0.0.1:8025 --oneroster --maps --worker --api-env dev/keycloak/out/api-sso.env
 ```
 
 `--api-env` adds the api's single sign-on settings from the realm script,
-`--oneroster` starts the fake roster server and points the api at it, and
+`--oneroster` starts the fake roster server and points the api at it,
+`--maps` does the same for the Census geocoder and OpenRouteService
+(`fakes/maps.mjs`, straight roads named after their stops), and
 `--worker` runs the background worker every 5 seconds. Without them, those
 tests skip.
 
@@ -110,6 +112,14 @@ bash e2e/scripts/fresh-install.sh --keep   # leaves it running at https://localh
      notice is emailed), signs in with a recovery code (which then doesn't
      work twice); the phone lost, an admin resets two-step sign-in, which
      signs them out, and they set it up again.
+  10. A route's stops: three put on Willow Creek's afternoon route, ordered
+      and timed by the planner and applied; the driver sees them in order
+      with the children at each (directions explain they need
+      OpenRouteService), and the family sees when the bus is due.
+  11. Stop proposals: new students' homes on file (one placed by hand on
+      the map), stops proposed for the school, a new one moved on the map
+      and approved, an existing one approved, one turned down; the
+      children get their stops.
 - `tests/integrations/` (outside systems):
   - Single sign-on with the district's identity provider (Keycloak): a
     driver gets straight in; a dispatcher still passes this system's
@@ -121,6 +131,12 @@ bash e2e/scripts/fresh-install.sh --keep   # leaves it running at https://localh
   - Bus-time emails: the worker emails a family when their child's bus
     time moves 10 minutes or more from the plan, and the email's link
     turns them off.
+  - Directions (OpenRouteService): the driver follows a route stop by
+    stop, with the bus's size and the district's flood-prone crossing sent;
+    dispatch closes a road at a stop, the driver is told, and the next
+    directions avoid it.
+  - Home addresses (US Census geocoder): an unknown address asks for a pin
+    on the map; a known one is matched; only the address is ever sent.
 
 Outputs go to `e2e/.out/` (gitignored): the run's generated logins, saved
 sessions and server logs. They're for a throwaway fictional district, but

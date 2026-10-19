@@ -147,6 +147,11 @@ class Settings(BaseSettings):
     ors_base_url: str = "https://api.openrouteservice.org"
     ors_profile: str = "driving-hgv"
 
+    # The US Census geocoder for student home addresses
+    # (isd_api/integrations/census_geocoder.py). Only the end-to-end tests
+    # point it elsewhere, at a stand-in (e2e/fakes/maps.mjs).
+    census_geocoder_url: str = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
+
     @field_validator(
         "smtp_host",
         "smtp_username",

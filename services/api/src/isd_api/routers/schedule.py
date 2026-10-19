@@ -1065,6 +1065,8 @@ def get_directions(
                 for c in in_force
             ],
             size_restrictions=_size_restrictions_for_schedule(db),
+            base_url=settings.ors_base_url,
+            profile=settings.ors_profile,
             language=lang,
         )
     except DirectionsError:

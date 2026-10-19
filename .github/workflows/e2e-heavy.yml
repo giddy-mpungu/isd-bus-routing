@@ -28,6 +28,9 @@ on:
       - services/api/src/isd_api/daily_trip.py
       - services/api/src/isd_api/mailer.py
       - services/api/src/isd_api/account_emails.py
+      # Maps: directions, road closures, the Census address lookup.
+      - services/solver/src/isd_solver/directions.py
+      - services/api/src/isd_api/closures.py
       - services/api/scripts/**
       - services/api/alembic/**
       - dev/keycloak/**
@@ -69,7 +72,7 @@ jobs:
           retention-days: 7
 
   integrations:
-    name: e2e (single sign-on, SIS sync, bus-time emails)
+    name: e2e (single sign-on, SIS sync, bus-time emails, maps)
     runs-on: ubuntu-latest
     services:
       mailpit:
@@ -110,7 +113,7 @@ jobs:
           curl -sf http://localhost:8180/realms/isd-dev/.well-known/openid-configuration >/dev/null
       - run: >-
           node e2e/scripts/seeded-rounds.mjs --rounds 1 --projects setup,integrations
-          --mailpit http://127.0.0.1:8025 --oneroster --worker
+          --mailpit http://127.0.0.1:8025 --oneroster --maps --worker
           --api-env dev/keycloak/out/api-sso.env
         env:
           E2E_SSO_USERS: ${{ github.workspace }}/dev/keycloak/out/users.txt
