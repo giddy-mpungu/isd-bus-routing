@@ -10,7 +10,15 @@
  * web build, so something that only works once shows up.
  *
  *   node e2e/scripts/seeded-rounds.mjs [--rounds 2] [--mailpit http://127.0.0.1:8025]
- *       [--python python3] [--skip-build] [-- extra playwright arguments]
+ *       [--python python3] [--skip-build] [--projects setup,seeded,journeys]
+ *       [--api-env FILE] [--oneroster] [--worker] [-- extra playwright arguments]
+ *
+ * For the outside-system tests (project `integrations`, e2e-heavy.yml):
+ * --api-env adds api settings from a KEY=VALUE file (single sign-on against
+ * a local Keycloak: dev/keycloak/out/api-sso.env); --oneroster starts the
+ * fake student information system (fakes/oneroster.mjs) and points the api
+ * at it; --worker runs the background worker every few seconds (bus-time
+ * emails).
  *
  * --mailpit: a running Mailpit (SMTP on port 1025 of the same host) for the
  * email tests; without it they're skipped. Needs Python with the api's
@@ -53,6 +61,10 @@ function parseArgs(argv) {
     mailpit: process.env.E2E_MAILPIT_URL || '',
     python: '',
     skipBuild: false,
+    projects: ['setup', 'seeded', 'journeys'],
+    apiEnv: '',
+    oneroster: false,
+    worker: false,
   }
   const extra = []
   for (let i = 0; i < argv.length; i++) {
@@ -62,6 +74,10 @@ function parseArgs(argv) {
     else if (arg === '--mailpit') options.mailpit = argv[++i]
     else if (arg === '--python') options.python = argv[++i]
     else if (arg === '--skip-build') options.skipBuild = true
+    else if (arg === '--projects') options.projects = argv[++i].split(',')
+    else if (arg === '--api-env') options.apiEnv = argv[++i]
+    else if (arg === '--oneroster') options.oneroster = true
+    else if (arg === '--worker') options.worker = true
     else extra.push(arg)
   }
   options.python ||= WINDOWS ? 'python' : 'python3'
@@ -129,6 +145,18 @@ async function waitFor(url, what, seconds = 60) {
   throw new Error(`${what} never answered ${url}`)
 }
 
+/** KEY=VALUE lines (comments and blanks skipped), as a .env file has them. */
+function readEnvFile(path) {
+  const env = {}
+  for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
+    const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/)
+    if (match) env[match[1]] = match[2].replace(/^"(.*)"$/, '$1')
+  }
+  return env
+}
+
+const ONEROSTER_PORT = 8099
+
 function apiEnv(database, mailpit) {
   const env = {
     ...process.env,
@@ -152,14 +180,33 @@ function apiEnv(database, mailpit) {
   return env
 }
 
-async function runRound(number, { mailpit, python }, extra) {
+async function runRound(number, options, extra) {
+  const { mailpit, python, projects, apiEnv: envFile, oneroster, worker } = options
   const out = join(E2E_DIR, '.out', 'seeded', `round${number}`)
   rmSync(out, { recursive: true, force: true })
   mkdirSync(out, { recursive: true })
   const work = mkdtempSync(join(tmpdir(), 'isd-e2e-'))
   const env = apiEnv(join(work, 'e2e.db'), mailpit)
+  if (envFile) Object.assign(env, readEnvFile(envFile))
   const servers = []
   try {
+    if (oneroster) {
+      step(`Round ${number}: the fake student information system`)
+      servers.push(
+        start(process.execPath, [join(E2E_DIR, 'fakes', 'oneroster.mjs'), String(ONEROSTER_PORT)], {
+          cwd: E2E_DIR,
+          env: process.env,
+          log: join(out, 'oneroster.log'),
+        }),
+      )
+      const sis = `http://127.0.0.1:${ONEROSTER_PORT}`
+      Object.assign(env, {
+        ISD_API_SIS_ONEROSTER_BASE_URL: `${sis}/ims/oneroster/v1p1`,
+        ISD_API_SIS_ONEROSTER_TOKEN_URL: `${sis}/token`,
+        ISD_API_SIS_ONEROSTER_CLIENT_ID: 'e2e-sis-client',
+        ISD_API_SIS_ONEROSTER_CLIENT_SECRET: 'e2e-sis-secret',
+      })
+    }
     step(`Round ${number}: an empty database, migrated`)
     must(run(python, ['-m', 'alembic', 'upgrade', 'head'], { cwd: API_DIR, env }), 'Migrations')
 
@@ -189,6 +236,17 @@ async function runRound(number, { mailpit, python }, extra) {
     if (again.code !== 3)
       throw new Error(`A second seed should exit 3 (seeded already), not ${again.code}`)
 
+    if (worker) {
+      step(`Round ${number}: the background worker`)
+      servers.push(
+        start(python, ['-m', 'isd_api.worker'], {
+          cwd: API_DIR,
+          env: { ...env, ISD_API_WORKER_INTERVAL_SECONDS: '5' },
+          log: join(out, 'worker.log'),
+        }),
+      )
+    }
+
     step(`Round ${number}: the web app`)
     servers.push(
       start(NPX, ['--no-install', 'vite', 'preview', '--port', String(WEB_PORT), '--strictPort'], {
@@ -206,9 +264,7 @@ async function runRound(number, { mailpit, python }, extra) {
         '--no-install',
         'playwright',
         'test',
-        '--project=setup',
-        '--project=seeded',
-        '--project=journeys',
+        ...projects.map((name) => `--project=${name}`),
         ...extra,
       ],
       {
@@ -218,6 +274,7 @@ async function runRound(number, { mailpit, python }, extra) {
           E2E_BASE_URL: WEB_URL,
           E2E_API_URL: API_URL,
           E2E_MAILPIT_URL: mailpit,
+          E2E_WORKER: worker ? '1' : '',
           E2E_OUT: out,
         },
       },

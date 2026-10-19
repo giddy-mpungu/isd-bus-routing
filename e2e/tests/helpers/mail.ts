@@ -12,9 +12,14 @@ export function needsMail() {
 
 interface Summary {
   ID: string
+  Created: string
   Subject: string
   To: { Address: string }[]
 }
+
+// Mail from an earlier run or round (another database, other links) is
+// never the one a test is waiting for; a little slack for the clocks.
+const STARTED = Date.now() - 5_000
 
 /** The newest message to `to` whose subject matches, waiting for it to arrive. */
 export async function waitForMail(to: string, subject: RegExp): Promise<{ text: string }> {
@@ -25,7 +30,10 @@ export async function waitForMail(to: string, subject: RegExp): Promise<{ text: 
         const response = await fetch(`${MAILPIT_URL}/api/v1/messages?limit=50`)
         const body = (await response.json()) as { messages: Summary[] }
         found = body.messages.find(
-          (m) => m.To.some((t) => t.Address === to) && subject.test(m.Subject),
+          (m) =>
+            Date.parse(m.Created) >= STARTED &&
+            m.To.some((t) => t.Address === to) &&
+            subject.test(m.Subject),
         )
         return found !== undefined
       },

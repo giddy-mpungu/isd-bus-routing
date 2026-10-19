@@ -59,6 +59,12 @@ services:
     # Anchored: the worker below runs with exactly the same settings.
     environment: &api-environment
       ISD_API_ENVIRONMENT: production
+      # The caller's real address, for sign-in rate limits: uvicorn takes
+      # it from the X-Forwarded-For header Caddy sets (Caddy replaces any
+      # the browser sent). Safe to trust from anywhere only because the
+      # api isn't published: just Caddy and this compose file's own
+      # containers can reach it.
+      FORWARDED_ALLOW_IPS: "*"
       # The full connection string, including the same password as
       # ./secrets/postgres_password.txt — one required opaque value
       # from .env, not assembled here (see the file header comment).

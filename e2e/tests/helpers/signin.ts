@@ -9,6 +9,13 @@ function savedSecrets(): Record<string, string> {
     : {}
 }
 
+/** The authenticator key this run set up for `email` (as the person's phone holds it). */
+export function mfaSecretFor(email: string): string {
+  const secret = savedSecrets()[email]
+  if (!secret) throw new Error(`${email} has two-step sign-in, but this run never set it up`)
+  return secret
+}
+
 function saveSecret(email: string, secret: string) {
   writeFileSync(mfaSecretsPath(), JSON.stringify({ ...savedSecrets(), [email]: secret }, null, 2))
 }
@@ -24,7 +31,14 @@ export async function signIn(page: Page, email: string, password: string): Promi
   await page.getByLabel('Email', { exact: true }).fill(email)
   await page.getByLabel('Password', { exact: true }).fill(password)
   await page.getByRole('button', { name: 'Sign in' }).click()
+  await finishSignIn(page, email)
+}
 
+/**
+ * After the first step (a password, or the district's single sign-on):
+ * the second step if the account needs one, ending on the home page.
+ */
+export async function finishSignIn(page: Page, email: string): Promise<void> {
   const home = page.getByRole('button', { name: 'Log out' })
   const setup = page.getByRole('heading', { name: 'Set up two-step sign-in' })
   const verify = page.getByRole('heading', { name: 'Two-step sign-in' })
@@ -38,9 +52,7 @@ export async function signIn(page: Page, email: string, password: string): Promi
     await expect(page.getByRole('region', { name: 'Recovery codes' })).toBeVisible()
     await page.getByRole('button', { name: "I've saved them" }).click()
   } else if (await verify.isVisible()) {
-    const secret = savedSecrets()[email]
-    if (!secret) throw new Error(`${email} has two-step sign-in, but this run never set it up`)
-    await page.getByLabel('Code').fill(await nextCode(secret))
+    await page.getByLabel('Code').fill(await nextCode(mfaSecretFor(email)))
     await page.getByRole('button', { name: 'Sign in' }).click()
   }
   await expect(home).toBeVisible()

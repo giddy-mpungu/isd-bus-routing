@@ -1,0 +1,126 @@
+name: End-to-end (install and integrations)
+
+# The two heaviest end-to-end jobs (e2e/README.md), kept out of ci.yml to
+# fit GitHub's free minutes for a private repository (2,000 a month): they
+# run on a PR only when it touches what they exercise, every Sunday, and on
+# demand (Actions tab, "Run workflow"). ci.yml's seeded end-to-end job still
+# runs on every PR.
+on:
+  pull_request:
+    paths:
+      # The install: compose files, images, the proxy, backups, the runbook.
+      - docker-compose*.yml
+      - Caddyfile
+      - .env.prod.example
+      - secrets/README.md
+      - docs/deployment.md
+      - services/*/Dockerfile
+      - services/backup/**
+      - services/web/nginx*
+      - services/web/scripts/**
+      # The integrations: sign-in, the SIS, the worker and its emails.
+      - services/api/src/isd_api/oidc.py
+      - services/api/src/isd_api/routers/sso.py
+      - services/api/src/isd_api/sis_*.py
+      - services/api/src/isd_api/integrations/**
+      - services/api/src/isd_api/worker.py
+      - services/api/src/isd_api/eta_notifications.py
+      - services/api/src/isd_api/daily_trip.py
+      - services/api/src/isd_api/mailer.py
+      - services/api/src/isd_api/account_emails.py
+      - services/api/scripts/**
+      - services/api/alembic/**
+      - dev/keycloak/**
+      # The tests themselves.
+      - e2e/**
+      - .github/workflows/e2e-heavy.yml
+  schedule:
+    - cron: "0 6 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-heavy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install:
+    name: e2e (fresh install by the runbook, then seeded)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: npm ci
+        working-directory: e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - run: bash e2e/scripts/fresh-install.sh
+      - name: Keep the report and traces (never the logins)
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-install
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          retention-days: 7
+
+  integrations:
+    name: e2e (single sign-on, SIS sync, bus-time emails)
+    runs-on: ubuntu-latest
+    services:
+      mailpit:
+        image: axllent/mailpit:latest
+        ports:
+          - 1025:1025
+          - 8025:8025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e services/solver && pip install -e "services/api[dev]"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            services/web/package-lock.json
+            e2e/package-lock.json
+      - run: npm ci
+        working-directory: services/web
+      - run: npm ci
+        working-directory: e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - name: The district's identity provider (Keycloak, a throwaway realm)
+        run: |
+          python dev/keycloak/make_realm.py http://localhost:8090
+          docker run -d --name isd-keycloak -p 127.0.0.1:8180:8080 \
+            -v "$PWD/dev/keycloak/out:/opt/keycloak/data/import:ro" \
+            quay.io/keycloak/keycloak:26.3 start-dev --import-realm
+          for i in $(seq 1 90); do
+            curl -sf http://localhost:8180/realms/isd-dev/.well-known/openid-configuration >/dev/null && break
+            sleep 2
+          done
+          curl -sf http://localhost:8180/realms/isd-dev/.well-known/openid-configuration >/dev/null
+      - run: >-
+          node e2e/scripts/seeded-rounds.mjs --rounds 1 --projects setup,integrations
+          --mailpit http://127.0.0.1:8025 --oneroster --worker
+          --api-env dev/keycloak/out/api-sso.env
+        env:
+          E2E_SSO_USERS: ${{ github.workspace }}/dev/keycloak/out/users.txt
+      - name: Keep the report, traces and server logs (never the logins)
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-integrations
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+            e2e/.out/**/*.log
+          retention-days: 7
