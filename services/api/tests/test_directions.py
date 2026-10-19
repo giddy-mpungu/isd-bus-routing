@@ -127,6 +127,20 @@ def test_directions_follow_todays_stops_with_the_buses_dimensions(
     assert [(p.lat, p.lon) for p in call["avoid_points"]] == [(29.73, -95.40)]
 
 
+def test_directions_use_the_configured_routing_server_and_profile(
+    client, admin_headers, db_session, ors, monkeypatch
+):
+    """A self-hosted OpenRouteService (ISD_API_ORS_BASE_URL) serves the
+    drivers' directions too, not only the scheduler's travel times."""
+    monkeypatch.setattr(schedule.settings, "ors_base_url", "http://ors.internal:8082/ors")
+    monkeypatch.setattr(schedule.settings, "ors_profile", "driving-car")
+    assignment, driver = _setup(client, admin_headers, db_session)
+    assert _directions(client, driver, assignment).status_code == 200
+    [call] = ors["calls"]
+    assert call["base_url"] == "http://ors.internal:8082/ors"
+    assert call["profile"] == "driving-car"
+
+
 def test_the_driver_can_start_from_where_they_are(client, admin_headers, db_session, ors):
     assignment, driver = _setup(client, admin_headers, db_session)
     body = _directions(client, driver, assignment, from_lat=29.8, from_lon=-95.5).json()

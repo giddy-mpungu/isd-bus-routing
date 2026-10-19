@@ -11,13 +11,14 @@
  *
  *   node e2e/scripts/seeded-rounds.mjs [--rounds 2] [--mailpit http://127.0.0.1:8025]
  *       [--python python3] [--skip-build] [--projects setup,seeded,journeys]
- *       [--api-env FILE] [--oneroster] [--worker] [-- extra playwright arguments]
+ *       [--api-env FILE] [--oneroster] [--maps] [--worker] [-- extra playwright arguments]
  *
  * For the outside-system tests (project `integrations`, e2e-heavy.yml):
  * --api-env adds api settings from a KEY=VALUE file (single sign-on against
  * a local Keycloak: dev/keycloak/out/api-sso.env); --oneroster starts the
  * fake student information system (fakes/oneroster.mjs) and points the api
- * at it; --worker runs the background worker every few seconds (bus-time
+ * at it; --maps starts the fake Census geocoder and OpenRouteService
+ * (fakes/maps.mjs) and points the api at them; --worker runs the background worker every few seconds (bus-time
  * emails).
  *
  * --mailpit: a running Mailpit (SMTP on port 1025 of the same host) for the
@@ -64,6 +65,7 @@ function parseArgs(argv) {
     projects: ['setup', 'seeded', 'journeys'],
     apiEnv: '',
     oneroster: false,
+    maps: false,
     worker: false,
   }
   const extra = []
@@ -77,6 +79,7 @@ function parseArgs(argv) {
     else if (arg === '--projects') options.projects = argv[++i].split(',')
     else if (arg === '--api-env') options.apiEnv = argv[++i]
     else if (arg === '--oneroster') options.oneroster = true
+    else if (arg === '--maps') options.maps = true
     else if (arg === '--worker') options.worker = true
     else extra.push(arg)
   }
@@ -156,6 +159,7 @@ function readEnvFile(path) {
 }
 
 const ONEROSTER_PORT = 8099
+const MAPS_PORT = 8098
 
 function apiEnv(database, mailpit) {
   const env = {
@@ -181,7 +185,8 @@ function apiEnv(database, mailpit) {
 }
 
 async function runRound(number, options, extra) {
-  const { mailpit, python, projects, apiEnv: envFile, oneroster, worker } = options
+  const { mailpit, python, projects, apiEnv: envFile, oneroster, maps, worker } = options
+  const mapsUrl = maps ? `http://127.0.0.1:${MAPS_PORT}` : ''
   const out = join(E2E_DIR, '.out', 'seeded', `round${number}`)
   rmSync(out, { recursive: true, force: true })
   mkdirSync(out, { recursive: true })
@@ -205,6 +210,21 @@ async function runRound(number, options, extra) {
         ISD_API_SIS_ONEROSTER_TOKEN_URL: `${sis}/token`,
         ISD_API_SIS_ONEROSTER_CLIENT_ID: 'e2e-sis-client',
         ISD_API_SIS_ONEROSTER_CLIENT_SECRET: 'e2e-sis-secret',
+      })
+    }
+    if (maps) {
+      step(`Round ${number}: the fake Census geocoder and OpenRouteService`)
+      servers.push(
+        start(process.execPath, [join(E2E_DIR, 'fakes', 'maps.mjs'), String(MAPS_PORT)], {
+          cwd: E2E_DIR,
+          env: process.env,
+          log: join(out, 'maps.log'),
+        }),
+      )
+      Object.assign(env, {
+        ISD_API_ORS_API_KEY: 'e2e-ors-key',
+        ISD_API_ORS_BASE_URL: `${mapsUrl}/ors`,
+        ISD_API_CENSUS_GEOCODER_URL: `${mapsUrl}/census/geocoder/locations/onelineaddress`,
       })
     }
     step(`Round ${number}: an empty database, migrated`)
@@ -275,6 +295,7 @@ async function runRound(number, options, extra) {
           E2E_API_URL: API_URL,
           E2E_MAILPIT_URL: mailpit,
           E2E_WORKER: worker ? '1' : '',
+          E2E_MAPS_URL: mapsUrl,
           E2E_OUT: out,
         },
       },

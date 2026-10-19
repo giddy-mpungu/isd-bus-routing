@@ -19,7 +19,8 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 
-ENDPOINT = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
+from isd_api.config import settings
+
 BENCHMARK = "Public_AR_Current"
 TIMEOUT_SECONDS = 10
 
@@ -62,4 +63,4 @@ def parse(payload: dict) -> GeocodeMatch | None:
 
 def geocode(address: str) -> GeocodeMatch | None:
     query = urllib.parse.urlencode({"address": address, "benchmark": BENCHMARK, "format": "json"})
-    return parse(_fetch_json(f"{ENDPOINT}?{query}"))
+    return parse(_fetch_json(f"{settings.census_geocoder_url}?{query}"))
