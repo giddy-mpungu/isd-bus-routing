@@ -10,6 +10,9 @@ const require = createRequire(import.meta.url)
  * readable lines; empty when there are none.
  */
 export async function axeViolations(page: Page): Promise<string[]> {
+  // Pages fade in (index.css, `rise`); checked mid-fade, text is fainter
+  // than anyone reads it.
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)))
   // Evaluated over the browser's devtools channel rather than added as a
   // <script>: the production Content-Security-Policy rightly blocks inline
   // scripts, and the page should keep its real policy while it's checked.

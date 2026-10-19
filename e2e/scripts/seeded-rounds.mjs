@@ -202,7 +202,15 @@ async function runRound(number, { mailpit, python }, extra) {
     step(`Round ${number}: browser tests as every role`)
     return run(
       NPX,
-      ['--no-install', 'playwright', 'test', '--project=setup', '--project=seeded', ...extra],
+      [
+        '--no-install',
+        'playwright',
+        'test',
+        '--project=setup',
+        '--project=seeded',
+        '--project=journeys',
+        ...extra,
+      ],
       {
         cwd: E2E_DIR,
         env: {

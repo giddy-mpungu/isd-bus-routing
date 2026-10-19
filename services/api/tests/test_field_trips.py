@@ -498,3 +498,39 @@ def test_observed_duration_requires_admin_or_dispatcher_role(client, admin_heade
         params={"destination": "State Science Museum"},
     )
     assert response.status_code == 403
+
+
+def test_a_bus_too_small_for_the_trip_is_a_conflict_and_cant_be_assigned(client, admin_headers):
+    """Spec section 15: never more passengers than the bus may carry (found
+    by the end-to-end field-trip journey: a 14-seat van took 38 students)."""
+    trip = client.post(
+        "/field-trips", headers=admin_headers, json=_trip_payload(passenger_count=38)
+    ).json()
+    van = client.post(
+        "/vehicles",
+        headers=admin_headers,
+        json={"label": "Van 03", "nominal_capacity": 14, "effective_capacity": 12},
+    ).json()
+    bus = client.post(
+        "/vehicles", headers=admin_headers, json={"label": "Bus 19", "nominal_capacity": 72}
+    ).json()
+
+    check = client.get(
+        f"/field-trips/{trip['id']}/conflicts",
+        headers=admin_headers,
+        params={"vehicle_id": van["id"]},
+    ).json()
+    assert "Vehicle Van 03 carries 12; this trip has 38 passengers" in check["conflicts"]
+    refused = client.patch(
+        f"/field-trips/{trip['id']}",
+        headers=admin_headers,
+        json={"status": "assigned", "assigned_vehicle_id": van["id"]},
+    )
+    assert refused.status_code == 409
+
+    roomy = client.get(
+        f"/field-trips/{trip['id']}/conflicts",
+        headers=admin_headers,
+        params={"vehicle_id": bus["id"]},
+    ).json()
+    assert roomy["conflicts"] == []
