@@ -3,14 +3,15 @@
 The whole system, driven in a real browser (Playwright, Chromium), the way
 people use it. Decided by the product owner on 2026-10-15: Playwright with
 Chromium; run on every PR; both a fresh install by the runbook and fresh
-seeded API + web rounds; everything covered.
+seeded API + web rounds; everything covered. Single sign-on included
+(2026-10-19), against a real Keycloak.
 
 Two harnesses start the system from nothing every time:
 
-| Harness                     | What it does                                                                                                                                                                                                                                                                                                                                                          | Projects                           |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| `scripts/fresh-install.sh`  | Follows `docs/deployment.md` step by step on a Linux host with Docker (code onto the host, secret files, `.env`, build and start, migrations, the first administrator, verify, the first backup and restore check). Round 1 tests the install itself; round 2 removes everything, volumes included, brings it up again, loads the demo district and tests every role. | `install`, then `setup` + `seeded` |
-| `scripts/seeded-rounds.mjs` | The real API (SQLite, migrated) and the production web build, the demo district loaded through the API, tested as every role; repeated (`--rounds`, 2 in CI) with nothing shared but the web build. Works on Windows, macOS and Linux.                                                                                                                                | `setup` + `seeded`                 |
+| Harness                     | What it does                                                                                                                                                                                                                                                                                                                                                          | Projects                                        |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `scripts/fresh-install.sh`  | Follows `docs/deployment.md` step by step on a Linux host with Docker (code onto the host, secret files, `.env`, build and start, migrations, the first administrator, verify, the first backup and restore check). Round 1 tests the install itself; round 2 removes everything, volumes included, brings it up again, loads the demo district and tests every role. | `install`, then `setup` + `seeded` + `journeys` |
+| `scripts/seeded-rounds.mjs` | The real API (SQLite, migrated) and the production web build, the demo district loaded through the API, tested as every role; repeated (`--rounds`, 2 in CI) with nothing shared but the web build. Works on Windows, macOS and Linux. With `--projects setup,integrations` and the outside systems (below), the integrations instead.                                | `setup` + `seeded` + `journeys`                 |
 
 The only differences from a real server: the install uses `localhost`
 (Caddy's own certificate instead of Let's Encrypt), mail goes to a captured
@@ -37,6 +38,27 @@ node e2e/scripts/seeded-rounds.mjs --rounds 1
 Add `--mailpit http://127.0.0.1:8025` with a Mailpit running to include the
 email tests, `--skip-build` to reuse the last web build, and Playwright
 arguments after `--` (for example `-- --headed` or `-- --grep driver`).
+
+The integrations with outside systems (Docker for Mailpit and Keycloak;
+the SIS is a fake started by the harness, `fakes/oneroster.mjs`):
+
+```bash
+python dev/keycloak/make_realm.py http://localhost:8090
+docker run -d --name isd-e2e-mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 axllent/mailpit:latest
+docker run -d --name isd-keycloak -p 127.0.0.1:8180:8080 -v "$PWD/dev/keycloak/out:/opt/keycloak/data/import:ro" quay.io/keycloak/keycloak:26.3 start-dev --import-realm
+E2E_SSO_USERS=dev/keycloak/out/users.txt node e2e/scripts/seeded-rounds.mjs --rounds 1 --projects setup,integrations --mailpit http://127.0.0.1:8025 --oneroster --worker --api-env dev/keycloak/out/api-sso.env
+```
+
+`--api-env` adds the api's single sign-on settings from the realm script,
+`--oneroster` starts the fake roster server and points the api at it, and
+`--worker` runs the background worker every 5 seconds. Without them, those
+tests skip.
+
+In CI the seeded rounds run on every PR (`ci.yml`). The fresh install and
+the integrations (`e2e-heavy.yml`) run on a PR that touches what they test
+(compose files, images, the runbook, sign-in, the SIS, the worker, mail,
+migrations, `e2e/`), every Sunday, and from the Actions tab ("Run
+workflow"), to stay within the free minutes for a private repository.
 
 The fresh install (Linux, or WSL, with Docker; ports 80, 443 and 8025
 free). It installs the code **as committed** (`git archive HEAD`), so commit
@@ -83,6 +105,22 @@ bash e2e/scripts/fresh-install.sh --keep   # leaves it running at https://localh
   7. An announcement reaching exactly its families and school; every report
      downloading as CSV.
   8. A sick day: needs cover, substitutes ranked, the spare driver assigned.
+  9. Account security: a new dispatcher sets up two-step sign-in, makes new
+     recovery codes, changes their password (the old one stops working, a
+     notice is emailed), signs in with a recovery code (which then doesn't
+     work twice); the phone lost, an admin resets two-step sign-in, which
+     signs them out, and they set it up again.
+- `tests/integrations/` (outside systems):
+  - Single sign-on with the district's identity provider (Keycloak): a
+    driver gets straight in; a dispatcher still passes this system's
+    two-step check (the provider didn't report one); someone the district
+    knows but this system doesn't is turned away.
+  - The SIS roster sync (OneRoster 1.1 behind an OAuth sign-in): a school
+    given its SIS id, "Sync now" brings in its two new students with their
+    SIS ids, and a second sync changes nothing.
+  - Bus-time emails: the worker emails a family when their child's bus
+    time moves 10 minutes or more from the plan, and the email's link
+    turns them off.
 
 Outputs go to `e2e/.out/` (gitignored): the run's generated logins, saved
 sessions and server logs. They're for a throwaway fictional district, but

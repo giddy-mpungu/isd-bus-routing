@@ -54,13 +54,15 @@ def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ) -> LoginResult:
-    login_rate_limiter.check(request.client.host if request.client else "unknown")
+    caller = request.client.host if request.client else "unknown"
+    login_rate_limiter.check_failures(caller)
     user = db.query(User).filter(User.email == form_data.username).one_or_none()
     if (
         user is None
         or not user.is_active
         or not verify_password(form_data.password, user.hashed_password)
     ):
+        login_rate_limiter.count_failure(caller)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",

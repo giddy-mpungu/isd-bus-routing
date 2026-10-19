@@ -143,18 +143,20 @@ def revoke_token(db: Session, token: str) -> None:
 
 
 class LoginRateLimiter:
-    """In-memory, per-process fixed-window limiter for POST /auth/login
-    (ADR 0006 follow-up: brute-force/credential-stuffing protection).
-    Counts all attempts — success or failure — per key within the
-    window; simpler than fail-only counting and still stops a
-    hammering script.
+    """In-memory, per-process fixed-window limiter (ADR 0006 follow-up:
+    brute-force/credential-stuffing protection). `check` counts every
+    attempt per key within the window. Signing in counts only failures
+    (`check_failures` / `count_failure`): a depot's drivers all signing
+    in at 6am from one Wi-Fi share an address, and their successful
+    sign-ins mustn't lock each other out, while a script guessing
+    passwords is still stopped.
 
     Deliberately in-process, not shared storage: this project's current
-    deployment (docker-compose.yml) runs a single uvicorn process with
-    no reverse proxy in front of it, so per-process state and
-    `request.client.host` both reflect the real caller. A future
-    multi-worker or behind-a-proxy deployment would need shared storage
-    and X-Forwarded-For handling — out of scope until that's real.
+    deployment runs a single uvicorn process, so per-process state is
+    the whole picture. Behind Caddy (docker-compose.prod.yml),
+    `request.client.host` is the real caller because uvicorn takes it
+    from the X-Forwarded-For header Caddy sets (FORWARDED_ALLOW_IPS
+    there). A multi-worker deployment would need shared storage.
     """
 
     def __init__(
@@ -183,10 +185,27 @@ class LoginRateLimiter:
 
     def check(self, key: str) -> None:
         if not self.allow(key):
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=self._message,
-            )
+            self._refuse()
+
+    def check_failures(self, key: str) -> None:
+        """Refuses once `key` has failed too often in the window, without
+        counting this attempt; pair with `count_failure`."""
+        now = datetime.now(UTC)
+        with self._lock:
+            recent = [t for t in self._attempts[key] if now - t < self._window]
+            self._attempts[key] = recent
+        if len(recent) >= self._max_attempts:
+            self._refuse()
+
+    def count_failure(self, key: str) -> None:
+        with self._lock:
+            self._attempts[key].append(datetime.now(UTC))
+
+    def _refuse(self) -> None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=self._message,
+        )
 
     def reset(self) -> None:
         """Test-only hook — this is process-global state, so tests must

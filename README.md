@@ -203,13 +203,19 @@ a new phrase goes in each `src/i18n/<language>.ts` or the build fails.
 See `docs/translation.md`.
 
 CI (`.github/workflows/ci.yml`) runs all of this for all three
-services on every PR and every push to `main` — run it locally before
-pushing so CI is confirmation, not discovery.
+services on every PR (and on demand) — run it locally before pushing so
+CI is confirmation, not discovery. Merging needs a green PR, so `main`
+isn't tested again on push: that keeps within GitHub's free 2,000
+minutes a month for a private repository.
 
 End-to-end tests (`e2e/`, Playwright) drive the whole system in a real
-browser: a fresh install that follows `docs/deployment.md` step by step,
-and fresh seeded API + web rounds, both on every PR. See `e2e/README.md`
-to run them locally (`node e2e/scripts/seeded-rounds.mjs --rounds 1`).
+browser. Fresh seeded API + web rounds, as every role, run on every PR.
+A fresh install that follows `docs/deployment.md` step by step, and the
+outside systems (single sign-on through a real Keycloak, the SIS roster
+sync, the worker's bus-time emails), run in
+`.github/workflows/e2e-heavy.yml`: on a PR that touches what they test,
+every Sunday, and on demand. See `e2e/README.md` to run them locally
+(`node e2e/scripts/seeded-rounds.mjs --rounds 1`).
 
 ## Non-negotiables (carried from spec)
 

@@ -108,10 +108,14 @@ def oidc_callback(
         or not secrets.compare_digest(state, str(saved.get("state", "")))
     ):
         return _failed("expired")
-    login_rate_limiter.check(request.client.host if request.client else "unknown")
+    # The provider checked the password; what's counted here is a code it
+    # won't accept (forged or replayed), as a failed sign-in from this address.
+    caller = request.client.host if request.client else "unknown"
+    login_rate_limiter.check_failures(caller)
     try:
         identity = oidc.finish(code, str(saved["nonce"]), str(saved["verifier"]))
     except oidc.OidcError as exc:
+        login_rate_limiter.count_failure(caller)
         logger.warning("SSO sign-in failed: %s", exc)
         return _failed(exc.code)
 

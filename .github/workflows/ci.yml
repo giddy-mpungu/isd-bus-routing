@@ -2,14 +2,24 @@ name: CI
 
 # Every check here is the same one a contributor is expected to run
 # locally before pushing (see the root README's "Development" section)
-# — this workflow just makes that non-optional. All three services run
-# on every push/PR regardless of which files changed: the repo is
-# small enough that this is simpler and safer than path filtering,
-# which risks silently skipping a check on a shared-file change.
+# — this workflow just makes that non-optional. Every job runs on every
+# PR regardless of which files changed: path filtering risks silently
+# skipping a check on a shared-file change. The heaviest end-to-end jobs
+# (a fresh install by the runbook, the outside-system integrations) are
+# in e2e-heavy.yml instead, on the files they exercise, weekly and on
+# demand.
+#
+# Minutes are limited (a private repository on GitHub's free plan, 2,000
+# a month): a PR's run is the check, and its merge to main isn't run again
+# (a pull_request run already tests the merge result); a newer push to a
+# branch cancels that branch's run still going.
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   solver:
@@ -192,27 +202,3 @@ jobs:
             e2e/.out/**/*.log
           retention-days: 7
 
-  e2e-install:
-    name: e2e (fresh install by the runbook, then seeded)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: e2e/package-lock.json
-      - run: npm ci
-        working-directory: e2e
-      - run: npx playwright install --with-deps chromium
-        working-directory: e2e
-      - run: bash e2e/scripts/fresh-install.sh
-      - name: Keep the report and traces (never the logins)
-        if: failure() || cancelled()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-install
-          path: |
-            e2e/playwright-report/
-            e2e/test-results/
-          retention-days: 7

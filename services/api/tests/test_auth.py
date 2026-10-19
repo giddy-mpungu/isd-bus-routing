@@ -114,16 +114,16 @@ def test_logout_clears_the_session_cookie(client, db_session):
     assert response.status_code == 401
 
 
-def test_login_rate_limits_after_too_many_attempts(client, db_session):
+def test_login_rate_limits_after_too_many_failed_attempts(client, db_session):
     make_user(db_session, email="a@example.org", role=Role.DISPATCHER, password="correct-horse")
 
     from isd_api.config import settings
 
     for _ in range(settings.login_rate_limit_attempts):
         response = client.post(
-            "/auth/login", data={"username": "a@example.org", "password": "correct-horse"}
+            "/auth/login", data={"username": "a@example.org", "password": "wrong-guess"}
         )
-        assert response.status_code == 200
+        assert response.status_code == 401
 
     # One more within the same window, even with fully correct
     # credentials, must be rejected as too many attempts, not logged in.
@@ -131,6 +131,18 @@ def test_login_rate_limits_after_too_many_attempts(client, db_session):
         "/auth/login", data={"username": "a@example.org", "password": "correct-horse"}
     )
     assert over_limit.status_code == 429
+
+
+def test_successful_sign_ins_from_one_address_never_lock_it_out(client, db_session):
+    """A depot's drivers all sign in from one Wi-Fi (one address) at 6am."""
+    from isd_api.config import settings
+
+    for n in range(settings.login_rate_limit_attempts * 3):
+        make_user(db_session, email=f"driver{n}@example.org", role=Role.DRIVER, password="pw-12345")
+        response = client.post(
+            "/auth/login", data={"username": f"driver{n}@example.org", "password": "pw-12345"}
+        )
+        assert response.status_code == 200
 
 
 def test_login_under_the_limit_is_unaffected(client, db_session):

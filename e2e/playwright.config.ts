@@ -15,6 +15,8 @@ import { defineConfig, devices } from '@playwright/test'
  *   setup    signs in once as every seeded role and saves the sessions
  *   seeded   every page as each role of the demo district (read-only)
  *   journeys each role's work end to end, after `seeded` (they change data)
+ *   integrations  outside systems: single sign-on, the SIS, the worker's
+ *            emails (e2e-heavy.yml; the harness starts what they need)
  */
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:4173'
 
@@ -42,5 +44,6 @@ export default defineConfig({
     { name: 'setup', testMatch: /seeded\/auth\.setup\.ts/ },
     { name: 'seeded', testMatch: /seeded\/.*\.spec\.ts/, dependencies: ['setup'] },
     { name: 'journeys', testMatch: /journeys\/.*\.spec\.ts/, dependencies: ['seeded'] },
+    { name: 'integrations', testMatch: /integrations\/.*\.spec\.ts/, dependencies: ['setup'] },
   ],
 })
