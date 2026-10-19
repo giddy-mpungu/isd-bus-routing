@@ -410,6 +410,13 @@ def _trip_conflicts(
 
     driver = db.get(Driver, driver_id) if driver_id is not None else None
     vehicle = db.get(Vehicle, vehicle_id) if vehicle_id is not None else None
+    # Spec section 15: never more passengers than the bus may carry.
+    capacity = vehicle.allowable_capacity() if vehicle is not None else None
+    if vehicle is not None and capacity is not None and trip.passenger_count > capacity:
+        blocking.append(
+            f"Vehicle {vehicle.label} carries {capacity}; this trip has "
+            f"{trip.passenger_count} passengers"
+        )
     if vehicle is not None and not vehicle.is_active:
         blocking.append(f"Vehicle {vehicle.label} is out of service")
     elif vehicle is not None:

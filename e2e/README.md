@@ -63,7 +63,26 @@ bash e2e/scripts/fresh-install.sh --keep   # leaves it running at https://localh
   A/AA in the real browser, contrast included; the family and driver pages
   in Spanish too.
 
-More journeys (each role's work end to end) build on these.
+- `tests/journeys/` (after the page checks; they change data, each with its
+  own people and buses):
+  1. A bus to the shop: a maintenance window, "Needs a bus", a spare
+     swapped in from the alert, the driver's tablet showing it, back in
+     service.
+  2. A driver's day: a run from Acknowledge to Complete, a defect report
+     that dispatch sees and marks fixed, a late-evening absence.
+  3. A family: a ride changed and back, the bus looked for, bus-time emails
+     off and on, records downloaded, a correction asked for and accepted
+     by the office.
+  4. A field trip: a van too small for the class refused, a free driver and
+     bus assigned.
+  5. Bell times imported (one row refused), a route following them, the
+     moved day re-run, the school admin seeing their bells.
+  6. Access: each role refused the staff console and the API endpoints it
+     isn't for; signed out, nothing opens; a student sees only their own
+     record.
+  7. An announcement reaching exactly its families and school; every report
+     downloading as CSV.
+  8. A sick day: needs cover, substitutes ranked, the spare driver assigned.
 
 Outputs go to `e2e/.out/` (gitignored): the run's generated logins, saved
 sessions and server logs. They're for a throwaway fictional district, but

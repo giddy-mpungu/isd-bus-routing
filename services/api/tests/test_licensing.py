@@ -353,7 +353,8 @@ def test_field_trips_refuse_an_unlicensed_driver_for_the_chosen_bus(client, admi
             "destination": "Festival",
             "departure_at": f"{DAY}T09:00:00",
             "expected_return_at": f"{DAY}T13:00:00",
-            "passenger_count": 40,
+            # Small enough for the van, so only the license decides.
+            "passenger_count": 10,
             "trip_contact": "Mr. Reyes",
         },
     ).json()

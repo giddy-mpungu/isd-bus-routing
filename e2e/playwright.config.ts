@@ -13,7 +13,8 @@ import { defineConfig, devices } from '@playwright/test'
  *   install  a first-time install by the runbook: the first administrator,
  *            security headers, mail (scripts/fresh-install.sh)
  *   setup    signs in once as every seeded role and saves the sessions
- *   seeded   everything else, as each role of the demo district
+ *   seeded   every page as each role of the demo district (read-only)
+ *   journeys each role's work end to end, after `seeded` (they change data)
  */
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:4173'
 
@@ -40,5 +41,6 @@ export default defineConfig({
     { name: 'install', testMatch: /install\/.*\.spec\.ts/ },
     { name: 'setup', testMatch: /seeded\/auth\.setup\.ts/ },
     { name: 'seeded', testMatch: /seeded\/.*\.spec\.ts/, dependencies: ['setup'] },
+    { name: 'journeys', testMatch: /journeys\/.*\.spec\.ts/, dependencies: ['seeded'] },
   ],
 })

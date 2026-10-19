@@ -167,6 +167,6 @@ step "Browser tests: every role in the demo district"
 cd "$E2E"
 E2E_BASE_URL=https://localhost E2E_API_URL=https://localhost/api \
   E2E_MAILPIT_URL=http://127.0.0.1:8025 E2E_OUT="$OUT/round2" \
-  npx --no-install playwright test --project=setup --project=seeded
+  npx --no-install playwright test --project=setup --project=seeded --project=journeys
 
 step "The fresh install passed both rounds"
