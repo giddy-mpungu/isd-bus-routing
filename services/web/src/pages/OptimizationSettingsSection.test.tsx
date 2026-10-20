@@ -19,6 +19,11 @@ const defaults = {
   deadhead_minutes_weight: 0,
   arrival_buffer_weight: 0,
   minimum_buffer_minutes: 0,
+  ride_time_weight: 0,
+  max_duty_minutes: null,
+  break_after_minutes: null,
+  break_minutes: null,
+  min_rest_minutes: null,
   is_default: true,
 }
 
@@ -43,6 +48,11 @@ describe('OptimizationSettingsSection', () => {
       deadhead_minutes_weight: 2,
       arrival_buffer_weight: 0,
       minimum_buffer_minutes: 10,
+      ride_time_weight: 0,
+      max_duty_minutes: null,
+      break_after_minutes: null,
+      break_minutes: null,
+      min_rest_minutes: null,
       is_default: false,
     })
     const user = userEvent.setup()
@@ -64,10 +74,48 @@ describe('OptimizationSettingsSection', () => {
         deadhead_minutes_weight: 2,
         arrival_buffer_weight: 0,
         minimum_buffer_minutes: 10,
+        ride_time_weight: 0,
+        max_duty_minutes: null,
+        break_after_minutes: null,
+        break_minutes: null,
+        min_rest_minutes: null,
       }),
     )
     expect(await screen.findByText(/apply the next time a schedule is solved/)).toBeInTheDocument()
     expect(screen.queryByText(/defaults are in effect/)).not.toBeInTheDocument()
+  })
+
+  it('sets driver work hours in hours, sent as minutes, and clears them', async () => {
+    vi.mocked(api.getOptimizationSettings).mockResolvedValue({
+      ...defaults,
+      max_duty_minutes: 600,
+      is_default: false,
+    })
+    vi.mocked(api.updateOptimizationSettings).mockImplementation(async (update) => ({
+      ...update,
+      is_default: false,
+    }))
+    const user = userEvent.setup()
+    render(<OptimizationSettingsSection canEdit />)
+    const duty = await screen.findByLabelText('Longest day on duty (hours)')
+    expect(duty).toHaveValue(10)
+
+    await user.type(screen.getByLabelText('Most work before a break (hours)'), '4.5')
+    await user.type(screen.getByLabelText('Shortest break (minutes)'), '30')
+    await user.type(screen.getByLabelText('Rest between days (hours)'), '10')
+    await user.clear(duty)
+    await user.click(screen.getByRole('button', { name: 'Save settings' }))
+
+    await waitFor(() =>
+      expect(api.updateOptimizationSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          max_duty_minutes: null,
+          break_after_minutes: 270,
+          break_minutes: 30,
+          min_rest_minutes: 600,
+        }),
+      ),
+    )
   })
 
   it('shows the API error when saving is rejected', async () => {

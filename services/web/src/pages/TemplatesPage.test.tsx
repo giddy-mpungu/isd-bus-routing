@@ -52,6 +52,9 @@ const vehicle: Vehicle = {
   width_m: null,
   height_m: null,
   weight_kg: null,
+  vehicle_type: null,
+  wheelchair_positions: null,
+  turning_radius_m: null,
   required_license_class: 'cdl_b',
   is_active: true,
   qualifications: [],
@@ -61,6 +64,7 @@ const lift: Qualification = {
   code: 'lift',
   kind: 'vehicle_capability',
   description: null,
+  takes_wheelchair_position: false,
   is_active: true,
 }
 

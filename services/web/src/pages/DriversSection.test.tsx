@@ -16,6 +16,7 @@ const cdlB: Qualification = {
   code: 'CDL_B',
   kind: 'license',
   description: null,
+  takes_wheelchair_position: false,
   is_active: true,
 }
 const driver: Driver = {

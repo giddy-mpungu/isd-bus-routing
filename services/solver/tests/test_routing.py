@@ -105,3 +105,25 @@ def test_the_straight_line_estimate_is_distance_times_a_detour_at_an_average_spe
         straight_line_travel_seconds(detour_factor=0.5)
     with pytest.raises(ValueError):
         plan_route(SCHOOL, [], direction="noon")  # type: ignore[arg-type]
+
+
+def test_weighting_ride_time_drops_the_crowded_stop_first():
+    """Spec section 2.2: with no weight the bus takes the fastest route; weighing
+    students' ride time, it serves the stop where most children wait first."""
+    school = Location(29.70, -95.40)
+    near_one = StopDemand(stop_id=1, location=Location(29.70, -95.39), riders=1)
+    far_ten = StopDemand(stop_id=2, location=Location(29.70, -95.415), riders=10)
+
+    fastest = plan_route(school, [near_one, far_ten], direction="pm")
+    assert [s.stop_id for s in fastest.stops] == [1, 2]
+
+    for direction in ("pm", "am"):
+        kinder = plan_route(school, [near_one, far_ten], direction=direction, ride_time_weight=1)
+        order = [s.stop_id for s in kinder.stops]
+        # Afternoon: drop the ten first. Morning: pick them up last.
+        assert order == ([2, 1] if direction == "pm" else [1, 2])
+
+
+def test_ride_time_weight_cant_be_negative():
+    with pytest.raises(ValueError):
+        plan_route(Location(29.7, -95.4), [], direction="am", ride_time_weight=-1)

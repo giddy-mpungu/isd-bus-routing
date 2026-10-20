@@ -77,6 +77,11 @@ def test_defaults_are_reported_when_nothing_is_saved(client, admin_headers):
         "deadhead_minutes_weight": 0,
         "arrival_buffer_weight": 0,
         "minimum_buffer_minutes": 0,
+        "ride_time_weight": 0,
+        "max_duty_minutes": None,
+        "break_after_minutes": None,
+        "break_minutes": None,
+        "min_rest_minutes": None,
         "is_default": True,
     }
 
@@ -89,6 +94,11 @@ def test_settings_round_trip_and_are_audited(client, admin_headers, db_session):
         "deadhead_minutes_weight": 3,
         "arrival_buffer_weight": 2,
         "minimum_buffer_minutes": 0,
+        "ride_time_weight": 0,
+        "max_duty_minutes": None,
+        "break_after_minutes": None,
+        "break_minutes": None,
+        "min_rest_minutes": None,
         "is_default": False,
     }
     assert (

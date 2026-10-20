@@ -59,6 +59,7 @@ from isd_api.models import (
     User,
     Vehicle,
 )
+from isd_api.routers.optimization_settings import load_min_rest_minutes, load_work_rules
 from isd_api.routers.vehicles import _resolve_qualifications
 from isd_api.schemas import (
     DestinationProfileRead,
@@ -70,6 +71,7 @@ from isd_api.schemas import (
     FieldTripUpdate,
 )
 from isd_api.security import require_role
+from isd_api.work_rules import day_problem, day_work, rest_problem
 
 router = APIRouter(prefix="/field-trips", tags=["field-trips"])
 
@@ -437,6 +439,24 @@ def _trip_conflicts(
                         f"({absence.reason.value.replace('_', ' ')}, "
                         f"{_hhmm(absence.start_minute)}-{_hhmm(absence.end_minute)})"
                     )
+
+    if driver is not None:
+        # Driver work-hour rules (spec section 2.1), on each day of the trip
+        # with the driver's other work that day. Routes the trip overlaps
+        # are left out: those go to another driver ("needs cover").
+        rules = load_work_rules(db)
+        min_rest = load_min_rest_minutes(db)
+        for day, start, end in windows:
+            work = [
+                (s, e)
+                for s, e in day_work(db, driver.id, day, exclude_trip_id=trip.id)
+                if not (s < end and start < e)
+            ]
+            problem = day_problem(
+                [*work, (start, end)], driver.max_continuous_minutes, rules
+            ) or rest_problem(db, driver.id, day, start, end, min_rest)
+            if problem is not None:
+                blocking.append(f"On {day}, {problem}")
 
     if driver is not None and vehicle is not None:
         unlicensed = license_violation(driver, vehicle)

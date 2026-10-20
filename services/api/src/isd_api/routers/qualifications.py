@@ -21,7 +21,10 @@ def create_qualification(
     if db.query(Qualification).filter(Qualification.code == payload.code).one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Code already exists")
     qualification = Qualification(
-        code=payload.code, kind=payload.kind, description=payload.description
+        code=payload.code,
+        kind=payload.kind,
+        description=payload.description,
+        takes_wheelchair_position=payload.takes_wheelchair_position,
     )
     db.add(qualification)
     db.commit()
@@ -55,9 +58,15 @@ def update_qualification(
     if qualification is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Qualification not found")
 
-    before_state = {"description": qualification.description, "is_active": qualification.is_active}
+    before_state = {
+        "description": qualification.description,
+        "takes_wheelchair_position": qualification.takes_wheelchair_position,
+        "is_active": qualification.is_active,
+    }
     if payload.description is not None:
         qualification.description = payload.description
+    if payload.takes_wheelchair_position is not None:
+        qualification.takes_wheelchair_position = payload.takes_wheelchair_position
     if payload.is_active is not None:
         qualification.is_active = payload.is_active
 
@@ -71,6 +80,7 @@ def update_qualification(
         before_state=before_state,
         after_state={
             "description": qualification.description,
+            "takes_wheelchair_position": qualification.takes_wheelchair_position,
             "is_active": qualification.is_active,
         },
     )

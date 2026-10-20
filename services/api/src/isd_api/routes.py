@@ -21,7 +21,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from isd_api.models import RideDirection, RidershipOverride, RouteStop, Run, Student
+from isd_api.models import RideDirection, RidershipOverride, RouteStop, Run, Student, Vehicle
 
 
 def leg_runs(
@@ -93,6 +93,37 @@ def expected_demand(db: Session, run: Run) -> int:
     entered count is known."""
     riders, ambiguous = riders_for_run(db, run)
     return run.passenger_count if ambiguous else max(run.passenger_count, len(riders))
+
+
+def wheelchair_demand(db: Session, run: Run) -> int:
+    """That day's riders pinned to the run who ride in their wheelchair (an
+    accommodation that takes a wheelchair position, spec section 6); 0
+    when the riders can't be attributed to one run."""
+    riders, ambiguous = riders_for_run(db, run)
+    if ambiguous:
+        return 0
+    return sum(1 for s in riders if any(q.takes_wheelchair_position for q in s.accommodations))
+
+
+def seat_problem(db: Session, run: Run, vehicle: Vehicle) -> str | None:
+    """Why `vehicle` can't carry the run's riders (seats, then wheelchair
+    positions; unknown counts fail closed), or None."""
+    demand = expected_demand(db, run)
+    seats = vehicle.allowable_capacity()
+    if demand > 0 and (seats is None or seats < demand):
+        return (
+            f"{vehicle.label} has {'an unknown number of' if seats is None else seats} "
+            f"seats for {demand} expected riders"
+        )
+    chairs = wheelchair_demand(db, run)
+    positions = vehicle.wheelchair_positions
+    if chairs > 0 and (positions is None or positions < chairs):
+        return (
+            f"{vehicle.label} has {'no recorded' if positions is None else positions} "
+            f"wheelchair position{'' if positions == 1 else 's'} for {chairs} "
+            f"rider{'' if chairs == 1 else 's'} in a wheelchair"
+        )
+    return None
 
 
 def riders_for_run(db: Session, run: Run) -> tuple[list[Student], bool]:

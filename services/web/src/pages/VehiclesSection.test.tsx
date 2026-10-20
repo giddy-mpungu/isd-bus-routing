@@ -16,6 +16,7 @@ const lift: Qualification = {
   code: 'lift',
   kind: 'vehicle_capability',
   description: null,
+  takes_wheelchair_position: false,
   is_active: true,
 }
 const vehicle: Vehicle = {
@@ -27,6 +28,9 @@ const vehicle: Vehicle = {
   width_m: 2.5,
   height_m: 3,
   weight_kg: 8000,
+  vehicle_type: null,
+  wheelchair_positions: null,
+  turning_radius_m: null,
   required_license_class: 'cdl_b',
   is_active: true,
   qualifications: [lift],
@@ -105,6 +109,9 @@ describe('VehiclesSection', () => {
         width_m: 2.5,
         height_m: 3,
         weight_kg: 8000,
+        vehicle_type: null,
+        wheelchair_positions: null,
+        turning_radius_m: null,
         required_license_class: 'cdl_b',
         qualification_codes: [],
       }),

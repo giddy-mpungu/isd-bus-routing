@@ -142,6 +142,22 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The message in an error response's `detail`: the API's own sentence, or
+ * for a form the server's validation refused, its first explanation
+ * (FastAPI sends those as a list), without pydantic's "Value error, ".
+ */
+function detailMessage(detail: unknown): string | null {
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first: unknown = detail[0]
+    if (first && typeof first === 'object' && 'msg' in first && typeof first.msg === 'string') {
+      return first.msg.replace(/^Value error, /, '')
+    }
+  }
+  return null
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -153,8 +169,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let detail = response.statusText
     try {
       const body: unknown = await response.json()
-      if (body && typeof body === 'object' && 'detail' in body && typeof body.detail === 'string') {
-        detail = body.detail
+      if (body && typeof body === 'object' && 'detail' in body) {
+        detail = detailMessage(body.detail) ?? detail
       }
     } catch {
       // No JSON body to read a detail message from — keep statusText.

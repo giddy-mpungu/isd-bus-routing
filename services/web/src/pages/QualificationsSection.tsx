@@ -21,6 +21,7 @@ export function QualificationsSection({
   const [code, setCode] = useState('')
   const [kind, setKind] = useState<QualificationKind>('license')
   const [description, setDescription] = useState('')
+  const [takesPosition, setTakesPosition] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [isSavingCreate, setIsSavingCreate] = useState(false)
 
@@ -29,9 +30,15 @@ export function QualificationsSection({
     setCreateError(null)
     setIsSavingCreate(true)
     try {
-      await api.createQualification({ code, kind, description: description || undefined })
+      await api.createQualification({
+        code,
+        kind,
+        description: description || undefined,
+        takes_wheelchair_position: kind === 'vehicle_capability' && takesPosition,
+      })
       setCode('')
       setDescription('')
+      setTakesPosition(false)
       await onChanged()
     } catch (err) {
       setCreateError(err instanceof ApiError ? err.message : 'Failed to create qualification.')
@@ -113,7 +120,8 @@ export function QualificationsSection({
             </li>
           ) : (
             <li key={q.id}>
-              {qualificationLabel(q)} ({q.kind}){' '}
+              {qualificationLabel(q)} ({q.kind})
+              {q.takes_wheelchair_position && ' — takes a wheelchair position'}{' '}
               {!q.is_active && <Badge tone="neutral">inactive</Badge>}
               {canEdit && (
                 <>
@@ -154,6 +162,16 @@ export function QualificationsSection({
             value={description}
             onChange={(event) => setDescription(event.target.value)}
           />
+          {kind === 'vehicle_capability' && (
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={takesPosition}
+                onChange={(event) => setTakesPosition(event.target.checked)}
+              />
+              Students who need this ride in their wheelchair (each takes a wheelchair position)
+            </label>
+          )}
           {createError && (
             <p role="alert" className="error">
               {createError}

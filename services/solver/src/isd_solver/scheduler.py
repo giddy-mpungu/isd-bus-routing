@@ -97,6 +97,44 @@ class ObjectiveWeights:
 
 
 @dataclass(frozen=True)
+class WorkRules:
+    """District driver work-hour rules (spec section 2.1: "driver
+    scheduling or work-hour rules"), each off when None. This codebase
+    asserts nothing about what any law requires; a district enters its own.
+
+    max_duty_minutes caps a crew's day from its first job's start to its
+    last job's end (combined with the driver's own max_continuous_minutes:
+    the lower applies). break_after_minutes and break_minutes, set
+    together, mean no stretch of work may last longer than
+    break_after_minutes without a free gap of at least break_minutes
+    (travel between jobs isn't free time). Rest between days is applied
+    by the caller, which narrows each crew's availability window.
+    """
+
+    max_duty_minutes: int | None = None
+    break_after_minutes: int | None = None
+    break_minutes: int | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("max_duty_minutes", "break_after_minutes", "break_minutes"):
+            value = getattr(self, name)
+            if value is not None and (isinstance(value, bool) or value <= 0):
+                raise ValueError(f"{name} must be a positive number of minutes, got {value!r}")
+        if (self.break_after_minutes is None) != (self.break_minutes is None):
+            raise ValueError("break_after_minutes and break_minutes go together")
+
+    @property
+    def breaks(self) -> bool:
+        return self.break_after_minutes is not None and self.break_minutes is not None
+
+
+def duty_limit(crew: Crew, rules: WorkRules) -> int | None:
+    """The tighter of the driver's own limit and the district's daily one."""
+    limits = [m for m in (crew.driver.max_continuous_minutes, rules.max_duty_minutes) if m]
+    return min(limits) if limits else None
+
+
+@dataclass(frozen=True)
 class Explanation:
     """Structured explanation for one assignment (spec section 21).
 
@@ -159,6 +197,7 @@ def solve_multi_school_schedule(
     num_search_workers: int = 8,
     weights: ObjectiveWeights | None = None,
     minimum_buffer_minutes: int = 0,
+    work_rules: WorkRules | None = None,
 ) -> SchedulingResult | InfeasibleResult:
     """Solve the multi-school crew scheduling problem (spec section 5).
 
@@ -173,6 +212,7 @@ def solve_multi_school_schedule(
     thread-pool startup overhead dominating the runtime.
     """
     weights = weights or ObjectiveWeights()
+    rules = work_rules or WorkRules()
     if minimum_buffer_minutes < 0:
         raise ValueError(f"minimum_buffer_minutes must be >= 0, got {minimum_buffer_minutes}")
     logger.info("Solving multi-school schedule: %d job(s), %d crew(s)", len(jobs), len(crews))
@@ -200,9 +240,10 @@ def solve_multi_school_schedule(
         duty_ok = [
             crew
             for crew in capacity_ok
-            if crew.driver.max_continuous_minutes is None
-            or job.total_occupied_minutes <= crew.driver.max_continuous_minutes
+            if (limit := duty_limit(crew, rules)) is None or job.total_occupied_minutes <= limit
         ]
+        if rules.breaks and job.total_occupied_minutes > (rules.break_after_minutes or 0):
+            duty_ok = []  # no crew can do it without breaking the rule
 
         if not duty_ok:
             reasons: list[str] = []
@@ -225,11 +266,23 @@ def solve_multi_school_schedule(
                     f"{job.passenger_count} expected passengers "
                     f"(checked crews and their allowable capacity: {under_capacity_ids})"
                 )
+                if job.wheelchair_riders > 0:
+                    positions = [(c.id, c.vehicle.wheelchair_positions) for c in qualified]
+                    reasons.append(
+                        f"or enough wheelchair positions for {job.wheelchair_riders} "
+                        f"(checked crews and their positions: {positions})"
+                    )
+            elif rules.breaks and job.total_occupied_minutes > (rules.break_after_minutes or 0):
+                reasons.append(
+                    f"this job alone ({job.total_occupied_minutes} min) is longer than the "
+                    f"district's {rules.break_after_minutes} minutes of work allowed before a break"
+                )
             else:
-                over_limit_ids = [(c.id, c.driver.max_continuous_minutes) for c in capacity_ok]
+                over_limit_ids = [(c.id, duty_limit(c, rules)) for c in capacity_ok]
                 reasons.append(
                     f"this job alone ({job.total_occupied_minutes} min) exceeds every "
                     "otherwise-eligible crew's driver's max_continuous_minutes limit "
+                    "or the district's daily duty limit "
                     f"(checked crews and their limits: {over_limit_ids})"
                 )
             reason = f"Job {job.id}: " + "; ".join(reasons) + "."
@@ -272,6 +325,22 @@ def solve_multi_school_schedule(
         model.AddExactlyOne(list(x[job.id].values()))
 
     crew_by_id = {crew.id: crew for crew in crews}
+
+    # Breaks (WorkRules): block_start[j] is the start of the stretch of
+    # work job j belongs to. Two jobs on one crew with less than
+    # break_minutes of free time between them share a stretch (so the
+    # later one's block_start is no later than the earlier one's); by
+    # transitivity that covers whole chains, and each job's end may be at
+    # most break_after_minutes after its stretch began.
+    block_start: dict[str, cp_model.IntVar] = {}
+    work_before_break = rules.break_after_minutes or 0
+    break_length = rules.break_minutes or 0
+    if rules.breaks:
+        for job in jobs:
+            var = model.NewIntVar(0, job.window.latest, f"block_start_{job.id}")
+            model.Add(var <= start_vars[job.id])
+            model.Add(end_vars[job.id] - var <= work_before_break)
+            block_start[job.id] = var
 
     # Pairwise ordering when two jobs share a crew: whichever comes
     # first must finish, plus deadhead travel time, before the other
@@ -320,7 +389,21 @@ def solve_multi_school_schedule(
                             ]
                         )
                         deadhead_cost_terms.append(cost * paid)
-                max_continuous = crew_by_id[crew_id].driver.max_continuous_minutes
+                if rules.breaks:
+                    for first, second, travel, direction in (
+                        (job_a, job_b, deadhead_ab, order),
+                        (job_b, job_a, deadhead_ba, order.Not()),
+                    ):
+                        joined = model.NewBoolVar(f"stretch_{first.id}_{second.id}_{crew_id}")
+                        # Not joined: a real break between them...
+                        model.Add(
+                            start_vars[second.id] - end_vars[first.id] - travel >= break_length
+                        ).OnlyEnforceIf(both + [direction, joined.Not()])
+                        # ...joined: one stretch of work.
+                        model.Add(block_start[second.id] <= block_start[first.id]).OnlyEnforceIf(
+                            both + [direction, joined]
+                        )
+                max_continuous = duty_limit(crew_by_id[crew_id], rules)
                 if max_continuous is not None:
                     model.Add(
                         end_vars[job_b.id] - start_vars[job_a.id] <= max_continuous
@@ -422,10 +505,15 @@ def solve_multi_school_schedule(
             checks.append(
                 f"vehicle capacity is sufficient for {job.passenger_count} expected passengers"
             )
-        max_continuous = crew_by_id[crew_id].driver.max_continuous_minutes
+        max_continuous = duty_limit(crew_by_id[crew_id], rules)
         if max_continuous is not None:
             checks.append(
                 f"the driver's continuous-duty limit ({max_continuous} min) is not exceeded"
+            )
+        if rules.breaks:
+            checks.append(
+                f"the driver gets a {rules.break_minutes}-minute break at least every "
+                f"{rules.break_after_minutes} minutes of work"
             )
         if crew_by_id[crew_id].busy_intervals:
             checks.append("it does not overlap this crew's other committed (locked) assignments")

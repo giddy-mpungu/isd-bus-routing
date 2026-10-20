@@ -1,9 +1,22 @@
 import { useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
-import type { LicenseClass, Qualification, Vehicle } from '../api/types'
+import type { LicenseClass, Qualification, Vehicle, VehicleType } from '../api/types'
 import { Badge } from '../components/Badge'
 import { LICENSE_CLASSES, LICENSE_LABELS } from '../licenses'
+
+const VEHICLE_TYPES: { value: VehicleType; label: string }[] = [
+  { value: 'type_a', label: 'Type A (small, van chassis)' },
+  { value: 'type_b', label: 'Type B' },
+  { value: 'type_c', label: 'Type C (conventional)' },
+  { value: 'type_d', label: 'Type D (transit style)' },
+  { value: 'van', label: 'Van' },
+  { value: 'other', label: 'Other' },
+]
+const TYPE_LABELS = Object.fromEntries(VEHICLE_TYPES.map((t) => [t.value, t.label])) as Record<
+  VehicleType,
+  string
+>
 
 function qualificationLabel(q: Qualification): string {
   return q.description ? `${q.code} — ${q.description}` : q.code
@@ -17,6 +30,9 @@ interface DraftFields {
   width_m: string
   height_m: string
   weight_kg: string
+  vehicle_type: VehicleType | ''
+  wheelchair_positions: string
+  turning_radius_m: string
   required_license_class: LicenseClass
   qualification_codes: Set<string>
 }
@@ -30,6 +46,9 @@ function draftFrom(v: Vehicle): DraftFields {
     width_m: v.width_m != null ? String(v.width_m) : '',
     height_m: v.height_m != null ? String(v.height_m) : '',
     weight_kg: v.weight_kg != null ? String(v.weight_kg) : '',
+    vehicle_type: v.vehicle_type ?? '',
+    wheelchair_positions: v.wheelchair_positions != null ? String(v.wheelchair_positions) : '',
+    turning_radius_m: v.turning_radius_m != null ? String(v.turning_radius_m) : '',
     required_license_class: v.required_license_class,
     qualification_codes: new Set(v.qualifications.map((q) => q.code)),
   }
@@ -58,6 +77,9 @@ export function VehiclesSection({
   const [width, setWidth] = useState('')
   const [height, setHeight] = useState('')
   const [weight, setWeight] = useState('')
+  const [vehicleType, setVehicleType] = useState<VehicleType | ''>('')
+  const [wheelchairPositions, setWheelchairPositions] = useState('')
+  const [turningRadius, setTurningRadius] = useState('')
   const [requiredLicense, setRequiredLicense] = useState<LicenseClass | ''>('')
   const [qualCodes, setQualCodes] = useState<Set<string>>(new Set())
   const [createError, setCreateError] = useState<string | null>(null)
@@ -88,6 +110,9 @@ export function VehiclesSection({
         width_m: width ? Number(width) : undefined,
         height_m: height ? Number(height) : undefined,
         weight_kg: weight ? Number(weight) : undefined,
+        vehicle_type: vehicleType || undefined,
+        wheelchair_positions: wheelchairPositions ? Number(wheelchairPositions) : undefined,
+        turning_radius_m: turningRadius ? Number(turningRadius) : undefined,
         qualification_codes: Array.from(qualCodes),
         required_license_class: requiredLicense || undefined,
       })
@@ -98,6 +123,9 @@ export function VehiclesSection({
       setWidth('')
       setHeight('')
       setWeight('')
+      setVehicleType('')
+      setWheelchairPositions('')
+      setTurningRadius('')
       setRequiredLicense('')
       setQualCodes(new Set())
       await onChanged()
@@ -153,6 +181,11 @@ export function VehiclesSection({
         width_m: draft.width_m ? Number(draft.width_m) : undefined,
         height_m: draft.height_m ? Number(draft.height_m) : undefined,
         weight_kg: draft.weight_kg ? Number(draft.weight_kg) : undefined,
+        vehicle_type: draft.vehicle_type || null,
+        wheelchair_positions: draft.wheelchair_positions
+          ? Number(draft.wheelchair_positions)
+          : null,
+        turning_radius_m: draft.turning_radius_m ? Number(draft.turning_radius_m) : null,
         qualification_codes: Array.from(draft.qualification_codes),
         required_license_class: draft.required_license_class,
       })
@@ -249,6 +282,42 @@ export function VehiclesSection({
                   value={draft.weight_kg}
                   onChange={(event) => setDraft({ ...draft, weight_kg: event.target.value })}
                 />
+                <label htmlFor={`vehicle-edit-type-${v.id}`}>Vehicle type</label>
+                <select
+                  id={`vehicle-edit-type-${v.id}`}
+                  value={draft.vehicle_type}
+                  onChange={(event) =>
+                    setDraft({ ...draft, vehicle_type: event.target.value as VehicleType | '' })
+                  }
+                >
+                  <option value="">Not recorded</option>
+                  {VEHICLE_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+                <label htmlFor={`vehicle-edit-wheelchair-${v.id}`}>Wheelchair positions</label>
+                <input
+                  id={`vehicle-edit-wheelchair-${v.id}`}
+                  type="number"
+                  min="0"
+                  max="20"
+                  value={draft.wheelchair_positions}
+                  onChange={(event) =>
+                    setDraft({ ...draft, wheelchair_positions: event.target.value })
+                  }
+                />
+                <label htmlFor={`vehicle-edit-turning-${v.id}`}>Turning radius (m)</label>
+                <input
+                  id={`vehicle-edit-turning-${v.id}`}
+                  type="number"
+                  step="any"
+                  min="0.1"
+                  max="40"
+                  value={draft.turning_radius_m}
+                  onChange={(event) => setDraft({ ...draft, turning_radius_m: event.target.value })}
+                />
                 <label htmlFor={`vehicle-edit-license-${v.id}`}>Required license</label>
                 <select
                   id={`vehicle-edit-license-${v.id}`}
@@ -297,6 +366,10 @@ export function VehiclesSection({
               {(v.length_m != null || v.width_m != null || v.height_m != null) &&
                 ` — ${v.length_m ?? '?'}m × ${v.width_m ?? '?'}m × ${v.height_m ?? '?'}m`}
               {v.weight_kg != null && ` — ${v.weight_kg}kg`}
+              {v.vehicle_type != null && ` — ${TYPE_LABELS[v.vehicle_type]}`}
+              {v.wheelchair_positions != null &&
+                ` — ${v.wheelchair_positions} wheelchair position${v.wheelchair_positions === 1 ? '' : 's'}`}
+              {v.turning_radius_m != null && ` — turns in ${v.turning_radius_m}m`}
               {v.qualifications.length > 0 &&
                 ` (${v.qualifications.map((q) => q.code).join(', ')})`}
               {!v.is_active && (
@@ -380,6 +453,38 @@ export function VehiclesSection({
             min="0.01"
             value={weight}
             onChange={(event) => setWeight(event.target.value)}
+          />
+          <label htmlFor="vehicle-type">Vehicle type (optional)</label>
+          <select
+            id="vehicle-type"
+            value={vehicleType}
+            onChange={(event) => setVehicleType(event.target.value as VehicleType | '')}
+          >
+            <option value="">Not recorded</option>
+            {VEHICLE_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+          <label htmlFor="vehicle-wheelchair-positions">Wheelchair positions (optional)</label>
+          <input
+            id="vehicle-wheelchair-positions"
+            type="number"
+            min="0"
+            max="20"
+            value={wheelchairPositions}
+            onChange={(event) => setWheelchairPositions(event.target.value)}
+          />
+          <label htmlFor="vehicle-turning-radius">Turning radius in meters (optional)</label>
+          <input
+            id="vehicle-turning-radius"
+            type="number"
+            step="any"
+            min="0.1"
+            max="40"
+            value={turningRadius}
+            onChange={(event) => setTurningRadius(event.target.value)}
           />
           <label htmlFor="vehicle-required-license">Required license</label>
           <select

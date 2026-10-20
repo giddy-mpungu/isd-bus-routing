@@ -27,6 +27,7 @@ from isd_api.models import (
     StopProposalKind,
     StopProposalStatus,
     TripStatus,
+    VehicleType,
 )
 
 
@@ -174,6 +175,9 @@ class QualificationCreate(BaseModel):
     code: str
     kind: QualificationKind
     description: str | None = None
+    # Vehicle capabilities only: students needing it ride in a wheelchair
+    # and take one of the bus's wheelchair positions.
+    takes_wheelchair_position: bool = False
 
 
 class QualificationRead(BaseModel):
@@ -182,6 +186,7 @@ class QualificationRead(BaseModel):
     code: str
     kind: QualificationKind
     description: str | None = None
+    takes_wheelchair_position: bool = False
     is_active: bool = True
 
 
@@ -192,6 +197,7 @@ class QualificationUpdate(BaseModel):
     driver/vehicle was actually granted), not a technical limit."""
 
     description: str | None = None
+    takes_wheelchair_position: bool | None = None
     is_active: bool | None = None
 
 
@@ -229,6 +235,9 @@ class VehicleCreate(BaseModel):
     width_m: float | None = Field(default=None, gt=0)
     height_m: float | None = Field(default=None, gt=0)
     weight_kg: float | None = Field(default=None, gt=0)
+    vehicle_type: VehicleType | None = None
+    wheelchair_positions: int | None = Field(default=None, ge=0, le=20)
+    turning_radius_m: float | None = Field(default=None, gt=0, le=40)
     qualification_codes: list[str] = Field(default_factory=list)
     # None = infer from capacity (15+ passengers needs CDL B).
     required_license_class: LicenseClass | None = None
@@ -244,6 +253,9 @@ class VehicleRead(BaseModel):
     width_m: float | None
     height_m: float | None
     weight_kg: float | None
+    vehicle_type: VehicleType | None = None
+    wheelchair_positions: int | None = None
+    turning_radius_m: float | None = None
     required_license_class: LicenseClass
     is_active: bool = True
     qualifications: list[QualificationRead]
@@ -262,6 +274,9 @@ class VehicleUpdate(BaseModel):
     width_m: float | None = Field(default=None, gt=0)
     height_m: float | None = Field(default=None, gt=0)
     weight_kg: float | None = Field(default=None, gt=0)
+    vehicle_type: VehicleType | None = None
+    wheelchair_positions: int | None = Field(default=None, ge=0, le=20)
+    turning_radius_m: float | None = Field(default=None, gt=0, le=40)
     required_license_class: LicenseClass | None = None
     qualification_codes: list[str] | None = None
     is_active: bool | None = None
@@ -778,6 +793,18 @@ class OptimizationSettingsBase(BaseModel):
     # one crew, after travel. A hard constraint, not a weight: a schedule
     # that can't meet it is rejected rather than built tight.
     minimum_buffer_minutes: int = Field(default=0, ge=0, le=120)
+    # Route planning (spec section 2.2): weight on students' ride time
+    # against the bus's own time; 0 plans the fastest route.
+    ride_time_weight: int = Field(default=0, ge=0, le=10)
+    # Driver work-hour rules (spec section 2.1); leave empty for none.
+    # max_duty_minutes: first start to last end in a day.
+    max_duty_minutes: int | None = Field(default=None, ge=60, le=1440)
+    # No more than break_after_minutes of work without a free gap of at
+    # least break_minutes (travel between runs doesn't count). Together.
+    break_after_minutes: int | None = Field(default=None, ge=30, le=1440)
+    break_minutes: int | None = Field(default=None, ge=5, le=240)
+    # Off between one day's last run and the next day's first.
+    min_rest_minutes: int | None = Field(default=None, ge=60, le=1440)
 
     @model_validator(mode="after")
     def _at_least_one_positive(self) -> OptimizationSettingsBase:
@@ -785,6 +812,8 @@ class OptimizationSettingsBase(BaseModel):
             self.crews_used_weight or self.deadhead_minutes_weight or self.arrival_buffer_weight
         ):
             raise ValueError("at least one objective weight must be greater than zero")
+        if (self.break_after_minutes is None) != (self.break_minutes is None):
+            raise ValueError("set both the work allowed before a break and the break's length")
         return self
 
 

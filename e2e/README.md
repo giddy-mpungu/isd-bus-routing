@@ -120,6 +120,9 @@ bash e2e/scripts/fresh-install.sh --keep   # leaves it running at https://localh
       the map), stops proposed for the school, a new one moved on the map
       and approved, an existing one approved, one turned down; the
       children get their stops.
+  12. Fleet and work rules: Bus 12's type, wheelchair positions and turning
+      radius recorded; the district's work-hour rules set, refused without
+      both break numbers, and cleared.
 - `tests/integrations/` (outside systems):
   - Single sign-on with the district's identity provider (Keycloak): a
     driver gets straight in; a dispatcher still passes this system's

@@ -279,6 +279,7 @@ const lift: Qualification = {
   code: 'wheelchair_lift',
   kind: 'vehicle_capability',
   description: 'Wheelchair lift',
+  takes_wheelchair_position: false,
   is_active: true,
 }
 const licence: Qualification = {
@@ -286,5 +287,6 @@ const licence: Qualification = {
   code: 'cdl_b',
   kind: 'license',
   description: 'CDL B',
+  takes_wheelchair_position: false,
   is_active: true,
 }

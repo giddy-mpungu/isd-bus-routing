@@ -55,13 +55,16 @@ route window). Trips (spec §12) will extend this in a later phase.
   (below) — `DeadheadEstimator` now takes a `Vehicle` argument, and
   the scheduler's pairwise-ordering loop calls it once per (job-pair,
   crew) so each crew's actual dimensions are used, not shared across
-  every candidate crew. Deliberately not persisting turning radius (no
-  ORS HGV restriction parameter could consume it), wheelchair
-  configuration (already modeled via the `qualifications`
-  capability-tag system above), vehicle type (no per-vehicle ORS
-  profile switching exists), or "applicable road restrictions" (that's
-  what height/width/weight restrictions already express at the
-  routing-provider level).
+  every candidate crew.
+- `vehicle_type` (US school bus Type A–D, van, other), `wheelchair_positions`
+  and `turning_radius_m` (spec §6, recorded since the October review).
+  Wheelchair positions are a second capacity: a run's riders whose
+  accommodation tag is marked `takes_wheelchair_position` (on the
+  `Qualification`, e.g. "wheelchair") each need one, checked by the
+  solver, manual reassignment, spare-bus offers and the `over_capacity`
+  alert (`routes.wheelchair_demand`, `routes.seat_problem`), failing
+  closed when positions aren't recorded. Turning radius is stored for
+  §7's routing engine; nothing reads it yet.
 
 ### Driver
 - `id`
@@ -74,9 +77,23 @@ route window). Trips (spec §12) will extend this in a later phase.
   by the scheduler as a hard constraint (`scheduler.py`): a crew's
   driver never has a duty span (first assigned job's start to last
   assigned job's end) exceeding this limit. Phase 1 approximation: the
-  whole span counts as one continuous duty period — a gap between two
-  jobs isn't yet recognized as a qualifying break that would reset the
-  limit. Real break-aware modeling is a future enhancement.
+  whole span counts as one continuous duty period, so in practice it
+  is a daily duty limit for this driver.
+- District work-hour rules (`OptimizationSettings`, Setup → Rules &
+  optimization; spec §2.1), each off until the district sets it
+  (product owner, 2026-10-19), and again no claim about any law:
+  `max_duty_minutes` (a daily duty span; the tighter of it and the
+  driver's own limit applies), `break_after_minutes` +
+  `break_minutes` (no stretch of work longer than the first without a
+  free gap of at least the second; travel between runs isn't free
+  time), and `min_rest_minutes` between one day's last work and the
+  next day's first. The solver enforces duty and breaks exactly
+  (`isd_solver.WorkRules`: each job carries the start of its stretch,
+  and jobs closer than a break share one); rest narrows each crew's
+  availability window from its neighbouring days
+  (`isd_api/work_rules.py`), which also re-checks all four for a
+  manual reassignment and a field-trip assignment (by the clock, since
+  travel isn't known there).
 
 ### Crew
 - `id`
@@ -1082,7 +1099,11 @@ students stay within their ride limit (in the morning from reaching their
 stop to reaching school; in the afternoon from leaving school to finishing
 their stop). With no order that meets every limit, it returns the fastest
 order and names the stops that break it. Deterministic (greedy descent
-after the cheapest-arc first solution).
+after the cheapest-arc first solution). With the district's
+`ride_time_weight` (Setup → Rules & optimization, spec §2.2; default 0)
+it also weighs every student's seconds on the bus against the bus's own,
+through soft bounds on the time dimension, so stops with more children
+come closer to school.
 
 - Time at a stop (spec section 16): 60 s, plus 15 s per student, plus
   180 s per student with an accommodation (a lift, an aide).
