@@ -35,6 +35,7 @@ from isd_api.models import (
     User,
     Vehicle,
 )
+from isd_api.routers.optimization_settings import load_ride_time_weight
 from isd_api.routers.vehicles import _resolve_qualifications
 from isd_api.schemas import (
     CrewTemplateCreate,
@@ -334,6 +335,7 @@ def plan_route_stops(
         Location(template.school.location_lat, template.school.location_lon),
         demands,
         direction=template.direction.value,
+        ride_time_weight=load_ride_time_weight(db),
     )
 
     labels = {rs.stop_id: rs.stop.label for rs in template.stops}

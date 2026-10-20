@@ -64,6 +64,18 @@ class QualificationKind(enum.StrEnum):
     VEHICLE_CAPABILITY = "vehicle_capability"
 
 
+class VehicleType(enum.StrEnum):
+    """Spec section 6's vehicle type: the US school bus types (A smallest,
+    on a van chassis, to D, a transit-style bus), or a van or other."""
+
+    TYPE_A = "type_a"
+    TYPE_B = "type_b"
+    TYPE_C = "type_c"
+    TYPE_D = "type_d"
+    VAN = "van"
+    OTHER = "other"
+
+
 class LicenseClass(enum.StrEnum):
     """Spec section 1: "class A & B CDL, and Class C Non-CDL Drivers".
     Tiered; see isd_api/licensing.py."""
@@ -185,6 +197,11 @@ class Qualification(Base):
         SAEnum(QualificationKind, native_enum=False, length=32), nullable=False
     )
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # A vehicle capability whose students ride in their wheelchair, so each
+    # takes one of the bus's wheelchair positions (spec section 6).
+    takes_wheelchair_position: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=sa_false()
+    )
     # A retired qualification code: hidden from future assignment (driver/
     # vehicle/run/template qualification pickers), never hard-deleted --
     # existing many-to-many rows referencing it by id stay meaningful.
@@ -611,6 +628,13 @@ class Vehicle(Base):
     width_m: Mapped[float | None] = mapped_column(nullable=True)
     height_m: Mapped[float | None] = mapped_column(nullable=True)
     weight_kg: Mapped[float | None] = mapped_column(nullable=True)
+    # Spec section 6's vehicle profile, recorded by the district.
+    vehicle_type: Mapped[VehicleType | None] = mapped_column(
+        SAEnum(VehicleType, native_enum=False, length=16), nullable=True
+    )
+    wheelchair_positions: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Recorded now; used once routing can avoid tight turns (spec section 7).
+    turning_radius_m: Mapped[float | None] = mapped_column(nullable=True)
     # A retired/out-of-service vehicle: hidden from future crew-creation
     # dropdowns, but never hard-deleted -- existing Crew/Assignment/
     # FieldTrip/CrewTemplate rows referencing it, and everything derived
@@ -1345,6 +1369,18 @@ class OptimizationSettings(Base):
     # Spec section 16: a hard floor on spare time between consecutive runs
     # on one crew, after travel. 0 = no floor beyond each run's own buffer.
     minimum_buffer_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    # Driver work-hour rules (spec section 2.1), each off when null: the
+    # district enters its own (product owner, 2026-10-19). See
+    # isd_solver.WorkRules and isd_api/work_rules.py.
+    max_duty_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    break_after_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    break_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    min_rest_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Spec section 2.2, route planning: students' minutes on the bus
+    # against the bus's own minutes (0 = the fastest route).
+    ride_time_weight: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
     updated_at: Mapped[datetime] = mapped_column(

@@ -28,6 +28,50 @@ const FIELDS: {
   },
 ]
 
+// Spec section 2.1: driver work-hour rules, entered by the district (this
+// system asserts nothing about what any law requires). Empty means no rule.
+const WORK_RULES: {
+  key: 'max_duty_minutes' | 'break_after_minutes' | 'break_minutes' | 'min_rest_minutes'
+  label: string
+  unit: 'hours' | 'minutes'
+  help: string
+}[] = [
+  {
+    key: 'max_duty_minutes',
+    label: 'Longest day on duty (hours)',
+    unit: 'hours',
+    help: "From a driver's first run to the end of their last.",
+  },
+  {
+    key: 'break_after_minutes',
+    label: 'Most work before a break (hours)',
+    unit: 'hours',
+    help: 'Driving between runs counts as work.',
+  },
+  {
+    key: 'break_minutes',
+    label: 'Shortest break (minutes)',
+    unit: 'minutes',
+    help: 'Set together with the work allowed before a break.',
+  },
+  {
+    key: 'min_rest_minutes',
+    label: 'Rest between days (hours)',
+    unit: 'hours',
+    help: "From the end of one day's work to the start of the next.",
+  },
+]
+
+function shown(minutes: number | null, unit: 'hours' | 'minutes'): string {
+  if (minutes === null) return ''
+  return unit === 'hours' ? String(Math.round((minutes / 60) * 100) / 100) : String(minutes)
+}
+
+function entered(value: string | undefined, unit: 'hours' | 'minutes'): number | null {
+  if (value === undefined || value.trim() === '') return null
+  return unit === 'hours' ? Math.round(Number(value) * 60) : Math.round(Number(value))
+}
+
 export function OptimizationSettingsSection({ canEdit }: { canEdit: boolean }) {
   const [saved, setSaved] = useState<OptimizationSettings | null>(null)
   const [values, setValues] = useState<Record<string, string>>({})
@@ -44,6 +88,8 @@ export function OptimizationSettingsSection({ canEdit }: { canEdit: boolean }) {
         deadhead_minutes_weight: String(settings.deadhead_minutes_weight),
         arrival_buffer_weight: String(settings.arrival_buffer_weight),
         minimum_buffer_minutes: String(settings.minimum_buffer_minutes),
+        ride_time_weight: String(settings.ride_time_weight),
+        ...Object.fromEntries(WORK_RULES.map((r) => [r.key, shown(settings[r.key], r.unit)])),
       })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load optimization settings.')
@@ -65,6 +111,11 @@ export function OptimizationSettingsSection({ canEdit }: { canEdit: boolean }) {
         deadhead_minutes_weight: Number(values.deadhead_minutes_weight),
         arrival_buffer_weight: Number(values.arrival_buffer_weight),
         minimum_buffer_minutes: Number(values.minimum_buffer_minutes),
+        ride_time_weight: Number(values.ride_time_weight),
+        max_duty_minutes: entered(values.max_duty_minutes, 'hours'),
+        break_after_minutes: entered(values.break_after_minutes, 'hours'),
+        break_minutes: entered(values.break_minutes, 'minutes'),
+        min_rest_minutes: entered(values.min_rest_minutes, 'hours'),
       })
       setSaved(updated)
       setMessage('Settings saved. They apply the next time a schedule is solved.')
@@ -135,6 +186,53 @@ export function OptimizationSettingsSection({ canEdit }: { canEdit: boolean }) {
               reported as unschedulable instead of being built too tight. 0 turns it off.
             </small>
           </div>
+          <div>
+            <label htmlFor="opt-ride_time_weight">Student ride time (route planning)</label>
+            <input
+              id="opt-ride_time_weight"
+              type="number"
+              min="0"
+              max="10"
+              step="1"
+              value={values.ride_time_weight ?? ''}
+              onChange={(event) =>
+                setValues((prev) => ({ ...prev, ride_time_weight: event.target.value }))
+              }
+              disabled={!canEdit}
+              required
+            />
+            <small>
+              When &quot;Plan order and times&quot; orders a route&apos;s stops: 0 plans the fastest
+              route; 1 counts each student&apos;s minute on the bus like a minute of the bus&apos;s
+              own time, so stops with more children come closer to school.
+            </small>
+          </div>
+          <fieldset className="work-rules">
+            <legend>Driver work hours</legend>
+            <p>
+              Rules the schedule must keep, from your district&apos;s policy or state law. Leave a
+              box empty for no rule. They also apply when a run is moved by hand and when a driver
+              is given a field trip.
+            </p>
+            {WORK_RULES.map((rule) => (
+              <div key={rule.key}>
+                <label htmlFor={`opt-${rule.key}`}>{rule.label}</label>
+                <input
+                  id={`opt-${rule.key}`}
+                  type="number"
+                  min={rule.unit === 'hours' ? '0.5' : '5'}
+                  max={rule.unit === 'hours' ? '24' : '240'}
+                  step={rule.unit === 'hours' ? '0.25' : '5'}
+                  value={values[rule.key] ?? ''}
+                  onChange={(event) =>
+                    setValues((prev) => ({ ...prev, [rule.key]: event.target.value }))
+                  }
+                  disabled={!canEdit}
+                />
+                <small>{rule.help}</small>
+              </div>
+            ))}
+          </fieldset>
           {canEdit ? (
             <button type="submit" disabled={isSaving}>
               {isSaving ? 'Saving…' : 'Save settings'}

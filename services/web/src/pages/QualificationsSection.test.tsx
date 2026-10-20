@@ -16,6 +16,7 @@ const qualification: Qualification = {
   code: 'lift',
   kind: 'vehicle_capability',
   description: 'Wheelchair lift',
+  takes_wheelchair_position: false,
   is_active: true,
 }
 const onChanged = vi.fn().mockResolvedValue(undefined)

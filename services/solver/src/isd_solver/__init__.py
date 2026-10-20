@@ -48,6 +48,8 @@ from isd_solver.scheduler import (
     InfeasibleResult,
     ObjectiveWeights,
     SchedulingResult,
+    WorkRules,
+    duty_limit,
     solve_multi_school_schedule,
 )
 
@@ -72,6 +74,8 @@ __all__ = [
     "InfeasibleResult",
     "ObjectiveWeights",
     "SchedulingResult",
+    "WorkRules",
+    "duty_limit",
     "solve_multi_school_schedule",
     "PlannedStop",
     "RoutePlan",

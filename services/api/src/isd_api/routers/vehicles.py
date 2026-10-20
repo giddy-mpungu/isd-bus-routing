@@ -41,6 +41,9 @@ def create_vehicle(
         width_m=payload.width_m,
         height_m=payload.height_m,
         weight_kg=payload.weight_kg,
+        vehicle_type=payload.vehicle_type,
+        wheelchair_positions=payload.wheelchair_positions,
+        turning_radius_m=payload.turning_radius_m,
         qualifications=_resolve_qualifications(db, payload.qualification_codes),
         required_license_class=payload.required_license_class
         or infer_required_class(payload.nominal_capacity, payload.effective_capacity),
@@ -87,6 +90,9 @@ def update_vehicle(
         "width_m": vehicle.width_m,
         "height_m": vehicle.height_m,
         "weight_kg": vehicle.weight_kg,
+        "vehicle_type": vehicle.vehicle_type.value if vehicle.vehicle_type else None,
+        "wheelchair_positions": vehicle.wheelchair_positions,
+        "turning_radius_m": vehicle.turning_radius_m,
         "is_active": vehicle.is_active,
         "qualification_codes": sorted(q.code for q in vehicle.qualifications),
         "required_license_class": vehicle.required_license_class.value,
@@ -106,6 +112,9 @@ def update_vehicle(
         vehicle.height_m = payload.height_m
     if payload.weight_kg is not None:
         vehicle.weight_kg = payload.weight_kg
+    for name in ("vehicle_type", "wheelchair_positions", "turning_radius_m"):
+        if name in payload.model_fields_set:
+            setattr(vehicle, name, getattr(payload, name))
     if payload.is_active is not None:
         vehicle.is_active = payload.is_active
     if payload.required_license_class is not None:
@@ -129,6 +138,9 @@ def update_vehicle(
             "width_m": vehicle.width_m,
             "height_m": vehicle.height_m,
             "weight_kg": vehicle.weight_kg,
+            "vehicle_type": vehicle.vehicle_type.value if vehicle.vehicle_type else None,
+            "wheelchair_positions": vehicle.wheelchair_positions,
+            "turning_radius_m": vehicle.turning_radius_m,
             "is_active": vehicle.is_active,
             "qualification_codes": sorted(q.code for q in vehicle.qualifications),
             "required_license_class": vehicle.required_license_class.value,

@@ -156,7 +156,7 @@ def test_more_riders_after_scheduling_raise_an_alert_and_bigger_buses_are_offere
     [over] = [a for a in alerts if a["kind"] == "over_capacity"]
     assert over["severity"] == "critical"
     assert over["entity_id"] == assignment["id"]
-    assert "3 expected and 2 seats" in over["message"]
+    assert "Van 3 has 2 seats for 3 expected riders" in over["message"]
 
     # Spare buses: big enough only, and never one of unknown size.
     for label, seats in (("Bus 7", 40), ("Van 5", 2), ("Bus 9", None)):
@@ -165,3 +165,83 @@ def test_more_riders_after_scheduling_raise_an_alert_and_bigger_buses_are_offere
     spares = client.get(f"/assignments/{assignment['id']}/spare-vehicles", headers=h)
     assert spares.status_code == 200, spares.text
     assert [s["label"] for s in spares.json()["spares"]] == ["Bus 7"]
+
+
+def test_a_vehicles_type_wheelchair_positions_and_turning_radius_are_kept(client, admin_headers):
+    h = admin_headers
+    vehicle = client.post(
+        "/vehicles",
+        headers=h,
+        json={
+            "label": "Bus 12",
+            "nominal_capacity": 40,
+            "vehicle_type": "type_c",
+            "wheelchair_positions": 2,
+            "turning_radius_m": 12.5,
+        },
+    ).json()
+    assert (vehicle["vehicle_type"], vehicle["wheelchair_positions"]) == ("type_c", 2)
+    updated = client.patch(
+        f"/vehicles/{vehicle['id']}",
+        headers=h,
+        json={"vehicle_type": "type_d", "wheelchair_positions": None},
+    ).json()
+    assert updated["vehicle_type"] == "type_d"
+    assert updated["wheelchair_positions"] is None
+    assert updated["turning_radius_m"] == 12.5
+
+
+def test_a_rider_in_a_wheelchair_needs_a_bus_with_a_position(client, admin_headers, clock):
+    h = admin_headers
+    client.post(
+        "/qualifications",
+        headers=h,
+        json={
+            "code": "wheelchair",
+            "kind": "vehicle_capability",
+            "takes_wheelchair_position": True,
+        },
+    )
+    school = _school(client, h)
+    client.post(
+        "/students",
+        headers=h,
+        json={
+            "full_name": "Rider in a wheelchair",
+            "school_id": school["id"],
+            "accommodation_codes": ["wheelchair"],
+        },
+    )
+
+    def crew(label, positions):
+        driver = client.post(
+            "/drivers", headers=h, json={"full_name": f"Driver {label}", "license_class": "cdl_a"}
+        ).json()
+        body = {"label": label, "nominal_capacity": 40, "qualification_codes": ["wheelchair"]}
+        if positions is not None:
+            body["wheelchair_positions"] = positions
+        vehicle = client.post("/vehicles", headers=h, json=body).json()
+        return client.post(
+            "/crews",
+            headers=h,
+            json={
+                "service_date": DAY,
+                "driver_id": driver["id"],
+                "vehicle_id": vehicle["id"],
+                "available_window_earliest": 360,
+                "available_window_latest": 1000,
+            },
+        ).json()
+
+    unrecorded = crew("Bus 7", None)
+    _run(client, h, school)
+    assert "enough wheelchair positions for 1" in _refused(client, h)
+
+    with_one = crew("Bus 12", 1)
+    [assignment] = _solve(client, h)["assignments"]
+    assert assignment["crew_id"] == with_one["id"]
+    response = client.patch(
+        f"/schedule/assignments/{assignment['id']}", headers=h, json={"crew_id": unrecorded["id"]}
+    )
+    assert response.status_code == 422
+    assert "wheelchair position(s) for 1 rider(s) in a wheelchair" in response.json()["detail"]

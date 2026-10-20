@@ -65,7 +65,7 @@ from isd_api.models import (
     Vehicle,
     VehiclePosition,
 )
-from isd_api.routes import expected_demand
+from isd_api.routes import seat_problem
 
 # Unacknowledged work this close to its start is flagged.
 ACK_WARNING_MINUTES = 30
@@ -244,15 +244,13 @@ def day_alerts(db: Session, service_date: date, now: datetime | None = None) -> 
                 )
             )
         if a.status not in TERMINAL:
-            demand = expected_demand(db, a.run)
-            seats = a.crew.vehicle.allowable_capacity()
-            if demand > 0 and (seats is None or seats < demand):
+            short = seat_problem(db, a.run, a.crew.vehicle)
+            if short is not None:
                 alerts.append(
                     Alert(
                         "over_capacity",
                         CRITICAL,
-                        f"Too many riders: {label} has {demand} expected and "
-                        f"{'an unknown number of' if seats is None else seats} seats. "
+                        f"Too many riders: {label}: {short}. "
                         "Swap in a bigger bus or run the schedule again.",
                         "assignment",
                         a.id,

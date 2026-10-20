@@ -65,6 +65,9 @@ export interface Qualification {
   code: string
   kind: QualificationKind
   description: string | null
+  // Vehicle capabilities: students needing it ride in their wheelchair and
+  // take one of the bus's wheelchair positions (spec section 6).
+  takes_wheelchair_position: boolean
   is_active: boolean
 }
 
@@ -91,10 +94,16 @@ export interface Vehicle {
   width_m: number | null
   height_m: number | null
   weight_kg: number | null
+  vehicle_type: VehicleType | null
+  wheelchair_positions: number | null
+  turning_radius_m: number | null
   required_license_class: LicenseClass
   is_active: boolean
   qualifications: Qualification[]
 }
+
+// Spec section 6: US school bus types A (smallest) to D, a van, or other.
+export type VehicleType = 'type_a' | 'type_b' | 'type_c' | 'type_d' | 'van' | 'other'
 
 export interface Run {
   id: number
@@ -145,6 +154,15 @@ export interface OptimizationSettingsUpdate {
   // Spec section 16: a hard floor on spare minutes between consecutive
   // runs on one crew, after travel. 0 = none.
   minimum_buffer_minutes: number
+  // Route planning (spec section 2.2): students' ride time against the
+  // bus's own time; 0 = the fastest route.
+  ride_time_weight: number
+  // Spec section 2.1: driver work-hour rules, each null (off) until the
+  // district sets it. Minutes.
+  max_duty_minutes: number | null
+  break_after_minutes: number | null
+  break_minutes: number | null
+  min_rest_minutes: number | null
 }
 
 // Spec section 4.4: district ridership reporting rules.
@@ -252,6 +270,7 @@ export interface QualificationCreate {
   code: string
   kind: QualificationKind
   description?: string
+  takes_wheelchair_position?: boolean
 }
 
 export interface QualificationUpdate {
@@ -282,6 +301,9 @@ export interface VehicleCreate {
   width_m?: number
   height_m?: number
   weight_kg?: number
+  vehicle_type?: VehicleType
+  wheelchair_positions?: number
+  turning_radius_m?: number
   qualification_codes: string[]
   // Omitted = inferred from capacity (15+ passengers needs CDL B).
   required_license_class?: LicenseClass
@@ -295,6 +317,10 @@ export interface VehicleUpdate {
   width_m?: number
   height_m?: number
   weight_kg?: number
+  // null clears these three.
+  vehicle_type?: VehicleType | null
+  wheelchair_positions?: number | null
+  turning_radius_m?: number | null
   qualification_codes?: string[]
   is_active?: boolean
   required_license_class?: LicenseClass

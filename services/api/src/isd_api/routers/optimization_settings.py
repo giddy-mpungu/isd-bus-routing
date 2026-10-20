@@ -7,7 +7,7 @@ result in their terms); only a transportation administrator changes them.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from isd_solver import ObjectiveWeights
+from isd_solver import ObjectiveWeights, WorkRules
 from sqlalchemy.orm import Session
 
 from isd_api.audit import record as record_audit
@@ -40,13 +40,43 @@ def load_minimum_buffer_minutes(db: Session) -> int:
     return 0 if row is None else row.minimum_buffer_minutes
 
 
+def load_work_rules(db: Session) -> WorkRules:
+    """The district's driver work-hour rules for the solver (all off by default)."""
+    row = db.get(OptimizationSettings, _SETTINGS_ID)
+    if row is None:
+        return WorkRules()
+    return WorkRules(
+        max_duty_minutes=row.max_duty_minutes,
+        break_after_minutes=row.break_after_minutes,
+        break_minutes=row.break_minutes,
+    )
+
+
+def load_ride_time_weight(db: Session) -> int:
+    """Route planning's weight on students' ride time (0 = fastest route)."""
+    row = db.get(OptimizationSettings, _SETTINGS_ID)
+    return 0 if row is None else row.ride_time_weight
+
+
+def load_min_rest_minutes(db: Session) -> int | None:
+    """Minutes off required between a driver's days (None = no rule)."""
+    row = db.get(OptimizationSettings, _SETTINGS_ID)
+    return None if row is None else row.min_rest_minutes
+
+
 def _read(db: Session) -> OptimizationSettingsRead:
     weights = load_objective_weights(db)
+    rules = load_work_rules(db)
     return OptimizationSettingsRead(
         crews_used_weight=weights.crews_used,
         deadhead_minutes_weight=weights.deadhead_minutes,
         arrival_buffer_weight=weights.arrival_buffer,
         minimum_buffer_minutes=load_minimum_buffer_minutes(db),
+        ride_time_weight=load_ride_time_weight(db),
+        max_duty_minutes=rules.max_duty_minutes,
+        break_after_minutes=rules.break_after_minutes,
+        break_minutes=rules.break_minutes,
+        min_rest_minutes=load_min_rest_minutes(db),
         is_default=db.get(OptimizationSettings, _SETTINGS_ID) is None,
     )
 
@@ -74,6 +104,11 @@ def update_optimization_settings(
     row.deadhead_minutes_weight = payload.deadhead_minutes_weight
     row.arrival_buffer_weight = payload.arrival_buffer_weight
     row.minimum_buffer_minutes = payload.minimum_buffer_minutes
+    row.ride_time_weight = payload.ride_time_weight
+    row.max_duty_minutes = payload.max_duty_minutes
+    row.break_after_minutes = payload.break_after_minutes
+    row.break_minutes = payload.break_minutes
+    row.min_rest_minutes = payload.min_rest_minutes
     db.flush()
     record_audit(
         db,

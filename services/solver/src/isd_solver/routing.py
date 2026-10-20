@@ -106,6 +106,8 @@ def _solve(
     limits: list[tuple[int, int]],
     direction: str,
     time_limit_seconds: int,
+    riders: list[int] | None = None,
+    ride_time_weight: int = 0,
 ) -> list[tuple[int, int]] | None:
     """[(node, arrival seconds)] along the best route, or None."""
     n = len(nodes)
@@ -134,6 +136,25 @@ def _solve(
                 time.CumulVar(index) + dwell[node] - time.CumulVar(model.Start(0)) <= limit_seconds
             )
 
+    if ride_time_weight > 0 and riders:
+        # Students' ride time, weighted against the route's own time (the
+        # arc cost). The route starts at time 0, so in the afternoon a
+        # stop's ride is its arrival time (plus dwell, a constant), and in
+        # the morning it's the school arrival minus the stop's arrival:
+        # the end weighted by everyone, less each stop by its riders.
+        time.CumulVar(model.Start(0)).SetValue(0)
+        everyone = sum(riders)
+        if direction == "am":
+            time.SetCumulVarSoftUpperBound(model.End(0), 0, ride_time_weight * everyone)
+        for node, count in enumerate(riders):
+            if count <= 0:
+                continue
+            index = manager.NodeToIndex(node)
+            if direction == "am":
+                time.SetCumulVarSoftLowerBound(index, 24 * 3600, ride_time_weight * count)
+            else:
+                time.SetCumulVarSoftUpperBound(index, 0, ride_time_weight * count)
+
     params = pywrapcp.DefaultRoutingSearchParameters()
     params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
     # Deterministic: the same stops always give the same plan.
@@ -159,7 +180,14 @@ def plan_route(
     direction: Literal["am", "pm"],
     travel_seconds: TravelSeconds | None = None,
     time_limit_seconds: int = 5,
+    ride_time_weight: int = 0,
 ) -> RoutePlan:
+    """The stop order and times for one route. ride_time_weight (spec
+    section 2.2) weighs each student's minutes on the bus against the
+    bus's own minutes: 0, the default, is simply the fastest route; 1
+    counts a student-minute like a bus-minute."""
+    if ride_time_weight < 0:
+        raise ValueError("ride_time_weight must be >= 0")
     if direction not in ("am", "pm"):
         raise ValueError("direction must be 'am' or 'pm'")
     if not stops:
@@ -179,10 +207,33 @@ def plan_route(
         if s.max_ride_minutes is not None
     ]
 
-    visits = _solve(nodes, dwell, start, end, travel, limits, direction, time_limit_seconds)
+    riders = [s.riders for s in ordered_input] + [0, 0]
+    visits = _solve(
+        nodes,
+        dwell,
+        start,
+        end,
+        travel,
+        limits,
+        direction,
+        time_limit_seconds,
+        riders,
+        ride_time_weight,
+    )
     ride_limits_met = visits is not None
     if visits is None:
-        visits = _solve(nodes, dwell, start, end, travel, [], direction, time_limit_seconds)
+        visits = _solve(
+            nodes,
+            dwell,
+            start,
+            end,
+            travel,
+            [],
+            direction,
+            time_limit_seconds,
+            riders,
+            ride_time_weight,
+        )
     if visits is None:  # pragma: no cover - an unconstrained tour always exists
         raise RuntimeError("no route found")
 

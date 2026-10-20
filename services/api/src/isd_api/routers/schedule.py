@@ -72,11 +72,13 @@ from isd_api.ridership_rules import district_now as ridership_district_now
 from isd_api.ridership_rules import load_rules as ridership_rules_load
 from isd_api.routers.announcements import _maybe_create_substitution_announcement
 from isd_api.routers.optimization_settings import (
+    load_min_rest_minutes,
     load_minimum_buffer_minutes,
     load_objective_weights,
+    load_work_rules,
 )
 from isd_api.routers.runs import _resolve_riding_students
-from isd_api.routes import expected_demand
+from isd_api.routes import expected_demand, wheelchair_demand
 from isd_api.schemas import (
     AssignmentRead,
     AssignmentStatusUpdate,
@@ -93,6 +95,7 @@ from isd_api.schemas import (
 )
 from isd_api.school_etas import LATE_MINUTES, school_eta
 from isd_api.security import get_current_user, require_role
+from isd_api.work_rules import day_problem, day_work, rest_problem, rest_window
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
 
@@ -243,10 +246,23 @@ def _to_solver_inputs(
             ),
             required_vehicle_qualifications=frozenset(q.code for q in r.required_qualifications),
             passenger_count=expected_demand(db, r),
+            wheelchair_riders=wheelchair_demand(db, r),
         )
         for r in db_runs
     ]
 
+    min_rest = load_min_rest_minutes(db)
+    windows = {
+        c.id: rest_window(
+            db,
+            c.driver_id,
+            service_date,
+            c.available_window_earliest,
+            c.available_window_latest,
+            min_rest,
+        )
+        for c in db_crews
+    }
     crews = [
         SolverCrew(
             id=str(c.id),
@@ -264,10 +280,10 @@ def _to_solver_inputs(
                 width_m=c.vehicle.width_m,
                 height_m=c.vehicle.height_m,
                 weight_kg=c.vehicle.weight_kg,
+                wheelchair_positions=c.vehicle.wheelchair_positions,
             ),
-            available_window=SolverTimeWindow(
-                earliest=c.available_window_earliest, latest=c.available_window_latest
-            ),
+            # Narrowed for the district's rest between days, if set.
+            available_window=SolverTimeWindow(earliest=windows[c.id][0], latest=windows[c.id][1]),
         )
         for c in db_crews
     ]
@@ -307,6 +323,13 @@ def _hard_constraint_violation(
                 f"Crew {crew.id}'s vehicle capacity ({capacity}) is insufficient for "
                 f"{demand} expected passenger(s)"
             )
+    chairs = wheelchair_demand(db, run)
+    positions = crew.vehicle.wheelchair_positions
+    if chairs > 0 and (positions is None or positions < chairs):
+        return (
+            f"Crew {crew.id}'s vehicle has {positions} wheelchair position(s) for "
+            f"{chairs} rider(s) in a wheelchair"
+        )
 
     if start_minute > end_minute:
         return f"start_minute ({start_minute}) must be <= end_minute ({end_minute})"
@@ -346,6 +369,21 @@ def _hard_constraint_violation(
                 f"{other.end_minute}) would leave less than the district's minimum "
                 f"buffer of {gap} minutes between runs"
             )
+
+    # Driver work-hour rules (spec section 2.1): the driver's limit and the
+    # district's, on the driver's whole day with this run in it.
+    work = day_work(
+        db, crew.driver_id, run.service_date, exclude_assignment_id=exclude_assignment_id
+    )
+    problem = day_problem(
+        [*work, (start_minute, end_minute)],
+        crew.driver.max_continuous_minutes,
+        load_work_rules(db),
+    ) or rest_problem(
+        db, crew.driver_id, run.service_date, start_minute, end_minute, load_min_rest_minutes(db)
+    )
+    if problem is not None:
+        return f"Crew {crew.id}: {problem}"
 
     return None
 
@@ -471,6 +509,7 @@ def run_schedule(
         estimator,
         weights=load_objective_weights(db),
         minimum_buffer_minutes=minimum_buffer,
+        work_rules=load_work_rules(db),
     )
 
     if isinstance(result, InfeasibleResult):

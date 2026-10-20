@@ -62,6 +62,7 @@ const licenseQual: Qualification = {
   code: 'CDL_B',
   kind: 'license',
   description: null,
+  takes_wheelchair_position: false,
   is_active: true,
 }
 const vehicleQual: Qualification = {
@@ -69,6 +70,7 @@ const vehicleQual: Qualification = {
   code: 'lift',
   kind: 'vehicle_capability',
   description: 'Wheelchair lift',
+  takes_wheelchair_position: false,
   is_active: true,
 }
 const driver: Driver = {
@@ -88,6 +90,9 @@ const vehicle: Vehicle = {
   width_m: null,
   height_m: null,
   weight_kg: null,
+  vehicle_type: null,
+  wheelchair_positions: null,
+  turning_radius_m: null,
   required_license_class: 'cdl_b',
   is_active: true,
   qualifications: [],
@@ -113,6 +118,11 @@ function mockLoad() {
     deadhead_minutes_weight: 0,
     arrival_buffer_weight: 0,
     minimum_buffer_minutes: 0,
+    ride_time_weight: 0,
+    max_duty_minutes: null,
+    break_after_minutes: null,
+    break_minutes: null,
+    min_rest_minutes: null,
     is_default: true,
   })
   vi.mocked(api.getRidershipRules).mockResolvedValue({

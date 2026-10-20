@@ -105,6 +105,9 @@ class Job:
     # violation on its own (spec section 4 ridership-declaration data
     # feeds this in later phases; Phase 1 callers may leave it at 0).
     passenger_count: int = 0
+    # Of those, riders who travel in a wheelchair and need a securement
+    # position (spec section 6: "wheelchair configuration").
+    wheelchair_riders: int = 0
 
     def __post_init__(self) -> None:
         if self.duration_minutes <= 0:
@@ -113,6 +116,8 @@ class Job:
             raise ValueError(f"Job {self.id}: buffer_minutes must be >= 0")
         if self.passenger_count < 0:
             raise ValueError(f"Job {self.id}: passenger_count must be >= 0")
+        if self.wheelchair_riders < 0:
+            raise ValueError(f"Job {self.id}: wheelchair_riders must be >= 0")
         total = self.duration_minutes + self.buffer_minutes
         if total > self.window.duration_minutes:
             raise ValueError(
@@ -157,8 +162,12 @@ class Vehicle:
     width_m: float | None = None
     height_m: float | None = None
     weight_kg: float | None = None
+    # Wheelchair securement positions (spec section 6); None = not recorded.
+    wheelchair_positions: int | None = None
 
     def __post_init__(self) -> None:
+        if self.wheelchair_positions is not None and self.wheelchair_positions < 0:
+            raise ValueError(f"Vehicle {self.id}: wheelchair_positions must be >= 0")
         if self.nominal_capacity is not None and self.nominal_capacity <= 0:
             raise ValueError(f"Vehicle {self.id}: nominal_capacity must be > 0")
         if self.effective_capacity is not None and self.effective_capacity <= 0:
@@ -242,6 +251,12 @@ class Crew:
         unknown capacity is not treated as unlimited capacity, since
         that would silently violate the spec's safety intent.
         """
+        if job.wheelchair_riders > 0:
+            # Fails closed too: a bus whose positions aren't recorded
+            # can't be assumed to take a wheelchair.
+            positions = self.vehicle.wheelchair_positions
+            if positions is None or positions < job.wheelchair_riders:
+                return False
         if job.passenger_count == 0:
             return True
         capacity = self.vehicle.allowable_capacity()
