@@ -242,6 +242,19 @@ PHRASES: dict[str, str] = {
         "El autobús {leg} de {school} del {date} está lleno ({riders} de {capacity} asientos). "
         "Comuníquese con la oficina de transporte."
     ),
+    "{name} lives under {limit} mi from school, so isn't eligible for the bus. Please contact "
+    "the transportation office.": (
+        "{name} vive a menos de {limit} mi de la escuela, así que no le corresponde el autobús. "
+        "Comuníquese con la oficina de transporte."
+    ),
+    "{name} has no bus stop yet. Please contact the transportation office.": (
+        "{name} todavía no tiene parada de autobús. Comuníquese con la oficina de transporte."
+    ),
+    "{name}'s stop, {stop}, isn't on the {leg} route on {date}. Please contact the "
+    "transportation office.": (
+        "La parada de {name}, {stop}, no está en la ruta {leg} del {date}. Comuníquese con la "
+        "oficina de transporte."
+    ),
     "You can only declare ridership for your own family": (
         "Solo puede indicar el viaje de su propia familia"
     ),

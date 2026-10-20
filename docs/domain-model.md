@@ -36,9 +36,11 @@ route window). Trips (spec §12) will extend this in a later phase.
   other jobs
 - `required_vehicle_qualifications`: e.g. wheelchair-accessible (spec
   §15) — set, may be empty
-- `passenger_count`: expected riders for this job. Defaults to 0,
-  meaning "ridership not modeled" — a 0-passenger job never triggers a
-  capacity constraint. A vehicle with unknown capacity (`allowable_capacity()
+- `passenger_count`: expected riders for this job. The API fills it with
+  `isd_api.routes.expected_demand`: the larger of the count typed on the
+  run and that day's riders (defaults and overrides), when the riders can
+  be pinned to this run. A 0-passenger job never triggers a capacity
+  constraint. A vehicle with unknown capacity (`allowable_capacity()
   is None`) fails closed against any job with `passenger_count > 0` —
   unknown capacity is never treated as unlimited capacity.
 
@@ -195,9 +197,13 @@ produces them rather than duplicated here.
   student-to-specific-run assignment, so the count can't be correctly
   attributed to just one of several runs serving the same school/leg
   that day. `PATCH /runs/{id}` (passenger_count only) lets a dispatcher
-  apply the computed count manually; nothing applies it automatically
+  apply the computed count manually; nothing writes it automatically
   (spec §21: decision support, not autonomous authority — same
-  precedent as Phase 6's substitute-candidate ranking).
+  precedent as Phase 6's substitute-candidate ranking). Capacity checks
+  don't wait for that, though (spec §15, since the October review): the
+  solver, manual reassignment and spare-bus offers all use
+  `expected_demand`, and an `over_capacity` alert flags a bus that has
+  become too small for the day's riders.
 
 ## Phase 6 entities (`services/api/src/isd_api/models.py`, first slice — spec §13 only)
 

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { axeViolations } from '../helpers/axe'
 import { statePath } from '../helpers/env'
-import { as, day } from '../helpers/roles'
+import { api, as, day } from '../helpers/roles'
 import { watch } from '../helpers/watch'
 
 /**
@@ -19,12 +19,33 @@ test('a bus in the shop: out of service, a spare swapped in, back in service', a
 }) => {
   const watcher = watch(page)
 
-  // Out of service for the whole of today.
+  // Out of service for the whole of today, and in force right now. Windows
+  // are the district's wall-clock time, and in the district's evening the
+  // UTC day the app counts by is already tomorrow.
+  const dispatch = await api('dispatcher')
+  const { timezone } = (await (await dispatch.get('ridership-rules')).json()) as {
+    timezone: string
+  }
+  await dispatch.dispose()
+  const wall = (ms: number) =>
+    new Intl.DateTimeFormat('sv-SE', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .format(ms)
+      .replace(' ', 'T')
+  const from = [`${day()}T00:00`, wall(Date.now() - 2 * 3_600_000)].sort()[0]
+  const until = [`${day(1)}T00:00`, wall(Date.now() + 2 * 3_600_000)].sort()[1]
   await page.goto('/setup?tab=maintenance')
   await page.getByLabel('Bus', { exact: true }).selectOption({ label: 'Bus 07' })
   await page.getByLabel('Kind').selectOption('repair')
-  await page.getByLabel('From', { exact: true }).fill(`${day()}T00:00`)
-  await page.getByLabel(/^Until/).fill(`${day(1)}T00:00`)
+  await page.getByLabel('From', { exact: true }).fill(from)
+  await page.getByLabel(/^Until/).fill(until)
   await page.getByLabel('Reason').fill('Brake line (e2e)')
   await page.getByRole('button', { name: 'Add maintenance window' }).click()
   await expect(page.getByText(/Maintenance window added/)).toBeVisible()

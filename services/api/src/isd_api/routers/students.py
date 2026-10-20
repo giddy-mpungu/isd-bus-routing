@@ -23,6 +23,7 @@ from isd_api.models import (
     Assignment,
     GeocodeSource,
     RideDirection,
+    RidershipDefault,
     RidershipOverride,
     Role,
     School,
@@ -36,7 +37,7 @@ from isd_api.models import (
 from isd_api.ridership_rules import change_closed_reason, district_now, load_rules
 from isd_api.routers.runs import _resolve_riding_students
 from isd_api.routers.vehicles import _resolve_qualifications
-from isd_api.routes import run_for_student
+from isd_api.routes import leg_runs, route_stop_ids, run_for_student
 from isd_api.schemas import (
     BusPositionRead,
     EligibilityRead,
@@ -701,6 +702,45 @@ def _bus_full_reason(
     )
 
 
+NOT_ELIGIBLE = (
+    "{name} lives under {limit} mi from school, so isn't eligible for the bus. "
+    "Please contact the transportation office."
+)
+NO_STOP = "{name} has no bus stop yet. Please contact the transportation office."
+STOP_NOT_ON_ROUTE = (
+    "{name}'s stop, {stop}, isn't on the {leg} route on {date}. "
+    "Please contact the transportation office."
+)
+
+
+def _late_request_problem(
+    db: Session, student: Student, service_date: date, direction: RideDirection
+) -> str | None:
+    """Spec section 4.5's other two checks on a family's request to ride
+    for a student who doesn't usually: eligibility, refused only when a
+    home on file shows them under the distance (without one it can't be
+    told), and a stop that day's route serves, checked when every route
+    on the leg has a stop list (otherwise the stop may still be served)."""
+    home = db.get(StudentHome, student.id)
+    if home is not None:
+        rules = eligibility.load_rules(db)
+        if not eligibility.eligibility_for(student, home, rules).eligible:
+            return NOT_ELIGIBLE.format(name=student.full_name, limit=f"{rules.eligibility_miles:g}")
+    if student.stop_id is None or student.stop is None:
+        return NO_STOP.format(name=student.full_name)
+    stop_lists = [
+        route_stop_ids(db, r) for r in leg_runs(db, student.school_id, service_date, direction)
+    ]
+    if stop_lists and all(stop_lists) and not any(student.stop_id in ids for ids in stop_lists):
+        return STOP_NOT_ON_ROUTE.format(
+            name=student.full_name,
+            stop=student.stop.label,
+            leg=direction.value.upper(),
+            date=service_date,
+        )
+    return None
+
+
 @router.patch("/{student_id}/ridership", status_code=status.HTTP_204_NO_CONTENT)
 def update_ridership(
     student_id: int,
@@ -733,6 +773,10 @@ def update_ridership(
         closed = change_closed_reason(load_rules(db), payload.service_date, payload.direction)
         if closed is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=closed)
+    if payload.is_riding and not is_admin and student.default_ridership != RidershipDefault.RIDES:
+        problem = _late_request_problem(db, student, payload.service_date, payload.direction)
+        if problem is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=problem)
     if payload.is_riding:
         full = _bus_full_reason(db, student, payload.service_date, payload.direction)
         if full is not None:

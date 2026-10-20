@@ -34,11 +34,16 @@ def _school(client, h):
     ).json()
 
 
-def _student(client, h, school, name, default="rides"):
+def _student(client, h, school, name, default="rides", stop=None):
+    body = {"full_name": name, "school_id": school["id"], "default_ridership": default}
+    if stop is not None:
+        body["stop_id"] = stop["id"]
+    return client.post("/students", headers=h, json=body).json()
+
+
+def _stop(client, h, label="Oak St"):
     return client.post(
-        "/students",
-        headers=h,
-        json={"full_name": name, "school_id": school["id"], "default_ridership": default},
+        "/stops", headers=h, json={"label": label, "location_lat": 29.71, "location_lon": -95.4}
     ).json()
 
 
@@ -156,8 +161,9 @@ def _full_bus_day(client, h, *, runs=1):
     """Two default riders on a 2-seat bus, plus a third student who
     normally doesn't ride."""
     school = _school(client, h)
-    riders = [_student(client, h, school, name) for name in ("Ava", "Ben")]
-    occasional = _student(client, h, school, "Cai", default="does_not_ride")
+    stop = _stop(client, h)
+    riders = [_student(client, h, school, name, stop=stop) for name in ("Ava", "Ben")]
+    occasional = _student(client, h, school, "Cai", default="does_not_ride", stop=stop)
     for label in [str(i) for i in range(runs)]:
         driver = client.post(
             "/drivers", headers=h, json={"license_class": "cdl_a", "full_name": f"D{label}"}
@@ -225,3 +231,104 @@ def test_capacity_isnt_guessed_when_several_runs_serve_the_leg(client, admin_hea
     _, occasional = _full_bus_day(client, admin_headers, runs=2)
     parent = _parent_of(client, admin_headers, db_session, occasional)
     assert _declare(client, parent, occasional).status_code == 204
+
+
+# --- Section 4.5's other checks on a late request to ride ------------------------
+
+
+def test_a_child_with_no_stop_cant_be_asked_onto_the_bus(client, admin_headers, db_session):
+    school = _school(client, admin_headers)
+    cai = _student(client, admin_headers, school, "Cai", default="does_not_ride")
+    parent = _parent_of(client, admin_headers, db_session, cai)
+    response = _declare(client, parent, cai)
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "Cai has no bus stop yet. Please contact the transportation office."
+    )
+    # Staff taking a phone call decide for themselves.
+    assert _declare(client, admin_headers, cai).status_code == 204
+
+
+def test_a_child_living_close_to_school_isnt_eligible(client, admin_headers, db_session):
+    school = _school(client, admin_headers)
+    cai = _student(
+        client,
+        admin_headers,
+        school,
+        "Cai",
+        default="does_not_ride",
+        stop=_stop(client, admin_headers),
+    )
+    parent = _parent_of(client, admin_headers, db_session, cai)
+    # No home on file: eligibility can't be told, so it isn't held against them.
+    assert _declare(client, parent, cai).status_code == 204
+    assert _declare(client, parent, cai, riding=False).status_code == 204
+
+    # A home a few blocks from school: under the 2 miles.
+    client.put(
+        f"/students/{cai['id']}/home",
+        headers=admin_headers,
+        json={"address": "1 Near St", "location_lat": 29.701, "location_lon": -95.401},
+    )
+    response = _declare(client, parent, cai)
+    assert response.status_code == 409
+    assert "isn't eligible for the bus" in response.json()["detail"]
+
+
+def test_a_stop_that_days_route_doesnt_serve_is_refused(client, admin_headers, db_session):
+    h = admin_headers
+    school = _school(client, h)
+    oak, elm = _stop(client, h, "Oak St"), _stop(client, h, "Elm St")
+    cai = _student(client, h, school, "Cai", default="does_not_ride", stop=elm)
+    template = client.post(
+        "/route-templates",
+        headers=h,
+        json={
+            "school_id": school["id"],
+            "direction": "am",
+            "window_earliest": 420,
+            "window_latest": 480,
+            "duration_minutes": 30,
+            "days_of_week": [0, 1, 2, 3, 4, 5, 6],
+        },
+    ).json()
+    client.put(
+        f"/route-templates/{template['id']}/stops",
+        headers=h,
+        json={"stops": [{"stop_id": oak["id"], "minutes_from_start": 10}]},
+    )
+    assert client.post(f"/schedule/{DAY}/generate-from-templates", headers=h).status_code == 200
+    parent = _parent_of(client, h, db_session, cai)
+
+    response = _declare(client, parent, cai)
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        f"Cai's stop, Elm St, isn't on the AM route on {DAY}. "
+        "Please contact the transportation office."
+    )
+    # The PM leg has no route that day, so nothing says it can't be served.
+    assert _declare(client, parent, cai, direction="pm").status_code == 204
+
+
+def test_a_regular_rider_turning_their_ride_back_on_isnt_rechecked(
+    client, admin_headers, db_session
+):
+    school = _school(client, admin_headers)
+    ava = _student(client, admin_headers, school, "Ava")  # rides, no stop
+    parent = _parent_of(client, admin_headers, db_session, ava)
+    assert _declare(client, parent, ava, riding=False).status_code == 204
+    assert _declare(client, parent, ava).status_code == 204
+
+
+def test_the_refusals_are_in_spanish_for_spanish_speakers(client, admin_headers, db_session):
+    school = _school(client, admin_headers)
+    cai = _student(client, admin_headers, school, "Cai", default="does_not_ride")
+    parent = _parent_of(client, admin_headers, db_session, cai)
+    response = client.patch(
+        f"/students/{cai['id']}/ridership",
+        headers={**parent, "Accept-Language": "es"},
+        json={"service_date": DAY, "direction": "am", "is_riding": True},
+    )
+    assert response.json()["detail"] == (
+        "Cai todavía no tiene parada de autobús. Comuníquese con la oficina de transporte."
+    )

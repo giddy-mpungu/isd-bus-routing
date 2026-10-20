@@ -11,13 +11,15 @@ expected return.
 
 - **Overnight (multi-day) trips** are split into one (date, start_minute,
   end_minute) window per calendar day (`availability.daily_windows`).
-- **Conflicts (section 12.1)**: out-of-service bus, deactivated or absent
-  driver, another field trip or a dispatch task, and regular routes. All
-  but the last refuse
-  the assignment (409). A regular-route clash doesn't: the dispatcher may
+- **Conflicts (section 12.1)**: a bus too small, out of service or in a
+  maintenance window; a deactivated or absent driver (training included,
+  as an absence reason); an unlicensed pairing; another field trip or a
+  dispatch task; and regular routes. All but the last refuse the
+  assignment (409). A regular-route clash doesn't: the dispatcher may
   prioritise the trip, and that route is then flagged "needs cover".
-  Training, maintenance and required-break conflicts have no entity in
-  this schema yet, so they aren't checked.
+  Travel is a flat `FIELD_TRIP_TURNAROUND_MINUTES` before departure and
+  after return, since a trip's origin is free text with no location.
+  Required breaks aren't modelled, so they aren't checked.
 - **Delay management (section 12.2)**: a changed return time is always
   accepted, since it reports reality. Any regular route it now overlaps
   immediately shows `availability_issue` ("on field trip #N ...") on the

@@ -29,6 +29,7 @@ from isd_api import ridership_rules
 from isd_api.availability import tasks_blocking, trips_blocking, vehicle_conflict_for_window
 from isd_api.licensing import license_violation
 from isd_api.models import Assignment, Crew, MaintenanceWindow, Vehicle
+from isd_api.routes import expected_demand
 
 DUE_WARNING_DAYS = 14
 
@@ -103,7 +104,7 @@ def spare_vehicles(db: Session, crew: Crew) -> list[Spare]:
     taken = {
         vid for (vid,) in db.query(Crew.vehicle_id).filter(Crew.service_date == crew.service_date)
     }
-    riders = max((a.run.passenger_count for a in assignments), default=0)
+    riders = max((expected_demand(db, a.run) for a in assignments), default=0)
     needed = {q.code for a in assignments for q in a.run.required_qualifications}
     spares: list[Spare] = []
     for vehicle in db.query(Vehicle).filter(Vehicle.is_active.is_(True)).order_by(Vehicle.label):
@@ -114,7 +115,8 @@ def spare_vehicles(db: Session, crew: Crew) -> list[Spare]:
         if not needed <= {q.code for q in vehicle.qualifications}:
             continue
         capacity = vehicle.allowable_capacity()
-        if capacity is not None and capacity < riders:
+        # Unknown capacity fails closed, as in the scheduler.
+        if riders > 0 and (capacity is None or capacity < riders):
             continue
         if any(
             vehicle_conflict_for_window(

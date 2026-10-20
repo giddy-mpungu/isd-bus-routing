@@ -16,7 +16,10 @@ Critical:
   - an incident report,
   - a stop of a run's trip inside a road closure in force (spec section 10),
   - a run whose assigned times fall outside its window, not yet started
-    (its school's bells changed after it was scheduled, isd_api/bells.py).
+    (its school's bells changed after it was scheduled, isd_api/bells.py),
+  - a run, not yet finished, with more expected riders than its bus has
+    seats (more children riding since it was scheduled, or a smaller bus
+    swapped in; spec section 15), with bigger spare buses offered.
 Warning:
   - work not yet acknowledged within `ACK_WARNING_MINUTES` of its start,
   - work still under way `FINISH_GRACE_MINUTES` after its planned end,
@@ -62,6 +65,7 @@ from isd_api.models import (
     Vehicle,
     VehiclePosition,
 )
+from isd_api.routes import expected_demand
 
 # Unacknowledged work this close to its start is flagged.
 ACK_WARNING_MINUTES = 30
@@ -240,6 +244,21 @@ def day_alerts(db: Session, service_date: date, now: datetime | None = None) -> 
                 )
             )
         if a.status not in TERMINAL:
+            demand = expected_demand(db, a.run)
+            seats = a.crew.vehicle.allowable_capacity()
+            if demand > 0 and (seats is None or seats < demand):
+                alerts.append(
+                    Alert(
+                        "over_capacity",
+                        CRITICAL,
+                        f"Too many riders: {label} has {demand} expected and "
+                        f"{'an unknown number of' if seats is None else seats} seats. "
+                        "Swap in a bigger bus or run the schedule again.",
+                        "assignment",
+                        a.id,
+                        a.start_minute,
+                    )
+                )
             issue = assignment_availability_issue(db, a)
             bus_issue = vehicle_conflict_for_window(
                 db, a.crew.vehicle, service_date, a.start_minute, a.end_minute

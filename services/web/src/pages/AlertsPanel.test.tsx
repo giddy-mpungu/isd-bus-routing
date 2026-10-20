@@ -84,6 +84,34 @@ describe('AlertsPanel', () => {
     expect(changed).toHaveBeenCalled()
   })
 
+  it('offers bigger spare buses when a run has more riders than seats', async () => {
+    vi.mocked(api.getAlerts).mockResolvedValue({
+      service_date: DAY,
+      district_time: '07:25',
+      alerts: [
+        {
+          kind: 'over_capacity',
+          severity: 'critical',
+          message:
+            'Too many riders: Riverside AM run on Van 3 (07:30-08:00) has 18 expected and 14 seats. Swap in a bigger bus or run the schedule again.',
+          entity_type: 'assignment',
+          entity_id: 5,
+          minute: 450,
+        },
+      ],
+    })
+    vi.mocked(api.getSpareVehicles).mockResolvedValue({
+      crew_id: 12,
+      current_vehicle_label: 'Van 3',
+      spares: [{ vehicle_id: 9, label: 'Spare 9', allowable_capacity: 40, spare_seats: 22 }],
+    })
+    const user = userEvent.setup()
+    render(<AlertsPanel serviceDate={DAY} refreshToken={0} />)
+    await user.click(await screen.findByRole('button', { name: 'Find a spare bus' }))
+    expect(api.getSpareVehicles).toHaveBeenCalledWith(5)
+    expect(screen.getByRole('button', { name: 'Swap Spare 9 in for Van 3' })).toBeInTheDocument()
+  })
+
   it('offers no spare-bus button on other alerts', async () => {
     vi.mocked(api.getAlerts).mockResolvedValue(day)
     render(<AlertsPanel serviceDate={DAY} refreshToken={0} />)
