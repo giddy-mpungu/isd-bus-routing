@@ -76,6 +76,7 @@ from isd_api.routers.optimization_settings import (
     load_objective_weights,
 )
 from isd_api.routers.runs import _resolve_riding_students
+from isd_api.routes import expected_demand
 from isd_api.schemas import (
     AssignmentRead,
     AssignmentStatusUpdate,
@@ -241,7 +242,7 @@ def _to_solver_inputs(
                 r.school_id, SolverLocation(lat=r.school.location_lat, lon=r.school.location_lon)
             ),
             required_vehicle_qualifications=frozenset(q.code for q in r.required_qualifications),
-            passenger_count=r.passenger_count,
+            passenger_count=expected_demand(db, r),
         )
         for r in db_runs
     ]
@@ -298,12 +299,13 @@ def _hard_constraint_violation(
         missing = sorted(required_codes - crew_codes)
         return f"Crew {crew.id}'s vehicle is missing required qualification(s): {missing}"
 
-    if run.passenger_count > 0:
+    demand = expected_demand(db, run)
+    if demand > 0:
         capacity = crew.vehicle.allowable_capacity()
-        if capacity is None or capacity < run.passenger_count:
+        if capacity is None or capacity < demand:
             return (
                 f"Crew {crew.id}'s vehicle capacity ({capacity}) is insufficient for "
-                f"{run.passenger_count} expected passenger(s)"
+                f"{demand} expected passenger(s)"
             )
 
     if start_minute > end_minute:
@@ -609,11 +611,9 @@ def update_assignment(
             "it does not overlap any other job assigned to this crew",
             "it starts and ends within its required arrival window and the crew's availability",
         ]
-        if assignment.run.passenger_count > 0:
-            checks.append(
-                "vehicle capacity is sufficient for "
-                f"{assignment.run.passenger_count} expected passengers"
-            )
+        demand = expected_demand(db, assignment.run)
+        if demand > 0:
+            checks.append(f"vehicle capacity is sufficient for {demand} expected passengers")
         assignment.explanation_text = (
             f"Crew {new_crew_id} was manually assigned to job {assignment.run_id} by "
             f"{current_user.full_name} ({current_user.role.value}), overriding the "

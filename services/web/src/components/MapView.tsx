@@ -128,12 +128,16 @@ export function MapView({
       .join('|')
     if (points.length === 0 || key === fittedKeyRef.current) return
     fittedKeyRef.current = key
+    // Not animated: a map closed mid-animation (an editor saved straight
+    // away) leaves Leaflet's zoom transition running on a removed map, which
+    // throws "Cannot read properties of undefined (reading '_leaflet_pos')".
     if (points.length === 1) {
-      map.setView(points[0], Math.min(15, maxZoom))
+      map.setView(points[0], Math.min(15, maxZoom), { animate: false })
     } else {
       map.fitBounds(L.latLngBounds(points), {
         padding: [30, 30],
         maxZoom: Math.min(16, maxZoom),
+        animate: false,
       })
     }
   }, [markers, tracks, maxZoom])

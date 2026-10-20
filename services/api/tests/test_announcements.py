@@ -83,6 +83,9 @@ def _seed_driver_crew_and_run(
         headers=admin_headers,
         json={
             "label": f"Bus {label}",
+            # Seats for the family's children, who ride (spec section 15).
+            "nominal_capacity": 40,
+            "effective_capacity": 40,
             "qualification_codes": [qualification_code, *extra_vehicle_qualification_codes],
         },
     ).json()

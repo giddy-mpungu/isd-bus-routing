@@ -19,12 +19,17 @@ test('a bus in the shop: out of service, a spare swapped in, back in service', a
 }) => {
   const watcher = watch(page)
 
-  // Out of service for the whole of today.
+  // Out of service for the whole of today, and in force right now: in the
+  // evening the UTC day the app counts by can already be tomorrow here.
+  const local = (ms: number) =>
+    new Date(ms - new Date(ms).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+  const from = [`${day()}T00:00`, local(Date.now() - 2 * 3_600_000)].sort()[0]
+  const until = [`${day(1)}T00:00`, local(Date.now() + 2 * 3_600_000)].sort()[1]
   await page.goto('/setup?tab=maintenance')
   await page.getByLabel('Bus', { exact: true }).selectOption({ label: 'Bus 07' })
   await page.getByLabel('Kind').selectOption('repair')
-  await page.getByLabel('From', { exact: true }).fill(`${day()}T00:00`)
-  await page.getByLabel(/^Until/).fill(`${day(1)}T00:00`)
+  await page.getByLabel('From', { exact: true }).fill(from)
+  await page.getByLabel(/^Until/).fill(until)
   await page.getByLabel('Reason').fill('Brake line (e2e)')
   await page.getByRole('button', { name: 'Add maintenance window' }).click()
   await expect(page.getByText(/Maintenance window added/)).toBeVisible()

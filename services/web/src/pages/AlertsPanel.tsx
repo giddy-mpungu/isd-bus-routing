@@ -164,12 +164,13 @@ export function AlertsPanel({
                 {SEVERITY_LABELS[alert.severity]}
               </Badge>{' '}
               {alert.message}
-              {alert.kind === 'needs_bus' && alert.entity_type === 'assignment' && (
-                <SpareBusPicker
-                  assignmentId={alert.entity_id}
-                  onSwapped={() => onScheduleChanged?.()}
-                />
-              )}
+              {(alert.kind === 'needs_bus' || alert.kind === 'over_capacity') &&
+                alert.entity_type === 'assignment' && (
+                  <SpareBusPicker
+                    assignmentId={alert.entity_id}
+                    onSwapped={() => onScheduleChanged?.()}
+                  />
+                )}
             </li>
           ))}
         </ul>

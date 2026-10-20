@@ -84,6 +84,17 @@ def _riding(db: Session, students: list[Student], run: Run) -> list[Student]:
     ]
 
 
+def expected_demand(db: Session, run: Run) -> int:
+    """How many passengers the run's bus must have room for (spec section
+    15): the count entered on the run, or that day's riders when there are
+    more and they can be pinned to this run. Never less than what was
+    entered, since a dispatcher may plan for more; when the riders can't be
+    attributed to one run (several on the leg without stop lists), only the
+    entered count is known."""
+    riders, ambiguous = riders_for_run(db, run)
+    return run.passenger_count if ambiguous else max(run.passenger_count, len(riders))
+
+
 def riders_for_run(db: Session, run: Run) -> tuple[list[Student], bool]:
     """(riding students on this run, whether the list is ambiguous).
     Callers must not use the list when it's ambiguous."""
