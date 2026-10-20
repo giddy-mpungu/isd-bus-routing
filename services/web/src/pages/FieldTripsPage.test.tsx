@@ -20,6 +20,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getFieldTripConflicts: vi.fn(),
     getFieldTripObservedDuration: vi.fn(),
     getDestinationProfiles: vi.fn(),
+    getSchools: vi.fn(),
     createDestinationProfile: vi.fn(),
   }
 })
@@ -56,6 +57,7 @@ const trip: FieldTrip = {
   id: 1,
   requesting_party: 'Science Department',
   origin: 'Riverside Elementary',
+  origin_school_id: null,
   destination: 'State Science Museum',
   destination_profile_id: null,
   destination_profile: null,
@@ -78,6 +80,7 @@ function mockLoad() {
   vi.mocked(api.getVehicles).mockResolvedValue([vehicle])
   vi.mocked(api.getQualifications).mockResolvedValue([] as Qualification[])
   vi.mocked(api.getDestinationProfiles).mockResolvedValue([])
+  vi.mocked(api.getSchools).mockResolvedValue([])
 }
 
 // Every state these tests reach is checked against WCAG 2.1 A/AA.

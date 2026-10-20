@@ -42,6 +42,16 @@ PHRASES: dict[str, str] = {
     "If you weren't expecting this, contact your transportation office.": (
         "Si no esperaba este mensaje, comuníquese con la oficina de transporte."
     ),
+    "{child}'s bus stop has changed": "La parada de autobús de {child} cambió",
+    "From now on, {child} catches the bus at {stop}. The Family page shows the bus times.": (
+        "Desde ahora, {child} toma el autobús en {stop}. La página Familia muestra los "
+        "horarios del autobús."
+    ),
+    "{child} doesn't have a bus stop any more. Contact your transportation office if they "
+    "still need the bus.": (
+        "{child} ya no tiene parada de autobús. Comuníquese con la oficina de transporte si "
+        "todavía necesita el autobús."
+    ),
     "Your bus app two-step sign-in was reset": (
         "Se restableció el inicio de sesión en dos pasos de la aplicación del autobús"
     ),
@@ -271,6 +281,14 @@ PHRASES: dict[str, str] = {
     # Drivers
     "Your position": "Su ubicación",
     "This run has no stops on its route today": "Este recorrido no tiene paradas hoy",
+    "Directions need the trip's school and a destination placed on the map. Ask the "
+    "transportation office.": (
+        "Las indicaciones necesitan la escuela de la excursión y un destino en el mapa. "
+        "Pregunte a la oficina de transporte."
+    ),
+    "Directions need the trip's bus to be assigned.": (
+        "Las indicaciones necesitan que se asigne el autobús de la excursión."
+    ),
     "Turn-by-turn directions need an OpenRouteService key (ISD_API_ORS_API_KEY).": (
         "Las indicaciones paso a paso necesitan una clave de OpenRouteService "
         "(ISD_API_ORS_API_KEY)."

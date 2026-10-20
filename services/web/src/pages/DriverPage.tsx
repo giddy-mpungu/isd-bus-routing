@@ -491,6 +491,7 @@ export function DriverPage() {
                     {t(TRIP_STATUSES[trip.status])}
                   </Badge>
                 </div>
+                <DirectionsPanel tripId={trip.id} />
               </li>
             )
           }

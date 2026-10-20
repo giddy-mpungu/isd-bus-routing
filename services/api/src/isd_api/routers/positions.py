@@ -14,6 +14,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from isd_api import tracking
 from isd_api.db import get_db
 from isd_api.models import Crew, Driver, Role, User, VehiclePosition
 from isd_api.position_history import record_sample, track
@@ -95,19 +96,24 @@ def list_fleet_positions(
         .filter(Crew.service_date == service_date)
         .all()
     )
-    return [
-        VehiclePositionRead(
-            crew_id=p.crew_id,
-            driver_id=p.crew.driver_id,
-            driver_full_name=p.crew.driver.full_name,
-            vehicle_id=p.crew.vehicle_id,
-            vehicle_label=p.crew.vehicle.label,
-            location_lat=p.location_lat,
-            location_lon=p.location_lon,
-            recorded_at=p.recorded_at,
+    reads = []
+    for p in rows:
+        going = tracking.heading(db, p.crew_id)
+        reads.append(
+            VehiclePositionRead(
+                crew_id=p.crew_id,
+                driver_id=p.crew.driver_id,
+                driver_full_name=p.crew.driver.full_name,
+                vehicle_id=p.crew.vehicle_id,
+                vehicle_label=p.crew.vehicle.label,
+                location_lat=p.location_lat,
+                location_lon=p.location_lon,
+                recorded_at=p.recorded_at,
+                heading_degrees=None if going is None else round(going),
+                heading=None if going is None else tracking.compass(going),
+            )
         )
-        for p in rows
-    ]
+    return reads
 
 
 @fleet_router.get(

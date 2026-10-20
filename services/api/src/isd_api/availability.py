@@ -24,6 +24,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
+from isd_solver import Location as SolverLocation
+from isd_solver import Vehicle as SolverVehicle
+from isd_solver import straight_line_deadhead_estimator
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -36,6 +39,8 @@ from isd_api.models import (
     DriverAbsence,
     FieldTrip,
     MaintenanceWindow,
+    Run,
+    School,
     Vehicle,
 )
 
@@ -101,6 +106,48 @@ def trip_windows(trip: FieldTrip, *, padded: bool = True) -> list[tuple[date, in
     return daily_windows(trip.departure_at - pad, trip_return(trip) + pad)
 
 
+_TRAVEL = straight_line_deadhead_estimator()
+_ANY_BUS = SolverVehicle(id="any")
+
+
+def travel_pad(db: Session, trip: FieldTrip, service_date: date) -> int:
+    """Spec section 12.1: time to drive between the trip's school and the
+    farthest school with runs that day, held on each side of the trip so
+    the bus can get from one to the other. 0 when the trip doesn't start
+    from one of our schools (its origin is just words then). Conservative:
+    the same for every run that day, so a nearer school gets slack."""
+    origin = trip.origin_school
+    if origin is None:
+        return 0
+    start = SolverLocation(lat=origin.location_lat, lon=origin.location_lon)
+    schools = (
+        db.query(School)
+        .join(Run, Run.school_id == School.id)
+        .filter(Run.service_date == service_date, School.id != origin.id)
+        .distinct()
+        .all()
+    )
+    return max(
+        (
+            _TRAVEL(start, SolverLocation(lat=s.location_lat, lon=s.location_lon), _ANY_BUS)
+            for s in schools
+        ),
+        default=0,
+    )
+
+
+def trip_day_windows(
+    db: Session, trip: FieldTrip, windows: list[tuple[date, int, int]] | None = None
+) -> list[tuple[date, int, int]]:
+    """The trip's padded windows, widened by `travel_pad` on each day."""
+    days = windows if windows is not None else trip_windows(trip)
+    widened = []
+    for day, start, end in days:
+        pad = travel_pad(db, trip, day)
+        widened.append((day, max(0, start - pad), min(24 * 60 - 1, end + pad)))
+    return widened
+
+
 def _trip_label(trip: FieldTrip) -> str:
     return (
         f"on field trip #{trip.id} to {trip.destination} "
@@ -130,7 +177,7 @@ def trips_blocking(
         query = query.filter(FieldTrip.id != exclude_trip_id)
     blocking = []
     for trip in query.order_by(FieldTrip.id):
-        for day, start, end in trip_windows(trip):
+        for day, start, end in trip_day_windows(db, trip):
             if day == service_date:
                 blocking.append((trip, start, end))
     return blocking

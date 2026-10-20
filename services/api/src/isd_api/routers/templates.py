@@ -171,7 +171,22 @@ def update_route_template(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Route template not found"
         )
-    before = {"is_active": template.is_active, "follows_bells": template.follows_bells}
+    before = {
+        "is_active": template.is_active,
+        "follows_bells": template.follows_bells,
+        "duration_minutes": template.duration_minutes,
+    }
+    if payload.duration_minutes is not None:
+        window = template.window_latest - template.window_earliest
+        if payload.duration_minutes + template.buffer_minutes > window:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"{payload.duration_minutes} minutes plus the {template.buffer_minutes}-minute "
+                    f"buffer don't fit the route's {window}-minute window"
+                ),
+            )
+        template.duration_minutes = payload.duration_minutes
     if payload.is_active is not None:
         template.is_active = payload.is_active
     if payload.follows_bells is not None and payload.follows_bells != template.follows_bells:
@@ -192,7 +207,11 @@ def update_route_template(
         action="updated",
         actor=current_user,
         before_state=before,
-        after_state={"is_active": template.is_active, "follows_bells": template.follows_bells},
+        after_state={
+            "is_active": template.is_active,
+            "follows_bells": template.follows_bells,
+            "duration_minutes": template.duration_minutes,
+        },
     )
     bells.audit_moved_runs(db, moved, current_user)
     db.commit()

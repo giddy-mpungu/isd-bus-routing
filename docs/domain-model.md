@@ -704,7 +704,15 @@ ranking.
 - **Field trips (PR #46)**: a trip's assigned driver *and* assigned bus are
   busy from `departure_at - 15 min` to `return + 15 min`
   (`FIELD_TRIP_TURNAROUND_MINUTES`, for pre/post-trip and yard travel; the
-  recorded actual return is used once known). Trips therefore block the
+  recorded actual return is used once known). A trip that leaves from one
+  of the district's schools (`origin_school_id`, since the October review)
+  is also held for the drive between that school and the farthest school
+  with runs that day (`availability.travel_pad`, straight-line estimate,
+  applied in `trips_blocking` so the solver, run flags, substitutes, work
+  rules and the trip check agree); such a trip also gets turn-by-turn
+  directions there and back (`GET /field-trips/{id}/directions`, to the
+  destination profile's place, named with its approved entrance; shared
+  `schedule.route_directions`). Trips therefore block the
   solver and every other assignment path exactly like absences. Assigning a
   trip to an out-of-service bus, a deactivated or absent driver, or a
   driver/bus already on an overlapping trip is refused (409). A clash with
@@ -1621,3 +1629,25 @@ otherwise it's flagged. Deterministic, and quick (400 students well under
 - Dynamic rerouting (spec §10) is done for recorded closures ("Road closures and rerouting", above). Live traffic congestion isn't: ORS has no live traffic, so severe congestion is something a dispatcher records. Turn and dead-end costs (§7) stay deferred by the product owner's decision of 2026-09-29, until a self-hosted routing engine is chosen with the production host
 - Live GPS bus location (spec §9/§18) is done for position itself (`VehiclePosition`, ADR 0009, above) — dispatcher fleet view and per-child "locate bus." Delay/substitution/route-change/general notifications (spec §18) and "messages from dispatch" (spec §9) are now done too (`Announcement`, above), with per-school scoping and one narrow auto-generated exception (a genuine, unambiguous driver/vehicle substitution) — every other notification is still exclusively dispatcher-authored, since this system has no ETA engine or general event-to-notification pipeline. Incident reporting / vehicle defect reporting (spec §9) is now done too (`DriverReport`, above). Still unbuilt: turn-by-turn navigation (spec §9 — deliberately deferred alongside §7/§10, since it needs the same routing graph this system doesn't own)
 - Historical operational data / learning-adjusted estimates (spec §20) — duration learning for `Run.duration_minutes` is done (`GET /runs/observed-duration`, above). Not yet: traffic-delay and route-deviation tracking (both need a planned route geometry and live position history this system doesn't have — ADR 0009 deliberately keeps only the latest GPS position, no breadcrumb trail) and field-trip duration learning (though `FieldTrip.actual_return_at` already captures the raw data needed, no aggregation endpoint exists for it yet, unlike regular runs)
+
+## Live tracking, route-change notices, learning from history (October review, Phase C)
+
+- **Direction of travel** (spec §9): `isd_api/tracking.py` takes a bus's
+  heading from its two latest GPS samples at least 30 m apart; the fleet
+  view shows it as a compass point.
+- **Route deviation** (spec §9, §20): an `off_route` warning when a bus
+  under way, with a fresh GPS fix, is more than 800 m from every leg of
+  its route today, drawn as straight lines between the day's stops and
+  the school (so a different street isn't flagged, a wrong neighbourhood
+  is). Runs without stops are never "off route".
+- **Route-change notices** (spec §18): each active parent is emailed, in
+  their language, when their child's stop changes, is given (an approved
+  stop proposal) or is taken away (`account_emails.stop_change_emails`).
+- **Learning from history** (spec §20, §13): `GET /runs/observed-duration`
+  takes an optional `route_template_id`, the Templates page offers a
+  route's observed time and plans with it on request (`PATCH
+  /route-templates/{id}` `duration_minutes`, checked against the window),
+  and substitute ranking scores driving that route before (2 per run)
+  above the school (1 per run). Substitutes who would break the driver's
+  own limit or the district's work-hour rules aren't offered at all.
+

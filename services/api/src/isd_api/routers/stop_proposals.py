@@ -7,10 +7,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from isd_api import access_log, eligibility
+from isd_api import access_log, account_emails, eligibility, mailer
 from isd_api.audit import record as record_audit
 from isd_api.db import get_db
 from isd_api.models import (
@@ -285,6 +285,7 @@ def update_stop_proposal(
 @router.post("/{proposal_id}/approve", response_model=StopProposalRead)
 def approve_stop_proposal(
     proposal_id: int,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(_ADMIN),
 ) -> StopProposalRead:
@@ -318,7 +319,7 @@ def approve_stop_proposal(
     for student in db.query(Student).filter(Student.id.in_(proposal.student_ids or [-1])):
         if student.stop_id is None:
             student.stop_id = stop.id
-            assigned.append(student.id)
+            assigned.append(student)
     proposal.status = StopProposalStatus.APPROVED
     proposal.stop_id = stop.id
     proposal.decided_at = datetime.now(UTC)
@@ -330,9 +331,14 @@ def approve_stop_proposal(
         entity_id=proposal.id,
         action="approved",
         actor=current_user,
-        after_state={"stop_id": stop.id, "students_assigned": sorted(assigned)},
+        after_state={"stop_id": stop.id, "students_assigned": sorted(s.id for s in assigned)},
     )
     db.commit()
+    if mailer.is_configured():
+        for student in assigned:
+            db.refresh(student)
+            for email in account_emails.stop_change_emails(student):
+                background.add_task(mailer.send_quietly, email)
     return _read(db, proposal, eligibility.load_rules(db))
 
 

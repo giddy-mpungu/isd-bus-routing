@@ -447,9 +447,11 @@ export async function getExpectedRiders(runId: number): Promise<ExpectedRiders> 
 export async function getObservedRunDuration(
   schoolId: number,
   direction: RideDirection,
+  routeTemplateId?: number,
 ): Promise<ObservedRunDuration> {
+  const route = routeTemplateId !== undefined ? `&route_template_id=${routeTemplateId}` : ''
   return request<ObservedRunDuration>(
-    `/runs/observed-duration?school_id=${schoolId}&direction=${direction}`,
+    `/runs/observed-duration?school_id=${schoolId}&direction=${direction}${route}`,
   )
 }
 
@@ -728,6 +730,17 @@ export async function getRouteTemplates(): Promise<RouteTemplate[]> {
 
 export async function createRouteTemplate(payload: RouteTemplateCreate): Promise<RouteTemplate> {
   return request<RouteTemplate>('/route-templates', jsonInit('POST', payload))
+}
+
+// Spec section 20: adjust a route's planned time toward what's observed.
+export async function setRouteTemplateDuration(
+  templateId: number,
+  durationMinutes: number,
+): Promise<RouteTemplate> {
+  return request<RouteTemplate>(
+    `/route-templates/${templateId}`,
+    jsonInit('PATCH', { duration_minutes: durationMinutes }),
+  )
 }
 
 export async function setRouteTemplateActive(
@@ -1071,6 +1084,15 @@ export async function getDirections(
 ): Promise<DirectionsResult> {
   const query = from ? `?from_lat=${from.lat}&from_lon=${from.lon}` : ''
   return request<DirectionsResult>(`/schedule/assignments/${assignmentId}/directions${query}`)
+}
+
+// Spec section 12.3: the trip's school to its destination and back.
+export async function getTripDirections(
+  tripId: number,
+  from?: { lat: number; lon: number },
+): Promise<DirectionsResult> {
+  const query = from ? `?from_lat=${from.lat}&from_lon=${from.lon}` : ''
+  return request<DirectionsResult>(`/field-trips/${tripId}/directions${query}`)
 }
 
 export async function getRoadClosures(): Promise<RoadClosure[]> {

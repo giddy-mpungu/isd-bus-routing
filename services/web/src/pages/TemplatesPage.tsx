@@ -13,6 +13,7 @@ import type {
   Stop,
 } from '../api/types'
 import { Badge } from '../components/Badge'
+import { ObservedRouteTime } from './ObservedRouteTime'
 import { RouteStopsEditor } from './RouteStopsEditor'
 
 // Python weekday numbers, matching the backend: Monday=0 .. Sunday=6.
@@ -317,6 +318,7 @@ export function TemplatesPage() {
                     <button type="button" onClick={() => void handleToggleBells(t)}>
                       {t.follows_bells ? 'Stop following bells' : 'Follow bells'}
                     </button>
+                    <ObservedRouteTime template={t} onChanged={load} />
                   </td>
                 </tr>,
                 ...(editingStopsId === t.id

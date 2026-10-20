@@ -10,7 +10,7 @@ import { stubGeolocation } from '../test/geolocation'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
-  return { ...actual, getDirections: vi.fn() }
+  return { ...actual, getDirections: vi.fn(), getTripDirections: vi.fn() }
 })
 
 const waypoints = [
@@ -153,5 +153,27 @@ describe('DirectionsPanel', () => {
     )
     await open()
     expect(await screen.findByRole('alert')).toHaveTextContent('Follow the stop order')
+  })
+
+  it("shows a field trip's directions there and back", async () => {
+    vi.mocked(api.getTripDirections).mockResolvedValue({
+      ...directions,
+      waypoints: [
+        { label: 'North School', lat: 29.7, lon: -95.4 },
+        { label: 'Science museum (bus loop)', lat: 29.75, lon: -95.36 },
+        { label: 'North School', lat: 29.7, lon: -95.4 },
+      ],
+      legs: [
+        { to_label: 'Science museum (bus loop)', distance_m: 8000, duration_s: 900 },
+        { to_label: 'North School', distance_m: 8000, duration_s: 900 },
+      ],
+    })
+    const user = userEvent.setup()
+    render(<DirectionsPanel tripId={5} />)
+    await user.click(screen.getByRole('button', { name: 'Directions' }))
+    expect(await screen.findByText(/To Science museum \(bus loop\)/)).toBeInTheDocument()
+    expect(api.getTripDirections).toHaveBeenCalledWith(5, undefined)
+    expect(api.getDirections).not.toHaveBeenCalled()
+    expect(await findMap('Directions map for field trip 5')).toBeInTheDocument()
   })
 })

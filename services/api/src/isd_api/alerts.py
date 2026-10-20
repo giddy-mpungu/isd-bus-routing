@@ -28,7 +28,9 @@ Warning:
   - a vehicle defect report not yet dealt with (still open),
   - a bus in service whose service or inspection falls due within
     `maintenance.DUE_WARNING_DAYS` of that day, or whose service is overdue,
-  - a run's trip passing near a road closure in force (its directions avoid it).
+  - a run's trip passing near a road closure in force (its directions avoid it),
+  - a bus under way more than `tracking.OFF_ROUTE_METERS` from every leg of
+    its route (spec section 9 "route deviation").
 
 Time-based checks use the district's clock (`ridership_rules`). For
 today they compare with the current time. A past day is treated as over,
@@ -43,7 +45,7 @@ from datetime import UTC, date, datetime
 
 from sqlalchemy.orm import Session
 
-from isd_api import closures, maintenance, ridership_rules
+from isd_api import closures, maintenance, ridership_rules, tracking
 from isd_api.assignment_states import LABELS, TERMINAL, UNDERWAY
 from isd_api.availability import (
     assignment_availability_issue,
@@ -312,6 +314,22 @@ def day_alerts(db: Session, service_date: date, now: datetime | None = None) -> 
                         a.start_minute,
                     )
                 )
+            elif position is not None:
+                away = tracking.off_route_m(db, a, (position.location_lat, position.location_lon))
+                if away is not None and away > tracking.OFF_ROUTE_METERS:
+                    going = tracking.heading(db, a.crew_id)
+                    alerts.append(
+                        Alert(
+                            "off_route",
+                            WARNING,
+                            f"{a.crew.vehicle.label} is {away / 1000:.1f} km from its route "
+                            f"while {label} is under way"
+                            + ("" if going is None else f", heading {tracking.compass(going)}"),
+                            "assignment",
+                            a.id,
+                            a.start_minute,
+                        )
+                    )
 
     tasks = (
         db.query(DispatchTask)
