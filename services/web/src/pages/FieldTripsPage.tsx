@@ -7,6 +7,7 @@ import type {
   FieldTrip,
   FieldTripObservedDuration,
   Qualification,
+  School,
   TripStatus,
   Vehicle,
 } from '../api/types'
@@ -54,24 +55,33 @@ export function FieldTripsPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [qualifications, setQualifications] = useState<Qualification[]>([])
   const [destinationProfiles, setDestinationProfiles] = useState<DestinationProfile[]>([])
+  const [schools, setSchools] = useState<School[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const loadAll = useCallback(async (date: string) => {
     setErrorMessage(null)
     try {
-      const [tripsData, driversData, vehiclesData, qualificationsData, destinationProfilesData] =
-        await Promise.all([
-          api.getFieldTrips(date),
-          api.getDrivers(),
-          api.getVehicles(),
-          api.getQualifications(),
-          api.getDestinationProfiles(),
-        ])
+      const [
+        tripsData,
+        driversData,
+        vehiclesData,
+        qualificationsData,
+        destinationProfilesData,
+        schoolsData,
+      ] = await Promise.all([
+        api.getFieldTrips(date),
+        api.getDrivers(),
+        api.getVehicles(),
+        api.getQualifications(),
+        api.getDestinationProfiles(),
+        api.getSchools(),
+      ])
       setTrips(tripsData)
       setDrivers(driversData)
       setVehicles(vehiclesData)
       setQualifications(qualificationsData)
       setDestinationProfiles(destinationProfilesData)
+      setSchools(schoolsData)
     } catch (err) {
       setErrorMessage(err instanceof ApiError ? err.message : 'Failed to load field trips.')
     }
@@ -89,6 +99,7 @@ export function FieldTripsPage() {
   // --- Add field trip ---
   const [requestingParty, setRequestingParty] = useState('')
   const [origin, setOrigin] = useState('')
+  const [originSchoolId, setOriginSchoolId] = useState('')
   const [destination, setDestination] = useState('')
   const [destinationProfileId, setDestinationProfileId] = useState('')
   const [departureAt, setDepartureAt] = useState('')
@@ -121,6 +132,7 @@ export function FieldTripsPage() {
       await api.createFieldTrip({
         requesting_party: requestingParty,
         origin,
+        origin_school_id: originSchoolId ? Number(originSchoolId) : undefined,
         destination,
         destination_profile_id: destinationProfileId ? Number(destinationProfileId) : undefined,
         departure_at: departureAt,
@@ -133,6 +145,7 @@ export function FieldTripsPage() {
       })
       setRequestingParty('')
       setOrigin('')
+      setOriginSchoolId('')
       setDestination('')
       setDestinationProfileId('')
       setDepartureAt('')
@@ -526,6 +539,27 @@ export function FieldTripsPage() {
               onChange={(event) => setOrigin(event.target.value)}
               required
             />
+            <label htmlFor="trip-origin-school">Leaves from school</label>
+            <select
+              id="trip-origin-school"
+              value={originSchoolId}
+              onChange={(event) => {
+                setOriginSchoolId(event.target.value)
+                const school = schools.find((s) => String(s.id) === event.target.value)
+                if (school && origin.trim() === '') setOrigin(school.name)
+              }}
+            >
+              <option value="">Not one of our schools</option>
+              {schools.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <small>
+              Gives the driver directions there and back, and allows for the drive to their next
+              run.
+            </small>
             <label htmlFor="trip-destination">Destination</label>
             <input
               id="trip-destination"

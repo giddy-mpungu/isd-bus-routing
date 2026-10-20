@@ -105,6 +105,7 @@ def list_runs(
 def get_observed_run_duration(
     school_id: int,
     direction: RideDirection,
+    route_template_id: int | None = None,
     db: Session = Depends(get_db),
     _: User = Depends(require_role(*_WRITE_ROLES)),
 ) -> ObservedRunDurationRead:
@@ -123,7 +124,7 @@ def get_observed_run_duration(
     Decision support only (spec section 21) -- a dispatcher reads this
     and manually sets duration_minutes on a new run; nothing here
     writes to Run.duration_minutes automatically."""
-    assignments = (
+    query = (
         db.query(Assignment)
         .join(Run, Assignment.run_id == Run.id)
         .filter(
@@ -131,8 +132,12 @@ def get_observed_run_duration(
             Run.direction == direction,
             Assignment.status == AssignmentStatus.COMPLETED,
         )
-        .all()
     )
+    if route_template_id is not None:
+        # One recurring route's runs only, now that routes exist (spec
+        # section 11); without it, every run at the school that way.
+        query = query.filter(Run.route_template_id == route_template_id)
+    assignments = query.all()
 
     samples: list[tuple[date, float]] = []
     for assignment in assignments:

@@ -14,7 +14,7 @@ from isd_api import i18n
 from isd_api.config import settings
 from isd_api.i18n import tr
 from isd_api.mailer import Email
-from isd_api.models import User
+from isd_api.models import Role, Student, User
 
 SIGNATURE = "isd-bus-routing, your district's school transportation system"
 # Until a fluent speaker has reviewed a language (docs/translation.md).
@@ -168,3 +168,38 @@ def password_changed_email(user: User) -> Email:
             tr(lang, "If this wasn't you, contact your transportation office straight away."),
         ],
     )
+
+
+def stop_change_emails(student: Student) -> list[Email]:
+    """Spec section 18's route-change notice: to each of the student's
+    parents, when their bus stop changes (or they're given one, or it's
+    taken away). Only the child's own stop, nothing about other riders."""
+    emails = []
+    for parent in student.guardians:
+        if parent.role != Role.PARENT or not parent.is_active:
+            continue
+        lang = language_of(parent)
+        if student.stop is None:
+            news = tr(
+                lang,
+                "{child} doesn't have a bus stop any more. Contact your transportation "
+                "office if they still need the bus.",
+                child=student.full_name,
+            )
+        else:
+            news = tr(
+                lang,
+                "From now on, {child} catches the bus at {stop}. The Family page shows the "
+                "bus times.",
+                child=student.full_name,
+                stop=student.stop.label,
+            )
+        emails.append(
+            compose(
+                lang,
+                parent,
+                tr(lang, "{child}'s bus stop has changed", child=student.full_name),
+                [news],
+            )
+        )
+    return emails

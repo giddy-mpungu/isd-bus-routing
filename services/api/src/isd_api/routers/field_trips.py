@@ -36,12 +36,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from isd_api import i18n
 from isd_api.audit import record as record_audit
 from isd_api.availability import (
     FIELD_TRIP_TURNAROUND_MINUTES,
     daily_windows,
     driver_absences,
     tasks_blocking,
+    trip_day_windows,
     trip_return,
     trip_windows,
     vehicle_blocks,
@@ -55,14 +57,18 @@ from isd_api.models import (
     Driver,
     FieldTrip,
     Role,
+    School,
     TripStatus,
     User,
     Vehicle,
 )
 from isd_api.routers.optimization_settings import load_min_rest_minutes, load_work_rules
+from isd_api.routers.schedule import route_directions
 from isd_api.routers.vehicles import _resolve_qualifications
 from isd_api.schemas import (
     DestinationProfileRead,
+    DirectionsRead,
+    DirectionsWaypoint,
     DriverFieldTripRead,
     FieldTripConflictCheck,
     FieldTripCreate,
@@ -70,7 +76,7 @@ from isd_api.schemas import (
     FieldTripRead,
     FieldTripUpdate,
 )
-from isd_api.security import require_role
+from isd_api.security import get_current_user, require_role
 from isd_api.work_rules import day_problem, day_work, rest_problem
 
 router = APIRouter(prefix="/field-trips", tags=["field-trips"])
@@ -116,9 +122,15 @@ def create_field_trip(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown destination_profile_id"
         )
 
+    if payload.origin_school_id is not None and db.get(School, payload.origin_school_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown origin_school_id"
+        )
+
     trip = FieldTrip(
         requesting_party=payload.requesting_party,
         origin=payload.origin,
+        origin_school_id=payload.origin_school_id,
         destination=payload.destination,
         destination_profile_id=payload.destination_profile_id,
         departure_at=payload.departure_at,
@@ -355,6 +367,15 @@ def update_field_trip(
         trip.assigned_vehicle_id = payload.assigned_vehicle_id
     if payload.destination_profile_id is not None:
         trip.destination_profile_id = payload.destination_profile_id
+    if "origin_school_id" in payload.model_fields_set:
+        if (
+            payload.origin_school_id is not None
+            and db.get(School, payload.origin_school_id) is None
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown origin_school_id"
+            )
+        trip.origin_school_id = payload.origin_school_id
     if payload.expected_return_at is not None:
         if _naive(payload.expected_return_at) <= _naive(trip.departure_at):
             raise HTTPException(
@@ -408,7 +429,9 @@ def _trip_conflicts(
     because the dispatcher may prioritise the trip, but each such route
     is then flagged "needs cover" on the schedule (section 12.2).
     Both use the trip's window padded by FIELD_TRIP_TURNAROUND_MINUTES."""
-    windows = windows if windows is not None else trip_windows(trip)
+    # Widened by the drive between the trip's school and the day's other
+    # schools, when the trip starts from one of ours (spec section 12.1).
+    windows = trip_day_windows(db, trip, windows)
     blocking: list[str] = []
     route_overlaps: list[str] = []
 
@@ -543,3 +566,85 @@ def check_field_trip_conflicts(
         routes_needing_cover=route_overlaps,
         turnaround_minutes=FIELD_TRIP_TURNAROUND_MINUTES,
     )
+
+
+@router.get("/{trip_id}/directions", response_model=DirectionsRead)
+def get_field_trip_directions(
+    trip_id: int,
+    from_lat: float | None = None,
+    from_lon: float | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    lang: str = Depends(i18n.request_language),
+) -> DirectionsRead:
+    """Spec section 12.3: turn-by-turn from the trip's school to its
+    destination (the destination profile's place, named with its approved
+    entrance) and back, for the trip's bus. The assigned driver may start
+    from where they are. The assigned driver, dispatchers and
+    transportation admins."""
+    trip = db.get(FieldTrip, trip_id)
+    if trip is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field trip not found")
+    is_driver = (
+        current_user.role == Role.DRIVER
+        and current_user.driver_id is not None
+        and trip.assigned_driver_id == current_user.driver_id
+    )
+    if not is_driver and current_user.role not in (Role.TRANSPORTATION_ADMIN, Role.DISPATCHER):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your field trip")
+    if (from_lat is None) != (from_lon is None):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Send both from_lat and from_lon, in range",
+        )
+
+    waypoints: list[DirectionsWaypoint] = []
+    school = trip.origin_school
+    if school is not None:
+        waypoints.append(
+            DirectionsWaypoint(label=school.name, lat=school.location_lat, lon=school.location_lon)
+        )
+    profile = trip.destination_profile
+    if (
+        profile is not None
+        and profile.location_lat is not None
+        and profile.location_lon is not None
+    ):
+        label = profile.name
+        if profile.approved_entrance:
+            label += f" ({profile.approved_entrance})"
+        waypoints.append(
+            DirectionsWaypoint(label=label, lat=profile.location_lat, lon=profile.location_lon)
+        )
+    if school is not None:
+        waypoints.append(
+            DirectionsWaypoint(label=school.name, lat=school.location_lat, lon=school.location_lon)
+        )
+    if from_lat is not None and from_lon is not None:
+        if not (-90 <= from_lat <= 90 and -180 <= from_lon <= 180):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Send both from_lat and from_lon, in range",
+            )
+        waypoints = [
+            DirectionsWaypoint(label=i18n.tr(lang, "Your position"), lat=from_lat, lon=from_lon),
+            *waypoints[1:],
+        ]
+
+    if school is None or len(waypoints) < 3:
+        return DirectionsRead(
+            available=False,
+            reason=i18n.tr(
+                lang,
+                "Directions need the trip's school and a destination placed on the map. "
+                "Ask the transportation office.",
+            ),
+            waypoints=waypoints,
+        )
+    if trip.assigned_vehicle is None:
+        return DirectionsRead(
+            available=False,
+            reason=i18n.tr(lang, "Directions need the trip's bus to be assigned."),
+            waypoints=waypoints,
+        )
+    return route_directions(db, waypoints, trip.assigned_vehicle, ("trip", trip.id), lang)

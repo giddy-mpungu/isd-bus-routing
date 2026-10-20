@@ -322,6 +322,8 @@ describe('SchedulePage', () => {
       location_lat: 29.71,
       location_lon: -95.41,
       recorded_at: new Date().toISOString(),
+      heading_degrees: 45,
+      heading: 'NE',
     }
     vi.mocked(api.getFleetPositions).mockResolvedValue([position])
     render(<SchedulePage />)
@@ -331,8 +333,11 @@ describe('SchedulePage', () => {
     )
     // The same bus on the fleet map, with its schools for context.
     const map = await findMap('Fleet map')
-    expect(within(map).getByTitle('Bus 101 — Jordan Driver')).toBeInTheDocument()
+    expect(within(map).getByTitle('Bus 101 — Jordan Driver, heading NE')).toBeInTheDocument()
     expect(within(map).getByTitle(school.name)).toBeInTheDocument()
+    expect(screen.getByText(/Jordan Driver — Bus 101: 29.71000/).closest('li')).toHaveTextContent(
+      'heading NE',
+    )
   })
 
   it("shows a bus's GPS track on the fleet map when picked", async () => {
@@ -345,6 +350,8 @@ describe('SchedulePage', () => {
       location_lat: 29.72,
       location_lon: -95.42,
       recorded_at: new Date().toISOString(),
+      heading_degrees: null,
+      heading: null,
     }
     vi.mocked(api.getFleetPositions).mockResolvedValue([position])
     vi.mocked(api.getCrewTrack).mockResolvedValue([

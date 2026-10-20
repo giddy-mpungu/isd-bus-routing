@@ -10,11 +10,19 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from isd_api import access_log, eligibility, i18n, retention, student_records
+from isd_api import (
+    access_log,
+    account_emails,
+    eligibility,
+    i18n,
+    mailer,
+    retention,
+    student_records,
+)
 from isd_api.audit import record as record_audit
 from isd_api.daily_trip import daily_trip
 from isd_api.db import get_db
@@ -139,6 +147,7 @@ def list_students(
 def update_student(
     student_id: int,
     payload: StudentUpdate,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
 ) -> StudentRead:
@@ -220,6 +229,9 @@ def update_student(
         )
     db.commit()
     db.refresh(student)
+    if after["stop_id"] != before["stop_id"] and mailer.is_configured():
+        for email in account_emails.stop_change_emails(student):
+            background.add_task(mailer.send_quietly, email)
     return _read_one(db, student)
 
 

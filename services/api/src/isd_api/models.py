@@ -1215,6 +1215,10 @@ class FieldTrip(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     requesting_party: Mapped[str] = mapped_column(String(255), nullable=False)
     origin: Mapped[str] = mapped_column(String(255), nullable=False)
+    # The school the trip leaves from and returns to, when it's one of
+    # ours: gives directions a start and conflicts the drive to the next
+    # run (spec section 12.1). `origin` stays the words on the request.
+    origin_school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True)
     destination: Mapped[str] = mapped_column(String(255), nullable=False)
     destination_profile_id: Mapped[int | None] = mapped_column(
         ForeignKey("destination_profiles.id"), nullable=True
@@ -1240,6 +1244,7 @@ class FieldTrip(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     destination_profile: Mapped[DestinationProfile | None] = relationship()
+    origin_school: Mapped[School | None] = relationship()
 
     required_qualifications: Mapped[list[Qualification]] = relationship(
         secondary=field_trip_required_qualifications

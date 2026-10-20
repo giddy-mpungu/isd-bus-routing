@@ -29,7 +29,14 @@ function speak(text: string) {
  * it still gives the stop order and a link to open the next stop in the
  * tablet's own maps app.
  */
-export function DirectionsPanel({ assignmentId }: { assignmentId: number }) {
+export function DirectionsPanel({
+  assignmentId,
+  tripId,
+}: {
+  assignmentId?: number
+  // A field trip's directions instead (spec section 12.3).
+  tripId?: number
+}) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [result, setResult] = useState<DirectionsResult | null>(null)
@@ -41,7 +48,11 @@ export function DirectionsPanel({ assignmentId }: { assignmentId: number }) {
     setError(null)
     setIsLoading(true)
     try {
-      setResult(await api.getDirections(assignmentId, from))
+      setResult(
+        tripId !== undefined
+          ? await api.getTripDirections(tripId, from)
+          : await api.getDirections(assignmentId ?? 0, from),
+      )
       setLeg(0)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t('Directions failed to load.'))
@@ -173,7 +184,11 @@ export function DirectionsPanel({ assignmentId }: { assignmentId: number }) {
               <LazyMapView
                 markers={markers}
                 tracks={tracks}
-                label={t('Directions map for assignment {id}', { id: assignmentId })}
+                label={
+                  tripId !== undefined
+                    ? t('Directions map for field trip {id}', { id: tripId })
+                    : t('Directions map for assignment {id}', { id: assignmentId ?? 0 })
+                }
                 height={260}
               />
               {result.available && <p className="directions-attribution">{result.attribution}</p>}

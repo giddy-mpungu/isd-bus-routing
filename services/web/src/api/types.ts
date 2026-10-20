@@ -705,6 +705,9 @@ export interface VehiclePosition {
   location_lat: number
   location_lon: number
   recorded_at: string
+  // Spec section 9 "direction of travel": null until the bus has moved.
+  heading_degrees: number | null
+  heading: string | null
 }
 
 export interface BusPosition {
@@ -748,6 +751,8 @@ export interface FieldTrip {
   id: number
   requesting_party: string
   origin: string
+  // The school it leaves from and returns to, when it's one of ours.
+  origin_school_id: number | null
   destination: string
   destination_profile_id: number | null
   destination_profile: DestinationProfile | null
@@ -767,6 +772,7 @@ export interface FieldTrip {
 export interface FieldTripCreate {
   requesting_party: string
   origin: string
+  origin_school_id?: number
   destination: string
   destination_profile_id?: number
   departure_at: string

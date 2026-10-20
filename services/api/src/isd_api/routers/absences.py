@@ -24,6 +24,7 @@ from isd_api.availability import driver_conflict_for_window
 from isd_api.db import get_db
 from isd_api.licensing import license_violation
 from isd_api.models import Assignment, Crew, Driver, DriverAbsence, Role, Run, User
+from isd_api.routers.optimization_settings import load_min_rest_minutes, load_work_rules
 from isd_api.schemas import (
     AbsenceCreate,
     AbsenceRead,
@@ -31,6 +32,7 @@ from isd_api.schemas import (
     SubstituteCandidate,
 )
 from isd_api.security import get_current_user, require_role
+from isd_api.work_rules import day_problem, day_work, rest_problem
 
 router = APIRouter(prefix="/drivers", tags=["absences"])
 # Driver-agnostic listing ("who's out today") doesn't fit the /drivers
@@ -138,10 +140,11 @@ def _rank_substitute_candidates(db: Session, assignment: Assignment) -> list[Sub
     qualifications) are enforced when the chosen candidate is actually
     assigned, via the same checks every manual reassignment goes
     through."""
+    rules = load_work_rules(db)
+    min_rest = load_min_rest_minutes(db)
     absent_driver_id = assignment.crew.driver_id
     service_date = assignment.crew.service_date
     start, end = assignment.start_minute, assignment.end_minute
-    duration = end - start
 
     candidates: list[SubstituteCandidate] = []
     for driver in db.query(Driver).filter(Driver.id != absent_driver_id).order_by(Driver.id):
@@ -166,17 +169,36 @@ def _rank_substitute_candidates(db: Session, assignment: Assignment) -> list[Sub
         # Hard exclude: a genuine double-booking.
         if any(a.start_minute < end and start < a.end_minute for a in same_day):
             continue
-        # Hard exclude: would exceed this driver's own duty-limit —
-        # the same real, solver-enforced constraint (Driver.max_continuous_minutes),
-        # just approximated here as a same-day minute sum rather than
-        # replicating the solver's exact continuous-span logic.
-        if driver.max_continuous_minutes is not None:
-            existing_minutes = sum(a.end_minute - a.start_minute for a in same_day)
-            if existing_minutes + duration > driver.max_continuous_minutes:
-                continue
+        # Hard exclude: would break the driver's own duty limit or the
+        # district's work-hour rules (isd_api/work_rules.py, the same rules
+        # the solver keeps).
+        work = day_work(db, driver.id, assignment.run.service_date)
+        if day_problem([*work, (start, end)], driver.max_continuous_minutes, rules) or rest_problem(
+            db, driver.id, assignment.run.service_date, start, end, min_rest
+        ):
+            continue
 
         score = 0
         reasons: list[str] = []
+
+        # Spec section 13: route experience counts most, then the school.
+        route_id = assignment.run.route_template_id
+        on_route = (
+            0
+            if route_id is None
+            else db.query(Assignment)
+            .join(Crew, Assignment.crew_id == Crew.id)
+            .join(Run, Assignment.run_id == Run.id)
+            .filter(
+                Crew.driver_id == driver.id,
+                Run.route_template_id == route_id,
+                Assignment.id != assignment.id,
+            )
+            .count()
+        )
+        if on_route > 0:
+            score += 2 * on_route
+            reasons.append(f"has driven this route {on_route} time(s) before")
 
         familiarity = (
             db.query(Assignment)

@@ -324,4 +324,5 @@ export const es = {
   'Open {place} in the maps app': 'Abrir {place} en la aplicación de mapas',
   'Route from my position': 'Ruta desde mi ubicación',
   'Directions map for assignment {id}': 'Mapa de indicaciones de la asignación {id}',
+  'Directions map for field trip {id}': 'Mapa de indicaciones de la excursión {id}',
 } satisfies Record<string, string>

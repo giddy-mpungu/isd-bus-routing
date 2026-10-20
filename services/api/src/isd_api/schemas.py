@@ -441,6 +441,8 @@ class RouteTemplateUpdate(BaseModel):
 
     is_active: bool | None = None
     follows_bells: bool | None = None
+    # Spec section 20: adjust toward what's observed (Templates page).
+    duration_minutes: int | None = Field(default=None, ge=1, le=600)
 
 
 class RoutePlanRequest(BaseModel):
@@ -1165,6 +1167,10 @@ class VehiclePositionRead(BaseModel):
     location_lat: float
     location_lon: float
     recorded_at: datetime
+    # Spec section 9 "direction of travel": degrees from north and the
+    # compass point, from the latest GPS samples; None until it has moved.
+    heading_degrees: float | None = None
+    heading: str | None = None
 
 
 class BusPositionRead(BaseModel):
@@ -1218,6 +1224,8 @@ class FieldTripCreate(BaseModel):
 
     requesting_party: str = Field(min_length=1, max_length=255)
     origin: str = Field(min_length=1, max_length=255)
+    # When the trip leaves from one of the district's schools.
+    origin_school_id: int | None = None
     destination: str = Field(min_length=1, max_length=255)
     destination_profile_id: int | None = None
     departure_at: datetime
@@ -1234,6 +1242,7 @@ class FieldTripRead(BaseModel):
     id: int
     requesting_party: str
     origin: str
+    origin_school_id: int | None = None
     destination: str
     destination_profile_id: int | None
     destination_profile: DestinationProfileRead | None
@@ -1261,6 +1270,7 @@ class FieldTripUpdate(BaseModel):
     assigned_driver_id: int | None = None
     assigned_vehicle_id: int | None = None
     destination_profile_id: int | None = None
+    origin_school_id: int | None = None
     expected_return_at: datetime | None = None
     actual_return_at: datetime | None = None
 

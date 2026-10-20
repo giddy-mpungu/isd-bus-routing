@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { seededAccounts } from '../helpers/env'
 import { mapRequests, needsMaps, type MapRequest } from '../helpers/maps'
-import { api } from '../helpers/roles'
+import { api, as, day } from '../helpers/roles'
 import { signIn } from '../helpers/signin'
 import { watch } from '../helpers/watch'
 
@@ -122,4 +122,79 @@ test('Sam follows directions stop by stop, and around a closed road', async ({ p
   await expect(run.locator('.directions-summary')).toContainText('Whole route:')
   await expect.poll(async () => avoidAreas(await lastDirections())).toBe(before + 1)
   expect(watcher.problems()).toEqual([])
+})
+
+test("a field trip's driver gets directions to the destination's entrance and back", async ({
+  browser,
+  baseURL,
+}) => {
+  const admin = await api('transportation_admin')
+  const ok = async (response: Promise<import('@playwright/test').APIResponse>) => {
+    const r = await response
+    expect(r.ok(), `${r.url()}: ${await r.text()}`).toBe(true)
+    return r.json()
+  }
+  const schools = (await ok(admin.get('schools'))) as { id: number; name: string }[]
+  const maple = schools.find((s) => s.name === 'Maple Valley High School')!
+  const museum = (await ok(
+    admin.post('destination-profiles', {
+      data: {
+        name: 'City science museum (e2e)',
+        location_lat: 29.758,
+        location_lon: -95.365,
+        approved_entrance: 'bus loop on Fannin St',
+      },
+    }),
+  )) as { id: number }
+  // Between Jordan's morning and afternoon runs, on Jordan's own bus.
+  const trip = (await ok(
+    admin.post('field-trips', {
+      data: {
+        requesting_party: 'Maple Valley chemistry club (e2e)',
+        origin: 'Maple Valley High School',
+        origin_school_id: maple.id,
+        destination: 'City science museum',
+        destination_profile_id: museum.id,
+        departure_at: `${day()}T10:00:00`,
+        expected_return_at: `${day()}T12:00:00`,
+        passenger_count: 12,
+        trip_contact: 'Mr. Okoro',
+      },
+    }),
+  )) as { id: number }
+  const drivers = (await ok(admin.get('drivers'))) as { id: number; full_name: string }[]
+  const vehicles = (await ok(admin.get('vehicles'))) as { id: number; label: string }[]
+  await ok(
+    admin.patch(`field-trips/${trip.id}`, {
+      data: {
+        assigned_driver_id: drivers.find((d) => d.full_name === 'Jordan Rivera')!.id,
+        assigned_vehicle_id: vehicles.find((v) => v.label === 'Bus 07')!.id,
+        status: 'assigned',
+      },
+    }),
+  )
+  await admin.dispose()
+
+  const jordan = await as(browser, 'driver', baseURL)
+  const watcher = watch(jordan)
+  await jordan.goto('/driver')
+  const card = jordan.locator('.driver-trip-card', { hasText: `Field trip #${trip.id}` })
+  await card.getByRole('button', { name: 'Directions', exact: true }).click()
+  await expect(card.locator('.directions-leg')).toContainText(
+    'To City science museum (e2e) (bus loop on Fannin St)',
+  )
+  await card.getByRole('button', { name: 'Next stop' }).click()
+  await expect(card.locator('.directions-leg')).toContainText('To Maple Valley High School')
+
+  // Asked for: school, the museum's entrance, school.
+  const asked = (await mapRequests()).filter(
+    (r) => r.service === 'ors' && r.path?.endsWith('/geojson'),
+  )
+  expect(asked.at(-1)?.body?.coordinates).toEqual([
+    [-95.37, 29.761],
+    [-95.365, 29.758],
+    [-95.37, 29.761],
+  ])
+  expect(watcher.problems()).toEqual([])
+  await jordan.context().close()
 })

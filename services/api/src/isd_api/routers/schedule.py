@@ -68,6 +68,7 @@ from isd_api.models import (
 )
 from isd_api.models import Crew as DBCrew
 from isd_api.models import Run as DBRun
+from isd_api.models import Vehicle as DBVehicle
 from isd_api.ridership_rules import district_now as ridership_district_now
 from isd_api.ridership_rules import load_rules as ridership_rules_load
 from isd_api.routers.announcements import _maybe_create_substitution_announcement
@@ -1056,6 +1057,19 @@ def get_directions(
             reason=i18n.tr(lang, "This run has no stops on its route today"),
             waypoints=waypoints,
         )
+    return route_directions(db, waypoints, assignment.crew.vehicle, ("run", run.id), lang)
+
+
+def route_directions(
+    db: Session,
+    waypoints: list[DirectionsWaypoint],
+    vehicle: DBVehicle,
+    cache_id: tuple[str, int],
+    lang: str,
+) -> DirectionsRead:
+    """Turn-by-turn through `waypoints` for this bus (spec sections 6, 9,
+    10): its dimensions, the district's hazard zones and closures in force,
+    cached briefly. Without an OpenRouteService key, the waypoints alone."""
     if not settings.ors_api_key:
         return DirectionsRead(
             available=False,
@@ -1066,10 +1080,9 @@ def get_directions(
             waypoints=waypoints,
         )
 
-    vehicle = assignment.crew.vehicle
     in_force = closures.active_now(db)
     key = (
-        run.id,
+        cache_id,
         vehicle.id,
         tuple((round(w.lat, 4), round(w.lon, 4)) for w in waypoints),
         # A new or cleared closure means new directions.

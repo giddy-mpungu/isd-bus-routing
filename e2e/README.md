@@ -137,7 +137,8 @@ bash e2e/scripts/fresh-install.sh --keep   # leaves it running at https://localh
   - Directions (OpenRouteService): the driver follows a route stop by
     stop, with the bus's size and the district's flood-prone crossing sent;
     dispatch closes a road at a stop, the driver is told, and the next
-    directions avoid it.
+    directions avoid it. A field trip from a school gets directions to the
+    destination's entrance and back on the driver's tablet.
   - Home addresses (US Census geocoder): an unknown address asks for a pin
     on the map; a known one is matched; only the address is ever sent.
 

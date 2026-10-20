@@ -185,7 +185,7 @@ export function SchedulePage() {
         id: `bus-${p.crew_id}`,
         lat: p.location_lat,
         lon: p.location_lon,
-        label: `${p.vehicle_label} — ${p.driver_full_name}`,
+        label: `${p.vehicle_label} — ${p.driver_full_name}${p.heading ? `, heading ${p.heading}` : ''}`,
         tone: 'bus' as const,
       })),
     ],
@@ -733,6 +733,7 @@ export function SchedulePage() {
                 {' ('}
                 {formatSecondsAgo(position.recorded_at)}
                 {')'}
+                {position.heading && `, heading ${position.heading}`}
               </li>
             ))}
           </ul>
