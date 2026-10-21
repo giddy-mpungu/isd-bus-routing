@@ -11,6 +11,7 @@ import type {
   DriverFieldTrip,
 } from '../api/types'
 import { AuthProvider } from '../auth/AuthContext'
+import { savedDay } from '../offlineDay'
 import { DriverPage } from './DriverPage'
 import { currentLanguage } from '../i18n'
 import { stubGeolocation } from '../test/geolocation'
@@ -106,6 +107,29 @@ describe('DriverPage', () => {
     await waitFor(() =>
       expect(screen.getByText(/Route 12 substitute driver today\./)).toBeInTheDocument(),
     )
+  })
+
+  it('keeps the day it loaded, and shows it read-only when the tablet loses signal', async () => {
+    localStorage.clear()
+    vi.mocked(api.getMyAssignments).mockResolvedValue([assignment])
+    const first = renderPage()
+    await waitFor(() => expect(screen.getByText('Riverside Elementary')).toBeInTheDocument())
+    await waitFor(() => expect(savedDay(driverUser.id, today())).not.toBeNull())
+    first.unmount()
+
+    vi.mocked(api.getMyAssignments).mockRejectedValue(new TypeError('Failed to fetch'))
+    renderPage()
+    expect(await screen.findByText(/No signal\. This is your day as of/)).toBeInTheDocument()
+    expect(screen.getByText('Riverside Elementary')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Acknowledge' })).toBeDisabled()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('without a saved day, losing signal says the day failed to load', async () => {
+    localStorage.clear()
+    vi.mocked(api.getMyAssignments).mockRejectedValue(new TypeError('Failed to fetch'))
+    renderPage()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to load your day.')
   })
 
   it('renders a run card with resolved school/vehicle names and time window', async () => {

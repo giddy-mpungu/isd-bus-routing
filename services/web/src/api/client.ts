@@ -10,6 +10,7 @@
 // full session-cookie reasoning.
 
 import type {
+  AbsenceImport,
   Absence,
   AbsenceCreate,
   AffectedAssignmentSubstitutes,
@@ -899,6 +900,22 @@ export async function setBellCalendarDay(
 
 export async function deleteBellCalendarDay(dayId: number): Promise<BellChange> {
   return request<BellChange>(`/bell-calendar/${dayId}`, { method: 'DELETE' })
+}
+
+export async function importAbsences(csv: string, apply: boolean): Promise<AbsenceImport> {
+  return request<AbsenceImport>(
+    `/absences/import?dry_run=${apply ? 'false' : 'true'}`,
+    jsonInit('POST', { csv }),
+  )
+}
+
+// Spec section 3: a school's attendance zone (GeoJSON from the district's GIS).
+export async function setSchoolZone(schoolId: number, geojson: unknown): Promise<School> {
+  return request<School>(`/schools/${schoolId}/zone`, jsonInit('PUT', { geojson }))
+}
+
+export async function removeSchoolZone(schoolId: number): Promise<School> {
+  return request<School>(`/schools/${schoolId}/zone`, { method: 'DELETE' })
 }
 
 export async function importBellSchedules(csv: string, apply: boolean): Promise<BellImport> {

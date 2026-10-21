@@ -14,14 +14,27 @@ from isd_api.security import require_role
 router = APIRouter(prefix="/drivers", tags=["drivers"])
 
 
+def _employee_id_free(db: Session, employee_id: str | None, but: int | None = None) -> None:
+    if employee_id is None:
+        return
+    taken = db.query(Driver).filter(Driver.employee_id == employee_id).one_or_none()
+    if taken is not None and taken.id != but:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Employee ID {employee_id} is already {taken.full_name}'s",
+        )
+
+
 @router.post("", response_model=DriverRead, status_code=status.HTTP_201_CREATED)
 def create_driver(
     payload: DriverCreate,
     db: Session = Depends(get_db),
     _: User = Depends(require_role(Role.TRANSPORTATION_ADMIN)),
 ) -> Driver:
+    _employee_id_free(db, payload.employee_id)
     driver = Driver(
         full_name=payload.full_name,
+        employee_id=payload.employee_id,
         max_continuous_minutes=payload.max_continuous_minutes,
         qualifications=_resolve_qualifications(db, payload.qualification_codes),
         license_class=payload.license_class
@@ -60,6 +73,7 @@ def update_driver(
 
     before_state = {
         "full_name": driver.full_name,
+        "employee_id": driver.employee_id,
         "max_continuous_minutes": driver.max_continuous_minutes,
         "is_active": driver.is_active,
         "qualification_codes": sorted(q.code for q in driver.qualifications),
@@ -69,6 +83,9 @@ def update_driver(
         driver.license_class = payload.license_class
     if payload.full_name is not None:
         driver.full_name = payload.full_name
+    if "employee_id" in payload.model_fields_set:
+        _employee_id_free(db, payload.employee_id, but=driver.id)
+        driver.employee_id = payload.employee_id
     if payload.max_continuous_minutes is not None:
         driver.max_continuous_minutes = payload.max_continuous_minutes
     if payload.is_active is not None:
@@ -86,6 +103,7 @@ def update_driver(
         before_state=before_state,
         after_state={
             "full_name": driver.full_name,
+            "employee_id": driver.employee_id,
             "max_continuous_minutes": driver.max_continuous_minutes,
             "is_active": driver.is_active,
             "qualification_codes": sorted(q.code for q in driver.qualifications),

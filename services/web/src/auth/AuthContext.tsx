@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import * as api from '../api/client'
+import { forgetSavedDays } from '../offlineDay'
 import type { CurrentUser, MfaStep, Role } from '../api/types'
 import { chooseLanguage, chosenLanguage, isLanguage, setEnglishOnly } from '../i18n'
 
@@ -63,6 +64,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const logout = useCallback(async () => {
+    // The driver's saved day names riders: it goes when they sign out.
+    forgetSavedDays()
     await api.logout()
     syncLanguage(null)
     setUser(null)

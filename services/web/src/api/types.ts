@@ -56,6 +56,8 @@ export interface School {
   // The SIS's identifier for this school; roster rows can only be placed
   // at a school that has one.
   external_id?: string | null
+  // Spec section 3: an attendance zone is on file.
+  has_zone?: boolean
 }
 
 export type QualificationKind = 'license' | 'vehicle_capability'
@@ -78,6 +80,8 @@ export type LicenseClass = 'cdl_a' | 'cdl_b' | 'class_c'
 export interface Driver {
   id: number
   full_name: string
+  // The district's HR number (absence imports match on it).
+  employee_id?: string | null
   max_continuous_minutes: number | null
   // null = not on record, which qualifies for no vehicle.
   license_class: LicenseClass | null
@@ -280,6 +284,7 @@ export interface QualificationUpdate {
 
 export interface DriverCreate {
   full_name: string
+  employee_id?: string
   max_continuous_minutes?: number
   qualification_codes: string[]
   license_class?: LicenseClass
@@ -287,6 +292,8 @@ export interface DriverCreate {
 
 export interface DriverUpdate {
   full_name?: string
+  // null clears it.
+  employee_id?: string | null
   max_continuous_minutes?: number
   qualification_codes?: string[]
   is_active?: boolean
@@ -1273,6 +1280,20 @@ export interface BellChange {
   runs_updated: number
   assigned_runs_moved: number
   skipped_schools: string[]
+}
+
+// Spec sections 13 and 19: absences from the district's HR export.
+export interface AbsenceImportRow {
+  line: number
+  driver: string
+  date: string
+  outcome: 'created' | 'unchanged' | 'error'
+  message: string | null
+}
+
+export interface AbsenceImport {
+  applied: boolean
+  rows: AbsenceImportRow[]
 }
 
 export interface BellImportRow {

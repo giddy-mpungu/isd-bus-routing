@@ -14,19 +14,33 @@ autonomous authority."""
 
 from __future__ import annotations
 
+import csv
+import io
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from isd_api.audit import record as record_audit
 from isd_api.availability import driver_conflict_for_window
 from isd_api.db import get_db
 from isd_api.licensing import license_violation
-from isd_api.models import Assignment, Crew, Driver, DriverAbsence, Role, Run, User
+from isd_api.models import (
+    AbsenceReason,
+    Assignment,
+    Crew,
+    Driver,
+    DriverAbsence,
+    Role,
+    Run,
+    User,
+)
 from isd_api.routers.optimization_settings import load_min_rest_minutes, load_work_rules
 from isd_api.schemas import (
     AbsenceCreate,
+    AbsenceImportRead,
+    AbsenceImportRequest,
+    AbsenceImportRow,
     AbsenceRead,
     AffectedAssignmentSubstitutes,
     SubstituteCandidate,
@@ -271,3 +285,144 @@ def get_substitute_candidates(
         )
         for a in assignments
     ]
+
+
+# --- HR import (spec section 13 "HR-reported", section 19) -----------------
+
+_REASONS = (
+    {r.value: r for r in AbsenceReason}
+    | {r.value.replace("_", " "): r for r in AbsenceReason}
+    | {"sick": AbsenceReason.SICK_LEAVE, "illness": AbsenceReason.SICK_LEAVE}
+)
+
+
+def _clock(text: str) -> int:
+    hours, _, minutes = text.strip().partition(":")
+    value = int(hours) * 60 + int(minutes)
+    if not (0 <= int(minutes) < 60 and 0 <= value < 1440):
+        raise ValueError
+    return value
+
+
+@all_absences_router.post("/import", response_model=AbsenceImportRead)
+def import_absences(
+    payload: AbsenceImportRequest,
+    dry_run: bool = Query(default=True),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.TRANSPORTATION_ADMIN, Role.DISPATCHER)),
+) -> AbsenceImportRead:
+    """Absences from the district's HR system, as its CSV export with a
+    header row: employee_id and/or driver, date (YYYY-MM-DD), start and
+    end (HH:MM, both empty for the whole day), reason (one of this
+    system's reasons; empty is "other"). A driver is matched by employee
+    ID, else by a name only one driver has. With dry_run (the default)
+    nothing is saved; the rows say what would happen. A repeat of an
+    absence already on file is left as it is, so the same export can be
+    imported twice."""
+    reader = csv.DictReader(io.StringIO(payload.csv.lstrip("\ufeff")))
+    header = [h.strip().lower() for h in (reader.fieldnames or [])]
+    if "date" not in header or not ({"employee_id", "driver"} & set(header)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The CSV needs a date column and an employee_id or driver column",
+        )
+    drivers = db.query(Driver).all()
+    by_id = {d.employee_id.strip().lower(): d for d in drivers if d.employee_id}
+    by_name: dict[str, list[Driver]] = {}
+    for d in drivers:
+        by_name.setdefault(d.full_name.strip().lower(), []).append(d)
+
+    rows: list[AbsenceImportRow] = []
+    created: list[DriverAbsence] = []
+    for line, raw in enumerate(reader, start=2):
+        row = {(k or "").strip().lower(): (v or "").strip() for k, v in raw.items()}
+        who = row.get("employee_id") or row.get("driver", "")
+        result = AbsenceImportRow(line=line, driver=who, date=row.get("date", ""), outcome="error")
+        rows.append(result)
+        employee = row.get("employee_id", "")
+        if employee:
+            driver = by_id.get(employee.lower())
+            if driver is None:
+                result.message = "No driver has that employee ID"
+                continue
+        else:
+            matches = by_name.get(row.get("driver", "").lower(), [])
+            if not matches:
+                result.message = "No driver by that name"
+                continue
+            if len(matches) > 1:
+                result.message = "More than one driver has that name; give an employee ID"
+                continue
+            driver = matches[0]
+        result.driver = driver.full_name
+        try:
+            day = date.fromisoformat(row.get("date", ""))
+        except ValueError:
+            result.message = "The date must be YYYY-MM-DD"
+            continue
+        start_text, end_text = row.get("start", ""), row.get("end", "")
+        try:
+            if not start_text and not end_text:
+                start, end = 0, 1439
+            else:
+                start, end = _clock(start_text), _clock(end_text)
+        except ValueError:
+            result.message = "Times must be HH:MM (24-hour), or both empty for the whole day"
+            continue
+        if start >= end:
+            result.message = "The start must come before the end"
+            continue
+        reason_text = row.get("reason", "").lower()
+        reason = _REASONS.get(reason_text) if reason_text else AbsenceReason.OTHER
+        if reason is None:
+            result.message = "Unknown reason; use one of: " + ", ".join(
+                r.value for r in AbsenceReason
+            )
+            continue
+        repeat = (
+            db.query(DriverAbsence)
+            .filter(
+                DriverAbsence.driver_id == driver.id,
+                DriverAbsence.service_date == day,
+                DriverAbsence.start_minute == start,
+                DriverAbsence.end_minute == end,
+            )
+            .first()
+        )
+        if repeat is not None or any(
+            (a.driver_id, a.service_date, a.start_minute, a.end_minute)
+            == (driver.id, day, start, end)
+            for a in created
+        ):
+            result.outcome = "unchanged"
+            continue
+        result.outcome = "created"
+        absence = DriverAbsence(
+            driver_id=driver.id,
+            service_date=day,
+            start_minute=start,
+            end_minute=end,
+            reason=reason,
+        )
+        created.append(absence)
+
+    if dry_run or not created:
+        return AbsenceImportRead(applied=False, rows=rows)
+    db.add_all(created)
+    db.flush()
+    for absence in created:
+        record_audit(
+            db,
+            entity_type="driver_absence",
+            entity_id=absence.id,
+            action="created",
+            actor=current_user,
+            after_state={
+                "driver_id": absence.driver_id,
+                "service_date": str(absence.service_date),
+                "reason": absence.reason.value,
+                "source": "hr_import",
+            },
+        )
+    db.commit()
+    return AbsenceImportRead(applied=True, rows=rows)

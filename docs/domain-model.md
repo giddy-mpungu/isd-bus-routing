@@ -1651,3 +1651,22 @@ otherwise it's flagged. Deterministic, and quick (400 students well under
   above the school (1 per run). Substitutes who would break the driver's
   own limit or the district's work-hour rules aren't offered at all.
 
+
+## Outside systems (October review, Phase D)
+
+- **HR absences** (spec §13, §19): `POST /absences/import?dry_run=` takes
+  the HR system's CSV export (`employee_id` and/or `driver`, `date`,
+  `start`, `end`, `reason`), previews first, matches drivers by
+  `Driver.employee_id` (unique, optional) or a name only one driver has,
+  and treats an absence already on file as unchanged, so the same export
+  can be imported twice. Setup → Fleet & drivers → Absences from HR.
+- **Attendance zones** (spec §3): `School.zone_geojson`, a Polygon or
+  MultiPolygon from the district's GIS (`PUT`/`GET`/`DELETE
+  /schools/{id}/zone`; `isd_api/zones.py` validates and tests points,
+  holes included). A home outside its school's zone isn't eligible,
+  except for specialized transportation.
+- **Tablets without signal** (spec §19): the driver page keeps the day it
+  last loaded on the tablet (`src/offlineDay.ts`: that driver and date
+  only, cleared at sign-out) and shows it read-only, with its time, when
+  a load gets no answer at all; status buttons wait for signal, and the
+  day reloads when the browser reports it's back online.

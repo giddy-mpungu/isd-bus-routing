@@ -325,4 +325,7 @@ export const es = {
   'Route from my position': 'Ruta desde mi ubicación',
   'Directions map for assignment {id}': 'Mapa de indicaciones de la asignación {id}',
   'Directions map for field trip {id}': 'Mapa de indicaciones de la excursión {id}',
+  "No signal. This is your day as of {time}. Buttons work again when there's signal.":
+    'Sin señal. Este es su día a las {time}. Los botones vuelven a funcionar cuando haya señal.',
+  'Try again': 'Intentar de nuevo',
 } satisfies Record<string, string>

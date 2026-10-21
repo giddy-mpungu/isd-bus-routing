@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../api/client'
+import { savedDay, saveDay } from '../offlineDay'
 import { ApiError } from '../api/client'
 import type {
   AbsenceReason,
@@ -145,6 +146,8 @@ export function DriverPage() {
   const [trips, setTrips] = useState<DriverFieldTrip[]>([])
   const [hasLoaded, setHasLoaded] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  // When the tablet has no signal: the time of the saved copy on screen.
+  const [noSignal, setNoSignal] = useState(false)
   // "run-12" / "task-3": the card whose button is waiting on the server.
   const [busyKey, setBusyKey] = useState<string | null>(null)
   // spec section 9: "Messages from dispatch" -- dispatcher-authored,
@@ -170,8 +173,14 @@ export function DriverPage() {
         setAssignments(runs)
         setTasks(tasksNow)
         setTrips(myTrips)
+        setNoSignal(false)
       } catch (err) {
-        setErrorMessage(err instanceof ApiError ? err.message : t('Failed to load your day.'))
+        if (err instanceof ApiError) {
+          setErrorMessage(err.message)
+        } else {
+          // No answer at all: no signal. The saved day is shown below.
+          setNoSignal(true)
+        }
       } finally {
         setHasLoaded(true)
       }
@@ -179,11 +188,32 @@ export function DriverPage() {
     [t],
   )
 
+  // Spec section 19: keep the day as loaded, for this driver and date only.
+  useEffect(() => {
+    if (user && hasLoaded && !noSignal) {
+      saveDay(user.id, serviceDate, { assignments, tasks, trips })
+    }
+  }, [user, hasLoaded, noSignal, serviceDate, assignments, tasks, trips])
+
+  // Back in signal: load the day again.
+  useEffect(() => {
+    const reload = () => void loadDay(serviceDate)
+    window.addEventListener('online', reload)
+    return () => window.removeEventListener('online', reload)
+  }, [loadDay, serviceDate])
+
   useEffect(() => {
     void loadDay(serviceDate)
   }, [serviceDate, loadDay])
 
-  const day = buildDay(assignments, tasks, trips)
+  // No signal: the day as last loaded, read-only, if there is one.
+  const saved = noSignal && user ? savedDay(user.id, serviceDate) : null
+  const offlineSince = saved?.savedAt ?? null
+  const day = saved
+    ? buildDay(saved.assignments, saved.tasks, saved.trips)
+    : buildDay(assignments, tasks, trips)
+  const shownError =
+    errorMessage ?? (noSignal && user && !saved ? t('Failed to load your day.') : null)
   const anythingUnderway = day.some(({ item }) => isUnderway(item))
 
   useEffect(() => {
@@ -367,12 +397,25 @@ export function DriverPage() {
         </section>
       )}
 
-      {errorMessage && (
-        <p role="alert" className="error">
-          {errorMessage}
+      {offlineSince && (
+        <p role="status" className="driver-offline">
+          {t("No signal. This is your day as of {time}. Buttons work again when there's signal.", {
+            time: new Date(offlineSince).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+          })}{' '}
+          <button type="button" onClick={() => void loadDay(serviceDate)}>
+            {t('Try again')}
+          </button>
         </p>
       )}
-      {hasLoaded && day.length === 0 && !errorMessage && (
+      {shownError && (
+        <p role="alert" className="error">
+          {shownError}
+        </p>
+      )}
+      {hasLoaded && day.length === 0 && !shownError && (
         <p className="status">{t('Nothing scheduled for you today.')}</p>
       )}
 
@@ -417,7 +460,7 @@ export function DriverPage() {
                     <button
                       type="button"
                       className="driver-next-step"
-                      disabled={busyKey === item.key}
+                      disabled={busyKey === item.key || offlineSince !== null}
                       onClick={() => void handleSetTaskStatus(task.id, step.to)}
                     >
                       {t(taskStepLabel(step.to, step.label))}
@@ -609,7 +652,7 @@ export function DriverPage() {
                   <button
                     type="button"
                     className="driver-next-step"
-                    disabled={busyKey === item.key}
+                    disabled={busyKey === item.key || offlineSince !== null}
                     onClick={() => void handleSetStatus(a.id, NEXT_STEP[a.status]!.to)}
                   >
                     {t(NEXT_STEP[a.status]!.label)}
@@ -619,7 +662,7 @@ export function DriverPage() {
                   <button
                     type="button"
                     className="btn-danger"
-                    disabled={busyKey === item.key || locked}
+                    disabled={busyKey === item.key || locked || offlineSince !== null}
                     title={locked ? t('Stop the bus first') : undefined}
                     onClick={() => void handleSetStatus(a.id, 'no_show')}
                   >
