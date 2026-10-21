@@ -162,6 +162,7 @@ describe('TemplatesPage', () => {
         window_latest: 990,
         duration_minutes: 40,
         buffer_minutes: 10,
+        kind: 'regular',
         days_of_week: [0, 1, 2, 3, 5],
         active_from: null,
         active_until: '2026-12-18',
@@ -189,6 +190,45 @@ describe('TemplatesPage', () => {
     )
     const sent = vi.mocked(api.createRouteTemplate).mock.calls[0][0]
     expect(sent.window_earliest).toBeUndefined()
+  })
+
+  it('creates a special education route whose buffer is set reason by reason', async () => {
+    vi.mocked(api.createRouteTemplate).mockResolvedValue(routeTemplate)
+    const user = userEvent.setup()
+    render(<TemplatesPage />)
+    await screen.findByRole('option', { name: 'Riverside Elementary' })
+
+    await user.selectOptions(screen.getByLabelText('School'), '1')
+    await user.selectOptions(screen.getByLabelText('Kind of route'), 'special_education')
+    await user.type(screen.getByLabelText('Window start (minute of day)'), '420')
+    await user.type(screen.getByLabelText('Window end (minute of day)'), '480')
+    await user.type(screen.getByLabelText('Duration (minutes)'), '30')
+    await user.click(screen.getByText('Buffer by reason'))
+    await user.type(screen.getByLabelText('Wheelchair securement'), '6')
+    await user.type(screen.getByLabelText('Traffic'), '4')
+    // The total follows the reasons and can't be typed over.
+    expect(screen.getByLabelText('Buffer (minutes)')).toHaveValue(10)
+    expect(screen.getByLabelText('Buffer (minutes)')).toHaveAttribute('readonly')
+    await user.click(screen.getByRole('button', { name: 'Add route template' }))
+
+    await waitFor(() =>
+      expect(api.createRouteTemplate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'special_education',
+          buffer_minutes: 10,
+          buffer_breakdown: { traffic: 4, wheelchair: 6 },
+        }),
+      ),
+    )
+  })
+
+  it("shows a route's kind and what its buffer is for", async () => {
+    vi.mocked(api.getRouteTemplates).mockResolvedValue([
+      { ...routeTemplate, kind: 'shuttle', buffer_breakdown: { traffic: 5, rail_crossings: 3 } },
+    ])
+    render(<TemplatesPage />)
+    expect(await screen.findByText('Shuttle')).toBeInTheDocument()
+    expect(screen.getByText('Buffer: Traffic 5, Railroad crossings 3')).toBeInTheDocument()
   })
 
   it('switches an existing route to follow the bells', async () => {

@@ -1183,6 +1183,7 @@ def _driver_assignment_read(
         service_date=assignment.run.service_date,
         school_name=assignment.run.school.name,
         vehicle_label=assignment.crew.vehicle.label,
+        run_kind=assignment.run.kind,
         start_minute=assignment.start_minute,
         end_minute=assignment.end_minute,
         status=assignment.status,

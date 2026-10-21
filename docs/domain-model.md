@@ -450,6 +450,13 @@ independently modeled resources.
   school, direction, window, duration, buffer, required qualifications,
   `days_of_week` (JSON list, Python weekday numbers Mon=0..Sun=6), optional
   `active_from`/`active_until`, `is_active`. Owns no driver/vehicle.
+  `kind` (spec §11: regular, special education, activity or shuttle;
+  copied to each generated `Run.kind`, and shown on the driver's card) and
+  `buffer_breakdown` (spec §16: minutes by reason, from traffic, loading,
+  wheelchair, weather, rail crossings, pre-trip, fueling and other; when
+  set, `buffer_minutes` is its sum, and a PATCH that wouldn't fit the
+  window is refused). `FieldTrip.kind` is field trip, athletic, activity
+  or other.
 - **CrewTemplate** (`crew_templates`): driver, vehicle, availability window,
   `days_of_week`, optional active range, `is_active`.
 - **Provenance columns**: `Run.route_template_id` and `Crew.crew_template_id`

@@ -132,6 +132,7 @@ def create_field_trip(
         origin=payload.origin,
         origin_school_id=payload.origin_school_id,
         destination=payload.destination,
+        kind=payload.kind,
         destination_profile_id=payload.destination_profile_id,
         departure_at=payload.departure_at,
         expected_return_at=payload.expected_return_at,
@@ -367,6 +368,8 @@ def update_field_trip(
         trip.assigned_vehicle_id = payload.assigned_vehicle_id
     if payload.destination_profile_id is not None:
         trip.destination_profile_id = payload.destination_profile_id
+    if payload.kind is not None:
+        trip.kind = payload.kind
     if "origin_school_id" in payload.model_fields_set:
         if (
             payload.origin_school_id is not None

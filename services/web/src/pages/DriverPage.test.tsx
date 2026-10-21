@@ -142,6 +142,19 @@ describe('DriverPage', () => {
     expect(screen.getByText('Received')).toBeInTheDocument()
   })
 
+  it('says when a run is a special education route, in Spanish too', async () => {
+    vi.mocked(api.getMyAssignments).mockResolvedValue([
+      { ...assignment, run_kind: 'special_education' },
+    ])
+    vi.mocked(api.getCurrentUser).mockResolvedValue({ ...driverUser, preferred_language: 'es' })
+    render(
+      <AuthProvider>
+        <DriverPage />
+      </AuthProvider>,
+    )
+    expect(await screen.findByText('Ruta de educación especial')).toBeInTheDocument()
+  })
+
   it("shows the run in the driver's chosen language", async () => {
     vi.mocked(api.getMyAssignments).mockResolvedValue([assignment])
     vi.mocked(api.getCurrentUser).mockResolvedValue({ ...driverUser, preferred_language: 'es' })

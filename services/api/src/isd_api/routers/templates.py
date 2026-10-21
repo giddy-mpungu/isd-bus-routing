@@ -128,6 +128,8 @@ def create_route_template(
         follows_bells=payload.follows_bells,
         duration_minutes=payload.duration_minutes,
         buffer_minutes=payload.buffer_minutes,
+        buffer_breakdown=payload.buffer_breakdown,
+        kind=payload.kind,
         days_of_week=payload.days_of_week,
         active_from=payload.active_from,
         active_until=payload.active_until,
@@ -176,7 +178,25 @@ def update_route_template(
         "is_active": template.is_active,
         "follows_bells": template.follows_bells,
         "duration_minutes": template.duration_minutes,
+        "kind": template.kind.value,
+        "buffer_breakdown": template.buffer_breakdown,
     }
+    if payload.kind is not None:
+        template.kind = payload.kind
+    if "buffer_breakdown" in payload.model_fields_set:
+        template.buffer_breakdown = payload.buffer_breakdown
+        if payload.buffer_breakdown is not None:
+            buffer = sum(payload.buffer_breakdown.values())
+            window = template.window_latest - template.window_earliest
+            if template.duration_minutes + buffer > window:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"A {buffer}-minute buffer and the {template.duration_minutes}-minute "
+                        f"route don't fit the route's {window}-minute window"
+                    ),
+                )
+            template.buffer_minutes = buffer
     if payload.duration_minutes is not None:
         window = template.window_latest - template.window_earliest
         if payload.duration_minutes + template.buffer_minutes > window:
@@ -212,6 +232,8 @@ def update_route_template(
             "is_active": template.is_active,
             "follows_bells": template.follows_bells,
             "duration_minutes": template.duration_minutes,
+            "kind": template.kind.value,
+            "buffer_breakdown": template.buffer_breakdown,
         },
     )
     bells.audit_moved_runs(db, moved, current_user)
@@ -597,6 +619,7 @@ def generate_from_templates(
             buffer_minutes=rt.buffer_minutes,
             passenger_count=0,
             route_template_id=rt.id,
+            kind=rt.kind,
             required_qualifications=list(rt.required_qualifications),
         )
         db.add(run)

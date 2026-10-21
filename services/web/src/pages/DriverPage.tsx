@@ -16,6 +16,7 @@ import { useAuth } from '../auth/AuthContext'
 import { FINISHED, NEXT_STEP, STATUS_LABELS, STATUS_TONES } from '../assignmentStatus'
 import { Badge, type BadgeTone } from '../components/Badge'
 import { TASK_KIND_LABELS } from '../dispatchTasks'
+import { ROUTE_KIND_LABELS } from '../kinds'
 import { buildDay, isUnderway, SLOT_LABELS, type QueueSlot } from '../driverDay'
 import {
   currentLanguage,
@@ -545,7 +546,15 @@ export function DriverPage() {
               <div className="driver-run-time">
                 {formatMinuteOfDay(a.start_minute)} – {formatMinuteOfDay(a.end_minute)}
               </div>
-              <div className="driver-run-school">{a.school_name}</div>
+              <div className="driver-run-school">
+                {a.school_name}
+                {a.run_kind && a.run_kind !== 'regular' && (
+                  <>
+                    {' '}
+                    <Badge tone="info">{t(ROUTE_KIND_LABELS[a.run_kind])}</Badge>
+                  </>
+                )}
+              </div>
               <div className="driver-run-vehicle">
                 {t('Vehicle: {vehicle}', { vehicle: a.vehicle_label })}
               </div>

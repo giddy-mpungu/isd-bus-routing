@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from isd_api.models import (
+    BUFFER_FACTORS,
     AbsenceReason,
     AnnouncementAudience,
     AnnouncementCategory,
@@ -24,8 +25,10 @@ from isd_api.models import (
     RideDirection,
     RidershipDefault,
     Role,
+    RouteKind,
     StopProposalKind,
     StopProposalStatus,
+    TripKind,
     TripStatus,
     VehicleType,
 )
@@ -369,6 +372,7 @@ class RunRead(BaseModel):
     required_qualifications: list[QualificationRead]
     # The recurring route this run was generated from, if any.
     route_template_id: int | None = None
+    kind: RouteKind = RouteKind.REGULAR
 
 
 class RunUpdate(BaseModel):
@@ -385,6 +389,19 @@ def _validate_days_of_week(value: list[int]) -> list[int]:
     return sorted(value)
 
 
+def _validate_buffer_breakdown(value: dict[str, int] | None) -> dict[str, int] | None:
+    """Spec section 16: minutes by reason, each a known reason, 0 to 120."""
+    if value is None:
+        return None
+    unknown = sorted(set(value) - set(BUFFER_FACTORS))
+    if unknown:
+        raise ValueError(f"unknown buffer reasons {unknown}; use {list(BUFFER_FACTORS)}")
+    for reason, minutes in value.items():
+        if isinstance(minutes, bool) or not isinstance(minutes, int) or not 0 <= minutes <= 120:
+            raise ValueError(f"{reason}: minutes must be a whole number from 0 to 120")
+    return {r: value[r] for r in BUFFER_FACTORS if value.get(r)}
+
+
 class RouteTemplateCreate(BaseModel):
     school_id: int
     direction: RideDirection
@@ -395,10 +412,24 @@ class RouteTemplateCreate(BaseModel):
     follows_bells: bool = False
     duration_minutes: int = Field(gt=0)
     buffer_minutes: int = Field(ge=0, default=0)
+    # Spec section 16: the buffer by reason; when given, it sets buffer_minutes.
+    buffer_breakdown: dict[str, int] | None = None
+    # Spec section 11.
+    kind: RouteKind = RouteKind.REGULAR
     days_of_week: list[int]
     active_from: date | None = None
     active_until: date | None = None
     required_qualification_codes: list[str] = Field(default_factory=list)
+
+    _breakdown = field_validator("buffer_breakdown")(
+        classmethod(lambda cls, v: _validate_buffer_breakdown(v))
+    )
+
+    @model_validator(mode="after")
+    def _buffer_from_breakdown(self) -> RouteTemplateCreate:
+        if self.buffer_breakdown is not None:
+            self.buffer_minutes = sum(self.buffer_breakdown.values())
+        return self
 
     @field_validator("days_of_week")
     @classmethod
@@ -437,6 +468,8 @@ class RouteTemplateRead(BaseModel):
     window_latest: int
     duration_minutes: int
     buffer_minutes: int
+    buffer_breakdown: dict[str, int] | None = None
+    kind: RouteKind = RouteKind.REGULAR
     days_of_week: list[int]
     active_from: date | None
     active_until: date | None
@@ -454,6 +487,13 @@ class RouteTemplateUpdate(BaseModel):
     follows_bells: bool | None = None
     # Spec section 20: adjust toward what's observed (Templates page).
     duration_minutes: int | None = Field(default=None, ge=1, le=600)
+    kind: RouteKind | None = None
+    # Sent as null, clears it (the buffer keeps its total).
+    buffer_breakdown: dict[str, int] | None = None
+
+    _breakdown = field_validator("buffer_breakdown")(
+        classmethod(lambda cls, v: _validate_buffer_breakdown(v))
+    )
 
 
 class RoutePlanRequest(BaseModel):
@@ -638,6 +678,8 @@ class DriverAssignmentRead(BaseModel):
     end_minute: int
     status: AssignmentStatus
     locked: bool
+    # Spec section 11: a special education, activity or shuttle route.
+    run_kind: RouteKind = RouteKind.REGULAR
     # spec section 21 "don't guess": True when more than one Run shares
     # this run's (school_id, service_date, direction) — same ambiguity
     # rule as GET /runs/{id}/expected-riders. `stops` is always empty
@@ -1245,6 +1287,8 @@ class FieldTripCreate(BaseModel):
     # When the trip leaves from one of the district's schools.
     origin_school_id: int | None = None
     destination: str = Field(min_length=1, max_length=255)
+    # Spec section 11.
+    kind: TripKind = TripKind.FIELD_TRIP
     destination_profile_id: int | None = None
     departure_at: datetime
     expected_return_at: datetime
@@ -1262,6 +1306,7 @@ class FieldTripRead(BaseModel):
     origin: str
     origin_school_id: int | None = None
     destination: str
+    kind: TripKind = TripKind.FIELD_TRIP
     destination_profile_id: int | None
     destination_profile: DestinationProfileRead | None
     departure_at: datetime
@@ -1289,6 +1334,7 @@ class FieldTripUpdate(BaseModel):
     assigned_vehicle_id: int | None = None
     destination_profile_id: int | None = None
     origin_school_id: int | None = None
+    kind: TripKind | None = None
     expected_return_at: datetime | None = None
     actual_return_at: datetime | None = None
 

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type {
+  BufferReason,
+  RouteKind,
   CrewTemplate,
   Driver,
   Qualification,
@@ -13,6 +15,13 @@ import type {
   Stop,
 } from '../api/types'
 import { Badge } from '../components/Badge'
+import {
+  BUFFER_REASON_LABELS,
+  BUFFER_REASONS,
+  describeBuffer,
+  ROUTE_KIND_LABELS,
+  ROUTE_KINDS,
+} from '../kinds'
 import { ObservedRouteTime } from './ObservedRouteTime'
 import { RouteStopsEditor } from './RouteStopsEditor'
 
@@ -140,12 +149,26 @@ export function TemplatesPage() {
   const [rtLatest, setRtLatest] = useState('')
   const [rtDuration, setRtDuration] = useState('')
   const [rtBuffer, setRtBuffer] = useState('0')
+  const [rtBufferBy, setRtBufferBy] = useState<Partial<Record<BufferReason, string>>>({})
+  const [rtKind, setRtKind] = useState<RouteKind>('regular')
   const [rtDays, setRtDays] = useState<Set<number>>(new Set([0, 1, 2, 3, 4]))
   const [rtFrom, setRtFrom] = useState('')
   const [rtUntil, setRtUntil] = useState('')
   const [rtQuals, setRtQuals] = useState<Set<string>>(new Set())
   const [rtError, setRtError] = useState<string | null>(null)
   const [isSavingRt, setIsSavingRt] = useState(false)
+
+  // Spec section 16: once any reason has minutes, the buffer is their sum.
+  const rtBreakdown = Object.fromEntries(
+    BUFFER_REASONS.filter((r) => Number(rtBufferBy[r] ?? 0) > 0).map((r) => [
+      r,
+      Number(rtBufferBy[r]),
+    ]),
+  ) as Partial<Record<BufferReason, number>>
+  const rtByReason = Object.keys(rtBreakdown).length > 0
+  const rtBufferTotal = rtByReason
+    ? String(Object.values(rtBreakdown).reduce((sum, m) => sum + m, 0))
+    : rtBuffer
 
   async function handleCreateRouteTemplate(event: FormEvent) {
     event.preventDefault()
@@ -159,7 +182,9 @@ export function TemplatesPage() {
           ? { follows_bells: true }
           : { window_earliest: Number(rtEarliest), window_latest: Number(rtLatest) }),
         duration_minutes: Number(rtDuration),
-        buffer_minutes: Number(rtBuffer),
+        buffer_minutes: Number(rtBufferTotal),
+        ...(rtByReason ? { buffer_breakdown: rtBreakdown } : {}),
+        kind: rtKind,
         days_of_week: [...rtDays].sort((a, b) => a - b),
         active_from: rtFrom || null,
         active_until: rtUntil || null,
@@ -169,6 +194,8 @@ export function TemplatesPage() {
       setRtLatest('')
       setRtDuration('')
       setRtBuffer('0')
+      setRtBufferBy({})
+      setRtKind('regular')
       setRtFrom('')
       setRtUntil('')
       setRtQuals(new Set())
@@ -283,7 +310,15 @@ export function TemplatesPage() {
               {routeTemplates.flatMap((t) => [
                 <tr key={t.id}>
                   <td>{schoolsById.get(t.school_id)?.name ?? `School #${t.school_id}`}</td>
-                  <td>{t.direction.toUpperCase()}</td>
+                  <td>
+                    {t.direction.toUpperCase()}
+                    {t.kind && t.kind !== 'regular' && (
+                      <>
+                        {' '}
+                        <Badge tone="info">{ROUTE_KIND_LABELS[t.kind]}</Badge>
+                      </>
+                    )}
+                  </td>
                   <td>
                     {formatMinuteOfDay(t.window_earliest)}–{formatMinuteOfDay(t.window_latest)}
                     {t.follows_bells && (
@@ -295,6 +330,12 @@ export function TemplatesPage() {
                   </td>
                   <td>
                     {t.duration_minutes} + {t.buffer_minutes} min
+                    {t.buffer_breakdown && (
+                      <>
+                        <br />
+                        <small>Buffer: {describeBuffer(t.buffer_breakdown)}</small>
+                      </>
+                    )}
                   </td>
                   <td>{formatDays(t.days_of_week)}</td>
                   <td>{formatRange(t.active_from, t.active_until)}</td>
@@ -381,6 +422,18 @@ export function TemplatesPage() {
             <option value="am">AM (to school)</option>
             <option value="pm">PM (from school)</option>
           </select>
+          <label htmlFor="rt-kind">Kind of route</label>
+          <select
+            id="rt-kind"
+            value={rtKind}
+            onChange={(event) => setRtKind(event.target.value as RouteKind)}
+          >
+            {ROUTE_KINDS.map((k) => (
+              <option key={k} value={k}>
+                {ROUTE_KIND_LABELS[k]}
+              </option>
+            ))}
+          </select>
           <label className="checkbox-label">
             <input
               type="checkbox"
@@ -427,10 +480,33 @@ export function TemplatesPage() {
             id="rt-buffer"
             type="number"
             min="0"
-            value={rtBuffer}
+            value={rtBufferTotal}
             onChange={(event) => setRtBuffer(event.target.value)}
+            readOnly={rtByReason}
+            aria-describedby="rt-buffer-hint"
             required
           />
+          <details>
+            <summary>Buffer by reason</summary>
+            <small id="rt-buffer-hint">
+              Minutes for each reason; the buffer is then their total.
+            </small>
+            {BUFFER_REASONS.map((r) => (
+              <div key={r}>
+                <label htmlFor={`rt-buffer-${r}`}>{BUFFER_REASON_LABELS[r]}</label>
+                <input
+                  id={`rt-buffer-${r}`}
+                  type="number"
+                  min="0"
+                  max="120"
+                  value={rtBufferBy[r] ?? ''}
+                  onChange={(event) =>
+                    setRtBufferBy((prev) => ({ ...prev, [r]: event.target.value }))
+                  }
+                />
+              </div>
+            ))}
+          </details>
           <DayPicker
             idPrefix="rt"
             selected={rtDays}

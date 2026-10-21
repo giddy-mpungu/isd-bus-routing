@@ -64,6 +64,39 @@ class QualificationKind(enum.StrEnum):
     VEHICLE_CAPABILITY = "vehicle_capability"
 
 
+class RouteKind(enum.StrEnum):
+    """Spec section 11's kinds of route: the everyday ones, and special
+    education assignments, activity routes and shuttles."""
+
+    REGULAR = "regular"
+    SPECIAL_EDUCATION = "special_education"
+    ACTIVITY = "activity"
+    SHUTTLE = "shuttle"
+
+
+class TripKind(enum.StrEnum):
+    """Spec section 11's kinds of trip: field trips, athletic trips and
+    activity trips."""
+
+    FIELD_TRIP = "field_trip"
+    ATHLETIC = "athletic"
+    ACTIVITY = "activity"
+    OTHER = "other"
+
+
+# Spec section 16's reasons for a route's buffer, in the order shown.
+BUFFER_FACTORS = (
+    "traffic",
+    "loading",
+    "wheelchair",
+    "weather",
+    "rail_crossings",
+    "pre_trip",
+    "fueling",
+    "other",
+)
+
+
 class VehicleType(enum.StrEnum):
     """Spec section 6's vehicle type: the US school bus types (A smallest,
     on a van chassis, to D, a transit-style bus), or a van or other."""
@@ -945,6 +978,16 @@ class RouteTemplate(Base):
     window_latest: Mapped[int] = mapped_column(Integer, nullable=False)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     buffer_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Spec section 16: what the buffer is for, minutes by reason
+    # (BUFFER_FACTORS); when set, buffer_minutes is their sum.
+    buffer_breakdown: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Spec section 11. Enum columns store member names.
+    kind: Mapped[RouteKind] = mapped_column(
+        SAEnum(RouteKind, native_enum=False, length=24),
+        nullable=False,
+        default=RouteKind.REGULAR,
+        server_default="REGULAR",
+    )
     # Python weekday numbers: Monday=0 .. Sunday=6.
     days_of_week: Mapped[list[int]] = mapped_column(JSON, nullable=False)
     active_from: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -1074,6 +1117,13 @@ class Run(Base):
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     buffer_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     passenger_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Its route's kind (spec section 11), copied when generated.
+    kind: Mapped[RouteKind] = mapped_column(
+        SAEnum(RouteKind, native_enum=False, length=24),
+        nullable=False,
+        default=RouteKind.REGULAR,
+        server_default="REGULAR",
+    )
     # Set only when generated from a RouteTemplate (ADR 0001's Route);
     # NULL for hand-made runs. Also what makes generation idempotent.
     route_template_id: Mapped[int | None] = mapped_column(
@@ -1231,6 +1281,12 @@ class FieldTrip(Base):
     # run (spec section 12.1). `origin` stays the words on the request.
     origin_school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True)
     destination: Mapped[str] = mapped_column(String(255), nullable=False)
+    kind: Mapped[TripKind] = mapped_column(
+        SAEnum(TripKind, native_enum=False, length=16),
+        nullable=False,
+        default=TripKind.FIELD_TRIP,
+        server_default="FIELD_TRIP",
+    )
     destination_profile_id: Mapped[int | None] = mapped_column(
         ForeignKey("destination_profiles.id"), nullable=True
     )
