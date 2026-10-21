@@ -60,9 +60,30 @@ describe('RidershipRulesSection', () => {
         timezone: 'America/Denver',
         am_cutoff_minute: 345,
         pm_cutoff_minute: null,
+        route_lock_minutes: null,
       }),
     )
     expect(await screen.findByText('Ridership rules saved.')).toBeInTheDocument()
+  })
+
+  it("saves the route lock, minutes before a run leaves when its stops can't change", async () => {
+    vi.mocked(api.updateRidershipRules).mockResolvedValue({
+      ...defaults,
+      route_lock_minutes: 30,
+      is_default: false,
+    })
+    const user = userEvent.setup()
+    render(<RidershipRulesSection canEdit />)
+    await user.type(
+      await screen.findByLabelText("Lock a route's stops this many minutes before it leaves"),
+      '30',
+    )
+    await user.click(screen.getByRole('button', { name: 'Save ridership rules' }))
+    await waitFor(() =>
+      expect(api.updateRidershipRules).toHaveBeenCalledWith(
+        expect.objectContaining({ route_lock_minutes: 30 }),
+      ),
+    )
   })
 
   it('is read-only for a dispatcher', async () => {

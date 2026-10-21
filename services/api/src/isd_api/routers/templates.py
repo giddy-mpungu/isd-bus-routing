@@ -37,6 +37,7 @@ from isd_api.models import (
 )
 from isd_api.routers.optimization_settings import load_ride_time_weight
 from isd_api.routers.vehicles import _resolve_qualifications
+from isd_api.routes import route_lock_problem
 from isd_api.schemas import (
     CrewTemplateCreate,
     CrewTemplateRead,
@@ -228,6 +229,12 @@ def get_route_stops(
     return list(_route_or_404(db, template_id).stops)
 
 
+def _refuse_if_locked(db: Session, template_id: int) -> None:
+    problem = route_lock_problem(db, template_id)
+    if problem is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=problem)
+
+
 @route_router.put("/{template_id}/stops", response_model=list[RouteStopRead])
 def set_route_stops(
     template_id: int,
@@ -239,6 +246,7 @@ def set_route_stops(
     visits them. Replaces the whole list. Planned minutes from start, where
     given, must not go backwards and must fit in the route's duration."""
     template = _route_or_404(db, template_id)
+    _refuse_if_locked(db, template.id)
     ids = [s.stop_id for s in payload.stops]
     if len(set(ids)) != len(ids):
         raise HTTPException(
@@ -312,6 +320,8 @@ def plan_route_stops(
     and sets the route's duration to the plan's total (runs already
     generated keep theirs)."""
     template = _route_or_404(db, template_id)
+    if payload.apply:
+        _refuse_if_locked(db, template.id)
     if not template.stops:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Add stops to the route first"

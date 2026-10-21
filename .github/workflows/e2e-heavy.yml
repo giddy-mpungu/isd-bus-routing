@@ -1,42 +1,13 @@
 name: End-to-end (install and integrations)
 
-# The two heaviest end-to-end jobs (e2e/README.md), kept out of ci.yml to
-# fit GitHub's free minutes for a private repository (2,000 a month): they
-# run on a PR only when it touches what they exercise, every Sunday, and on
-# demand (Actions tab, "Run workflow"). ci.yml's seeded end-to-end job still
-# runs on every PR.
+# The two heaviest end-to-end jobs (e2e/README.md): the fresh install by
+# the runbook, and the outside systems (single sign-on, SIS sync, bus-time
+# emails, maps). On every PR, on main, every Sunday (in case something
+# outside the repository changed, such as a base image), and on demand.
 on:
   pull_request:
-    paths:
-      # The install: compose files, images, the proxy, backups, the runbook.
-      - docker-compose*.yml
-      - Caddyfile
-      - .env.prod.example
-      - secrets/README.md
-      - docs/deployment.md
-      - services/*/Dockerfile
-      - services/backup/**
-      - services/web/nginx*
-      - services/web/scripts/**
-      # The integrations: sign-in, the SIS, the worker and its emails.
-      - services/api/src/isd_api/oidc.py
-      - services/api/src/isd_api/routers/sso.py
-      - services/api/src/isd_api/sis_*.py
-      - services/api/src/isd_api/integrations/**
-      - services/api/src/isd_api/worker.py
-      - services/api/src/isd_api/eta_notifications.py
-      - services/api/src/isd_api/daily_trip.py
-      - services/api/src/isd_api/mailer.py
-      - services/api/src/isd_api/account_emails.py
-      # Maps: directions, road closures, the Census address lookup.
-      - services/solver/src/isd_solver/directions.py
-      - services/api/src/isd_api/closures.py
-      - services/api/scripts/**
-      - services/api/alembic/**
-      - dev/keycloak/**
-      # The tests themselves.
-      - e2e/**
-      - .github/workflows/e2e-heavy.yml
+  push:
+    branches: [main]
   schedule:
     - cron: "0 6 * * 0"
   workflow_dispatch:

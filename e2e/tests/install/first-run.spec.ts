@@ -94,7 +94,10 @@ test.describe('email', () => {
     // Forgot it: a reset link, a new password, and a notice it changed.
     await familyPage.getByRole('button', { name: 'Log out' }).click()
     await familyPage.getByRole('link', { name: 'Forgot your password?' }).click()
+    // The sign-in page has an Email field too: wait for this page's own.
+    await expect(familyPage.getByRole('heading', { name: 'Forgot your password?' })).toBeVisible()
     await familyPage.getByLabel('Email', { exact: true }).fill(email)
+    await expect(familyPage.getByLabel('Email', { exact: true })).toHaveValue(email)
     await familyPage.getByRole('button', { name: 'Email me a link' }).click()
     const reset = await waitForMail(email, /Reset your bus app password/)
     await familyPage.goto(linkIn(reset.text, 'https://'))

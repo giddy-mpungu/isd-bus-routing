@@ -174,6 +174,9 @@ export interface RidershipRulesUpdate {
   timezone: string
   am_cutoff_minute: number | null
   pm_cutoff_minute: number | null
+  // Spec section 4.4: minutes before a run leaves when its route's stops
+  // lock; null = no lock.
+  route_lock_minutes?: number | null
 }
 
 export interface RidershipRules extends RidershipRulesUpdate {
@@ -551,6 +554,10 @@ export interface FamilyMember {
 }
 
 export interface StopEta {
+  // Spec section 18 "assigned route": the bus, and the stop's place on it.
+  bus_label?: string | null
+  stop_position?: number | null
+  stop_count?: number | null
   stop_label: string
   eta_minute: number
   planned_minute: number | null

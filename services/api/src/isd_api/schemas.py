@@ -779,6 +779,8 @@ class RidershipRulesBase(BaseModel):
     timezone: str = Field(min_length=1, max_length=64)
     am_cutoff_minute: int | None = Field(default=None, ge=0, lt=1440)
     pm_cutoff_minute: int | None = Field(default=None, ge=0, lt=1440)
+    # Spec section 4.4: minutes before a run leaves when its stops lock.
+    route_lock_minutes: int | None = Field(default=None, ge=1, le=240)
 
     @field_validator("timezone")
     @classmethod
@@ -1045,6 +1047,11 @@ class StopEtaRead(BaseModel):
     eta_minute: int
     planned_minute: int | None
     changed: bool
+    # Spec section 18 "assigned route": the bus, and where the child's stop
+    # comes on today's route (never the other stops or riders).
+    bus_label: str | None = None
+    stop_position: int | None = None
+    stop_count: int | None = None
 
 
 class FamilyMemberRead(BaseModel):

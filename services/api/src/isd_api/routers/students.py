@@ -602,11 +602,15 @@ def get_my_family(
         stop = next((t for t in trip or [] if t.stop_id == s.stop_id), None)
         if stop is None or stop.eta_minute is None:
             return None
+        served = [t.stop_id for t in trip or [] if not t.skipped]
         return StopEtaRead(
             stop_label=stop.label,
             eta_minute=stop.eta_minute,
             planned_minute=stop.planned_minute,
             changed=stop.materially_changed,
+            bus_label=run.assignment.crew.vehicle.label,
+            stop_position=served.index(s.stop_id) + 1 if s.stop_id in served else None,
+            stop_count=len(served),
         )
 
     return [

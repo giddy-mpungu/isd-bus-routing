@@ -31,6 +31,7 @@ export function RidershipRulesSection({ canEdit }: { canEdit: boolean }) {
   const [timezone, setTimezone] = useState('')
   const [amCutoff, setAmCutoff] = useState('')
   const [pmCutoff, setPmCutoff] = useState('')
+  const [routeLock, setRouteLock] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -42,6 +43,7 @@ export function RidershipRulesSection({ canEdit }: { canEdit: boolean }) {
       setTimezone(rules.timezone)
       setAmCutoff(toTime(rules.am_cutoff_minute))
       setPmCutoff(toTime(rules.pm_cutoff_minute))
+      setRouteLock(rules.route_lock_minutes != null ? String(rules.route_lock_minutes) : '')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load ridership rules.')
     }
@@ -61,6 +63,7 @@ export function RidershipRulesSection({ canEdit }: { canEdit: boolean }) {
         timezone,
         am_cutoff_minute: toMinute(amCutoff),
         pm_cutoff_minute: toMinute(pmCutoff),
+        route_lock_minutes: routeLock.trim() === '' ? null : Number(routeLock),
       })
       setSaved(updated)
       setMessage('Ridership rules saved.')
@@ -118,6 +121,22 @@ export function RidershipRulesSection({ canEdit }: { canEdit: boolean }) {
             onChange={(event) => setPmCutoff(event.target.value)}
             disabled={!canEdit}
           />
+          <label htmlFor="ridership-route-lock">
+            Lock a route&apos;s stops this many minutes before it leaves
+          </label>
+          <input
+            id="ridership-route-lock"
+            type="number"
+            min="1"
+            max="240"
+            value={routeLock}
+            onChange={(event) => setRouteLock(event.target.value)}
+            disabled={!canEdit}
+          />
+          <small>
+            Empty for no lock. From then until the run is done, its stops can&apos;t be changed or
+            re-planned, so the driver&apos;s list doesn&apos;t move under them.
+          </small>
           {canEdit ? (
             <button type="submit" disabled={isSaving}>
               {isSaving ? 'Saving…' : 'Save ridership rules'}

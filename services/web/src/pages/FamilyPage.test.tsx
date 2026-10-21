@@ -236,6 +236,28 @@ describe('FamilyPage', () => {
     expect(screen.getByText(/around 07:08/)).toHaveClass('is-changed')
   })
 
+  it("names the child's bus and where their stop comes on its route", async () => {
+    vi.mocked(api.getMyFamily).mockResolvedValue([
+      {
+        ...child,
+        am_eta: {
+          stop_label: 'Oak & 5th',
+          eta_minute: 428,
+          planned_minute: 428,
+          changed: false,
+          bus_label: 'Bus 12',
+          stop_position: 2,
+          stop_count: 5,
+        },
+        pm_eta: null,
+      },
+    ])
+    render(<FamilyPage />)
+    expect(
+      await screen.findByText('Bus due at Oak & 5th around 07:08. Bus 12, stop 2 of 5.'),
+    ).toBeInTheDocument()
+  })
+
   it('shows no time when there is no estimate for a leg', async () => {
     vi.mocked(api.getMyFamily).mockResolvedValue([{ ...child, am_eta: null, pm_eta: null }])
     render(<FamilyPage />)

@@ -140,3 +140,32 @@ def riders_for_run(db: Session, run: Run) -> tuple[list[Student], bool]:
     # A stop on this route and no other of the leg's routes.
     placed = [s for s in students if s.stop_id in mine and s.stop_id not in others]
     return _riding(db, placed, run), False
+
+
+def route_lock_problem(db: Session, route_template_id: int) -> str | None:
+    """Spec section 4.4's route lock: why this route's stops can't change
+    now (a run of it today leaves within the district's lock, or is under
+    way), or None. Changes are fine again once that run is done."""
+    from isd_api.assignment_states import TERMINAL
+    from isd_api.ridership_rules import district_now, hhmm, load_rules
+
+    rules = load_rules(db)
+    if not rules.route_lock_minutes:
+        return None
+    local = district_now(rules)
+    now = local.hour * 60 + local.minute
+    for run in db.query(Run).filter(
+        Run.route_template_id == route_template_id, Run.service_date == local.date()
+    ):
+        assignment = run.assignment
+        if assignment is None or assignment.status in TERMINAL:
+            continue
+        if assignment.start_minute - now <= rules.route_lock_minutes:
+            return (
+                f"Today's {run.school.name} {run.direction.value.upper()} run leaves at "
+                f"{hhmm(assignment.start_minute)}, so its stops are locked from "
+                f"{hhmm(max(0, assignment.start_minute - rules.route_lock_minutes))} "
+                f"(the district's {rules.route_lock_minutes}-minute route lock). "
+                "Change them once it's done."
+            )
+    return None
