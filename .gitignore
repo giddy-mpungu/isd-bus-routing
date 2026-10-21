@@ -36,3 +36,7 @@ dev/keycloak/out/
 demo-backups/
 # A home install's backups (docker-compose.home.yml, deploy\home.ps1).
 home-backups/
+
+# A district's own map for the routing engine (docs/routing-engine.md).
+maps/*.pbf
+maps/*.osm

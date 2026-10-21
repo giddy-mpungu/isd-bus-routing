@@ -11,9 +11,10 @@ import { watch } from '../helpers/watch'
  * them and set the times, and applies it. Sam, who drives that route
  * (Bus 12, the only bus with the lift), sees the stops in that order with
  * the children at each; Pat sees when the bus is due at Emma's stop.
- * Turn-by-turn directions need OpenRouteService, which this run doesn't
- * have (tests/integrations/ has them, against a stand-in), so the driver
- * is told why and still has the stop order.
+ * Turn-by-turn directions come from the district's routing engine: the
+ * fresh install's stack runs the real one (E2E_ROUTING_ENGINE=1) with the
+ * demo district's map, so Sam gets them; a run without it tells the driver
+ * why, and the stop order is still there.
  */
 const sam = () => seededAccounts().find((a) => a.email.startsWith('driver.sam'))!
 const STOPS = ['Oak St & 3rd Ave', 'Birch Ln Cul-de-sac', 'Pinecrest Apartments']
@@ -81,7 +82,11 @@ test("a route's stops are planned, and the driver and family see them", async ({
   await expect(run.locator('li', { hasText: 'Birch Ln Cul-de-sac' })).toContainText('Oliver Jensen')
   await expect(run.locator('.driver-stop-time').first()).toHaveText(/^\d\d:\d\d$/)
   await run.getByRole('button', { name: 'Directions' }).click()
-  await expect(run.getByText('Turn-by-turn directions need an OpenRouteService key')).toBeVisible()
+  if (process.env.E2E_ROUTING_ENGINE) {
+    await expect(run.locator('.directions-steps li').first()).toBeVisible()
+  } else {
+    await expect(run.getByText('Turn-by-turn directions need')).toBeVisible()
+  }
   expect(await axeViolations(page)).toEqual([])
   expect(watcher.problems()).toEqual([])
 

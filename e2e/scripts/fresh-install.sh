@@ -109,7 +109,7 @@ bring_up() {
   # until its first backup, so it's started after (as in the runbook's
   # Backups section).
   step "5. Build and start"
-  compose up -d --build --wait postgres mailpit api worker web caddy
+  compose up -d --build --wait postgres routing mailpit api worker web caddy
   # --- Step 6: migrations
   step "6. Migrations"
   compose run --rm api alembic upgrade head
@@ -163,9 +163,12 @@ code=$?
 set -e
 [[ $code -eq 3 ]] || { echo "A second seed should exit 3 (already seeded), got $code" >&2; exit 1; }
 
+step "The routing engine times a bus between two demo schools"
+compose exec -T api python scripts/check_routing_engine.py
+
 step "Browser tests: every role in the demo district"
 cd "$E2E"
-E2E_BASE_URL=https://localhost E2E_API_URL=https://localhost/api \
+E2E_BASE_URL=https://localhost E2E_API_URL=https://localhost/api E2E_ROUTING_ENGINE=1 \
   E2E_MAILPIT_URL=http://127.0.0.1:8025 E2E_OUT="$OUT/round2" \
   npx --no-install playwright test --project=setup --project=seeded --project=journeys
 

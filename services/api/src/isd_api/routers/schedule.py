@@ -17,12 +17,15 @@ from isd_solver import (
     Crew as SolverCrew,
 )
 from isd_solver import (
+    DeadheadEstimator,
     DirectionsError,
     InfeasibleResult,
     SchedulingResult,
     SizeRestriction,
     areas_geojson,
     avoid_polygons_geojson,
+    graphhopper_deadhead_estimator,
+    graphhopper_directions,
     merge_avoid_polygons,
     ors_deadhead_estimator,
     ors_directions,
@@ -480,7 +483,7 @@ def run_schedule(
     fallback_estimator = straight_line_deadhead_estimator(
         average_speed_kmh=payload.average_deadhead_speed_kmh
     )
-    if settings.ors_api_key:
+    if settings.routing_engine_url or settings.ors_api_key:
         avoid_points = [
             SolverLocation(lat=override.location_lat, lon=override.location_lon)
             for override in db.query(GeographicKnowledgeOverride)
@@ -490,22 +493,43 @@ def run_schedule(
         avoid_points += _congestion_avoid_points(db, unlocked_jobs)
         # Spec section 10: temporary closures in force on this service date.
         day_closures = closures.for_service_date(db, payload.service_date)
-        estimator = ors_deadhead_estimator(
-            api_key=settings.ors_api_key,
-            base_url=settings.ors_base_url,
-            profile=settings.ors_profile,
-            avoid_polygons=merge_avoid_polygons(
-                avoid_polygons_geojson(avoid_points),
-                areas_geojson(
-                    [
-                        (SolverLocation(lat=c.location_lat, lon=c.location_lon), c.radius_m)
-                        for c in day_closures
-                    ]
-                ),
+        avoid = merge_avoid_polygons(
+            avoid_polygons_geojson(avoid_points),
+            areas_geojson(
+                [
+                    (SolverLocation(lat=c.location_lat, lon=c.location_lon), c.radius_m)
+                    for c in day_closures
+                ]
             ),
-            size_restrictions=_size_restrictions_for_schedule(db),
-            fallback=fallback_estimator,
         )
+        if settings.routing_engine_url:
+            engine = graphhopper_deadhead_estimator(
+                settings.routing_engine_url,
+                profile=settings.routing_engine_profile,
+                avoid_polygons=avoid,
+                size_restrictions=_size_restrictions_for_schedule(db),
+                fallback=fallback_estimator,
+            )
+            # Every leg the solve may ask about, timed in parallel first.
+            engine.prefetch(
+                [
+                    (a.location, b.location, crew.vehicle)
+                    for a in unlocked_jobs
+                    for b in unlocked_jobs
+                    for crew in solvable_crews
+                    if a.location != b.location
+                ]
+            )
+            estimator: DeadheadEstimator = engine
+        else:
+            estimator = ors_deadhead_estimator(
+                api_key=settings.ors_api_key or "",
+                base_url=settings.ors_base_url,
+                profile=settings.ors_profile,
+                avoid_polygons=avoid,
+                size_restrictions=_size_restrictions_for_schedule(db),
+                fallback=fallback_estimator,
+            )
     else:
         estimator = fallback_estimator
     minimum_buffer = load_minimum_buffer_minutes(db)
@@ -1075,13 +1099,15 @@ def route_directions(
 ) -> DirectionsRead:
     """Turn-by-turn through `waypoints` for this bus (spec sections 6, 9,
     10): its dimensions, the district's hazard zones and closures in force,
-    cached briefly. Without an OpenRouteService key, the waypoints alone."""
-    if not settings.ors_api_key:
+    cached briefly. From the district's routing engine when there is one,
+    else OpenRouteService; with neither, the waypoints alone."""
+    if not (settings.routing_engine_url or settings.ors_api_key):
         return DirectionsRead(
             available=False,
             reason=i18n.tr(
                 lang,
-                "Turn-by-turn directions need an OpenRouteService key (ISD_API_ORS_API_KEY).",
+                "Turn-by-turn directions need the district's routing engine "
+                "(ISD_API_ROUTING_ENGINE_URL) or an OpenRouteService key (ISD_API_ORS_API_KEY).",
             ),
             waypoints=waypoints,
         )
@@ -1106,27 +1132,42 @@ def route_directions(
             GeographicKnowledgeOverride.category.in_(_HARD_AVOID_CATEGORIES)
         )
     ]
+    points = [SolverLocation(lat=w.lat, lon=w.lon) for w in waypoints]
+    bus = SolverVehicle(
+        id=str(vehicle.id),
+        length_m=vehicle.length_m,
+        width_m=vehicle.width_m,
+        height_m=vehicle.height_m,
+        weight_kg=vehicle.weight_kg,
+    )
+    areas = [
+        (SolverLocation(lat=c.location_lat, lon=c.location_lon), float(c.radius_m))
+        for c in in_force
+    ]
     try:
-        found = ors_directions(
-            settings.ors_api_key,
-            [SolverLocation(lat=w.lat, lon=w.lon) for w in waypoints],
-            SolverVehicle(
-                id=str(vehicle.id),
-                length_m=vehicle.length_m,
-                width_m=vehicle.width_m,
-                height_m=vehicle.height_m,
-                weight_kg=vehicle.weight_kg,
-            ),
-            avoid_points=avoid_points,
-            avoid_areas=[
-                (SolverLocation(lat=c.location_lat, lon=c.location_lon), float(c.radius_m))
-                for c in in_force
-            ],
-            size_restrictions=_size_restrictions_for_schedule(db),
-            base_url=settings.ors_base_url,
-            profile=settings.ors_profile,
-            language=lang,
-        )
+        if settings.routing_engine_url:
+            found = graphhopper_directions(
+                settings.routing_engine_url,
+                points,
+                bus,
+                avoid_points=avoid_points,
+                avoid_areas=areas,
+                size_restrictions=_size_restrictions_for_schedule(db),
+                profile=settings.routing_engine_profile,
+                language=lang,
+            )
+        else:
+            found = ors_directions(
+                settings.ors_api_key or "",
+                points,
+                bus,
+                avoid_points=avoid_points,
+                avoid_areas=areas,
+                size_restrictions=_size_restrictions_for_schedule(db),
+                base_url=settings.ors_base_url,
+                profile=settings.ors_profile,
+                language=lang,
+            )
     except DirectionsError:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

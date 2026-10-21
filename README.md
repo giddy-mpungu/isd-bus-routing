@@ -54,6 +54,7 @@ services/
   solver/               Python/OR-Tools CP-SAT scheduling & routing engine
   api/                   FastAPI persistence + RBAC + HTTP layer (Phase 2)
   web/                   React/TypeScript dispatcher console (Phase 3, MVP)
+  routing/               GraphHopper routing engine with a school-bus profile (docs/routing-engine.md)
 ```
 
 ## Stack

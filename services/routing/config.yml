@@ -1,0 +1,60 @@
+# GraphHopper for school buses (docs/routing-engine.md). The map file and
+# graph folder come from the GH_MAP_FILE and GH_GRAPH_DIR environment
+# variables (see the Dockerfile).
+graphhopper:
+  datareader.file: ""
+  graph.location: graph-cache
+
+  profiles:
+    - name: school_bus
+      # Turn restrictions from the map (no left turn, only straight on...)
+      # for buses; U-turns are priced by the turn_penalty each request
+      # sends, which the API builds from the district's rules (spec section
+      # 7) and its approved turnarounds.
+      turn_costs:
+        vehicle_types: [bus, motor_vehicle]
+        u_turn_costs: 120
+        allow_turn_penalty_in_request: true
+      custom_model_files: [school_bus.json]
+  custom_models.directory: /opt/graphhopper/custom_models
+
+  # Every request carries its own bus's size limits and the district's
+  # closures and turn rules, so routing runs in flexible mode: no speed-up
+  # preparation, which would fix the weights at import. Fine for a district.
+  profiles_ch: []
+  profiles_lm: []
+
+  graph.encoded_values: bus_access, road_access, road_class, road_environment, car_average_speed, max_weight, max_width, max_height, max_length, lanes, orientation
+
+  prepare.min_network_size: 200
+  prepare.subnetworks.threads: 1
+  routing.snap_preventions_default: tunnel, bridge, ferry
+  routing.non_ch.max_waypoint_distance: 1000000
+  routing.max_visited_nodes: 2000000
+  routing.timeout_ms: 20000
+
+  # Buses don't use these.
+  import.osm.ignored_highways: footway,construction,cycleway,path,steps,pedestrian,bridleway,track
+  graph.dataaccess.default_type: RAM_STORE
+
+server:
+  application_connectors:
+    - type: http
+      port: 8989
+      # Reached only by the API, on the stack's private network; the
+      # compose files publish no port for it.
+      bind_host: 0.0.0.0
+      max_request_header_size: 50k
+  request_log:
+    appenders: []
+  admin_connectors:
+    - type: http
+      port: 8990
+      bind_host: localhost
+
+logging:
+  level: INFO
+  appenders:
+    - type: console
+      time_zone: UTC
+      log_format: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level %logger{36} - %msg%n"
