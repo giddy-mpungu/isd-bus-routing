@@ -248,9 +248,18 @@ class VehicleCreate(BaseModel):
     vehicle_type: VehicleType | None = None
     wheelchair_positions: int | None = Field(default=None, ge=0, le=20)
     turning_radius_m: float | None = Field(default=None, gt=0, le=40)
+    # Where it parks overnight; both or neither.
+    yard_lat: float | None = Field(default=None, ge=-90, le=90)
+    yard_lon: float | None = Field(default=None, ge=-180, le=180)
     qualification_codes: list[str] = Field(default_factory=list)
     # None = infer from capacity (15+ passengers needs CDL B).
     required_license_class: LicenseClass | None = None
+
+    @model_validator(mode="after")
+    def _yard_whole(self) -> VehicleCreate:
+        if (self.yard_lat is None) != (self.yard_lon is None):
+            raise ValueError("give the yard's latitude and longitude together")
+        return self
 
 
 class VehicleRead(BaseModel):
@@ -266,6 +275,8 @@ class VehicleRead(BaseModel):
     vehicle_type: VehicleType | None = None
     wheelchair_positions: int | None = None
     turning_radius_m: float | None = None
+    yard_lat: float | None = None
+    yard_lon: float | None = None
     required_license_class: LicenseClass
     is_active: bool = True
     qualifications: list[QualificationRead]
@@ -287,9 +298,19 @@ class VehicleUpdate(BaseModel):
     vehicle_type: VehicleType | None = None
     wheelchair_positions: int | None = Field(default=None, ge=0, le=20)
     turning_radius_m: float | None = Field(default=None, gt=0, le=40)
+    # Sent together; both null clears the yard.
+    yard_lat: float | None = Field(default=None, ge=-90, le=90)
+    yard_lon: float | None = Field(default=None, ge=-180, le=180)
     required_license_class: LicenseClass | None = None
     qualification_codes: list[str] | None = None
     is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def _yard_whole(self) -> VehicleUpdate:
+        sent = {"yard_lat", "yard_lon"} & self.model_fields_set
+        if sent and (len(sent) == 1 or (self.yard_lat is None) != (self.yard_lon is None)):
+            raise ValueError("give the yard's latitude and longitude together")
+        return self
 
 
 class DriverCreate(BaseModel):
@@ -853,6 +874,9 @@ class OptimizationSettingsBase(BaseModel):
     # Route planning (spec section 2.2): weight on students' ride time
     # against the bus's own time; 0 plans the fastest route.
     ride_time_weight: int = Field(default=0, ge=0, le=10)
+    # Proposing stops (spec section 2.2): shorter walks against fewer
+    # stops; each step takes 5% off every grade's walking limit.
+    walking_weight: int = Field(default=0, ge=0, le=10)
     # Driver work-hour rules (spec section 2.1); leave empty for none.
     # max_duty_minutes: first start to last end in a day.
     max_duty_minutes: int | None = Field(default=None, ge=60, le=1440)
@@ -890,6 +914,8 @@ class ScheduleResult(BaseModel):
     # solved this call (everything already locked).
     total_deadhead_minutes: int | None = None
     total_arrival_buffer_minutes: int | None = None
+    # The drive from buses' yards to their first run and back.
+    total_yard_minutes: int | None = None
 
 
 class ScheduleInfeasible(BaseModel):

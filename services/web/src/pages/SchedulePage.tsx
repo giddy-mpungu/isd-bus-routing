@@ -212,7 +212,7 @@ export function SchedulePage() {
       const detail =
         result.total_deadhead_minutes === null || result.total_arrival_buffer_minutes === null
           ? ''
-          : ` Total deadhead ${result.total_deadhead_minutes} min; ${result.total_arrival_buffer_minutes} min of slack before the bells.`
+          : ` Total deadhead ${result.total_deadhead_minutes} min; ${result.total_arrival_buffer_minutes} min of slack before the bells.${result.total_yard_minutes ? ` ${result.total_yard_minutes} min to and from the yards.` : ''}`
       setStatusMessage(`Schedule solved using ${result.crews_used} crew(s).${detail}`)
       await loadAll(serviceDate)
     } catch (err) {

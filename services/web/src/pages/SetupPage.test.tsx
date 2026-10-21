@@ -119,6 +119,7 @@ function mockLoad() {
     arrival_buffer_weight: 0,
     minimum_buffer_minutes: 0,
     ride_time_weight: 0,
+    walking_weight: 0,
     max_duty_minutes: null,
     break_after_minutes: null,
     break_minutes: null,

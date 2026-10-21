@@ -36,12 +36,12 @@ Soft objectives implemented here (spec section 2.2), combined as a
 weighted sum with administrator-configurable weights (ObjectiveWeights):
   - crews_used: minimize the number of distinct crews (objectives 1-2,
     buses/drivers — a crew is one driver+one vehicle, so they coincide).
-  - deadhead_minutes: minimize deadhead travel between jobs sharing a
-    crew (objective 3's mileage, measured in travel minutes since that
-    is what the DeadheadEstimator returns). Applied to every pair of
-    jobs on a shared crew, not only adjacent ones, so for a crew with
-    3+ jobs it over-counts relative to the true chain — see
-    ObjectiveWeights. The reported total_deadhead_minutes is exact.
+  - deadhead_minutes: minimize the fleet's empty driving (objective 3's
+    mileage, measured in travel minutes since that is what the
+    DeadheadEstimator returns): from each bus's yard to its first job,
+    between consecutive jobs, and back to the yard after its last. Each
+    crew's day is one chain (a circuit through its yard), so the total
+    is exact. A job's own route time is the same whoever drives it.
   - arrival_buffer: finish jobs earlier, leaving more slack before each
     school's required window end (objective 10, operational buffers).
 The rest (stops, ride time, walking, turns) need data this system does
@@ -53,6 +53,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from ortools.sat.python import cp_model
 
@@ -75,12 +76,9 @@ class ObjectiveWeights:
     against a whole crew, give crews_used a proportionally larger weight
     (e.g. 100 vs 1).
 
-    deadhead_minutes is a pairwise measure: every two jobs sharing a
-    crew contribute their deadhead between them in the order actually
-    driven, whether or not they are adjacent. It is exact for crews with
-    up to two jobs and over-counts non-adjacent pairs beyond that;
-    SchedulingResult.total_deadhead_minutes is always the exact chain
-    total, computed after solving.
+    deadhead_minutes weighs the exact empty driving of each crew's chain,
+    including the drive from and back to its vehicle's yard when one is
+    recorded.
     """
 
     crews_used: int = 1
@@ -182,6 +180,9 @@ class SchedulingResult:
     # summed slack between each job's end and its window's latest bound.
     total_deadhead_minutes: int = 0
     total_arrival_buffer_minutes: int = 0
+    # The drive from each used bus's yard to its first job and back after
+    # its last (buses with a yard recorded).
+    total_yard_minutes: int = 0
 
 
 @dataclass(frozen=True)
@@ -350,7 +351,6 @@ def solve_multi_school_schedule(
     # a chain), which is what makes it correctly bound the full span
     # for a crew working any number of jobs in a day, not just two.
     job_list = list(jobs)
-    deadhead_cost_terms: list[cp_model.LinearExpr] = []
     for i in range(len(job_list)):
         for j in range(i + 1, len(job_list)):
             job_a, job_b = job_list[i], job_list[j]
@@ -372,23 +372,6 @@ def solve_multi_school_schedule(
                 model.Add(
                     end_vars[job_b.id] + deadhead_ba + gap <= start_vars[job_a.id]
                 ).OnlyEnforceIf(both + [order.Not()])
-                if weights.deadhead_minutes > 0:
-                    # Only ever forced true, never false: the objective
-                    # is minimized and costs are non-negative, so an
-                    # unforced cost variable settles at 0 on its own.
-                    for cost, direction in ((deadhead_ab, order), (deadhead_ba, order.Not())):
-                        if cost <= 0:
-                            continue
-                        paid = model.NewBoolVar(f"dh_{job_a.id}_{job_b.id}_{crew_id}_{cost}")
-                        model.AddBoolOr(
-                            [
-                                x[job_a.id][crew_id].Not(),
-                                x[job_b.id][crew_id].Not(),
-                                direction.Not(),
-                                paid,
-                            ]
-                        )
-                        deadhead_cost_terms.append(cost * paid)
                 if rules.breaks:
                     for first, second, travel, direction in (
                         (job_a, job_b, deadhead_ab, order),
@@ -439,6 +422,43 @@ def solve_multi_school_schedule(
         else:
             model.Add(used == 0)
         crew_used[crew_id] = used
+
+    # Empty driving, exactly: each crew's day is one circuit through its
+    # yard (node 0) and the jobs it serves, in time order; a job it
+    # doesn't serve is skipped (a self-loop), and an unused crew skips
+    # them all. An arc's literal says "drives straight from here to there".
+    deadhead_cost_terms: list[cp_model.LinearExpr] = []
+    if weights.deadhead_minutes > 0:
+        for crew in crews:
+            mine = [job for job in jobs if crew.id in x[job.id]]
+            if not mine:
+                continue
+            vehicle = crew.vehicle
+            yard = vehicle.yard
+            arcs: list[tuple[int, int, Any]] = [
+                (0, 0, crew_used[crew.id].Not()),
+            ]
+            for k, job in enumerate(mine, start=1):
+                served = x[job.id][crew.id]
+                arcs.append((k, k, served.Not()))
+                for into, cost in (
+                    (True, deadhead_estimator(yard, job.location, vehicle) if yard else 0),
+                    (False, deadhead_estimator(job.location, yard, vehicle) if yard else 0),
+                ):
+                    lit = model.NewBoolVar(f"yard_{'out' if into else 'in'}_{crew.id}_{job.id}")
+                    arcs.append((0, k, lit) if into else (k, 0, lit))
+                    if cost > 0:
+                        deadhead_cost_terms.append(cost * lit)
+                for m, other in enumerate(mine, start=1):
+                    if m == k:
+                        continue
+                    travel = deadhead_estimator(job.location, other.location, vehicle)
+                    lit = model.NewBoolVar(f"next_{crew.id}_{job.id}_{other.id}")
+                    model.Add(end_vars[job.id] + travel <= start_vars[other.id]).OnlyEnforceIf(lit)
+                    arcs.append((k, m, lit))
+                    if travel > 0:
+                        deadhead_cost_terms.append(travel * lit)
+            model.AddCircuit(arcs)
 
     objective = weights.crews_used * sum(crew_used.values())
     if weights.deadhead_minutes > 0 and deadhead_cost_terms:
@@ -548,10 +568,14 @@ def solve_multi_school_schedule(
         )
 
     total_deadhead = 0
+    total_yard = 0
     for crew_id, crew_jobs in jobs_by_crew.items():
         vehicle = crew_by_id[crew_id].vehicle
         for earlier, later in zip(crew_jobs, crew_jobs[1:], strict=False):
             total_deadhead += deadhead_estimator(earlier.location, later.location, vehicle)
+        if vehicle.yard is not None:
+            total_yard += deadhead_estimator(vehicle.yard, crew_jobs[0].location, vehicle)
+            total_yard += deadhead_estimator(crew_jobs[-1].location, vehicle.yard, vehicle)
     total_buffer = sum(job.window.latest - solver.Value(end_vars[job.id]) for job in jobs)
 
     crews_used = sum(1 for c in crew_used.values() if solver.Value(c) == 1)
@@ -566,4 +590,5 @@ def solve_multi_school_schedule(
         crews_used=crews_used,
         total_deadhead_minutes=total_deadhead,
         total_arrival_buffer_minutes=total_buffer,
+        total_yard_minutes=total_yard,
     )

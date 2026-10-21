@@ -20,6 +20,7 @@ const defaults = {
   arrival_buffer_weight: 0,
   minimum_buffer_minutes: 0,
   ride_time_weight: 0,
+  walking_weight: 0,
   max_duty_minutes: null,
   break_after_minutes: null,
   break_minutes: null,
@@ -49,6 +50,7 @@ describe('OptimizationSettingsSection', () => {
       arrival_buffer_weight: 0,
       minimum_buffer_minutes: 10,
       ride_time_weight: 0,
+      walking_weight: 0,
       max_duty_minutes: null,
       break_after_minutes: null,
       break_minutes: null,
@@ -75,6 +77,7 @@ describe('OptimizationSettingsSection', () => {
         arrival_buffer_weight: 0,
         minimum_buffer_minutes: 10,
         ride_time_weight: 0,
+        walking_weight: 0,
         max_duty_minutes: null,
         break_after_minutes: null,
         break_minutes: null,
@@ -83,6 +86,27 @@ describe('OptimizationSettingsSection', () => {
     )
     expect(await screen.findByText(/apply the next time a schedule is solved/)).toBeInTheDocument()
     expect(screen.queryByText(/defaults are in effect/)).not.toBeInTheDocument()
+  })
+
+  it('saves the walking weight for proposing stops', async () => {
+    vi.mocked(api.updateOptimizationSettings).mockResolvedValue({
+      ...defaults,
+      walking_weight: 4,
+      is_default: false,
+    })
+    const user = userEvent.setup()
+    render(<OptimizationSettingsSection canEdit />)
+    const walking = await screen.findByLabelText('Shorter walks (proposing stops)')
+    expect(walking).toHaveValue(0)
+
+    await user.clear(walking)
+    await user.type(walking, '4')
+    await user.click(screen.getByRole('button', { name: 'Save settings' }))
+    await waitFor(() =>
+      expect(api.updateOptimizationSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ walking_weight: 4 }),
+      ),
+    )
   })
 
   it('sets driver work hours in hours, sent as minutes, and clears them', async () => {

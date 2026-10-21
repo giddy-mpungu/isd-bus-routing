@@ -676,6 +676,10 @@ class Vehicle(Base):
     wheelchair_positions: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Recorded now; used once routing can avoid tight turns (spec section 7).
     turning_radius_m: Mapped[float | None] = mapped_column(nullable=True)
+    # Where it parks overnight (spec section 2.2's fleet mileage): the
+    # solver counts the drive out to its first run and back after its last.
+    yard_lat: Mapped[float | None] = mapped_column(nullable=True)
+    yard_lon: Mapped[float | None] = mapped_column(nullable=True)
     # A retired/out-of-service vehicle: hidden from future crew-creation
     # dropdowns, but never hard-deleted -- existing Crew/Assignment/
     # FieldTrip/CrewTemplate rows referencing it, and everything derived
@@ -1456,6 +1460,11 @@ class OptimizationSettings(Base):
     # Spec section 2.2, route planning: students' minutes on the bus
     # against the bus's own minutes (0 = the fastest route).
     ride_time_weight: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    # Spec section 2.2, proposing stops: shorter walks against fewer stops
+    # (0 = walk up to each grade's limit; 10 = half of it).
+    walking_weight: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
     updated_at: Mapped[datetime] = mapped_column(

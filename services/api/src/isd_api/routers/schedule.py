@@ -282,6 +282,11 @@ def _to_solver_inputs(
                 height_m=c.vehicle.height_m,
                 weight_kg=c.vehicle.weight_kg,
                 wheelchair_positions=c.vehicle.wheelchair_positions,
+                yard=(
+                    SolverLocation(lat=c.vehicle.yard_lat, lon=c.vehicle.yard_lon)
+                    if c.vehicle.yard_lat is not None and c.vehicle.yard_lon is not None
+                    else None
+                ),
             ),
             # Narrowed for the district's rest between days, if set.
             available_window=SolverTimeWindow(earliest=windows[c.id][0], latest=windows[c.id][1]),
@@ -584,6 +589,7 @@ def run_schedule(
         assignments=[_assignment_read(db, a) for a in all_assignments],
         total_deadhead_minutes=result.total_deadhead_minutes,
         total_arrival_buffer_minutes=result.total_arrival_buffer_minutes,
+        total_yard_minutes=result.total_yard_minutes,
     )
 
 

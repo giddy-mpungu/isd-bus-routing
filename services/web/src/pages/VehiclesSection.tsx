@@ -33,6 +33,8 @@ interface DraftFields {
   vehicle_type: VehicleType | ''
   wheelchair_positions: string
   turning_radius_m: string
+  yard_lat: string
+  yard_lon: string
   required_license_class: LicenseClass
   qualification_codes: Set<string>
 }
@@ -49,6 +51,8 @@ function draftFrom(v: Vehicle): DraftFields {
     vehicle_type: v.vehicle_type ?? '',
     wheelchair_positions: v.wheelchair_positions != null ? String(v.wheelchair_positions) : '',
     turning_radius_m: v.turning_radius_m != null ? String(v.turning_radius_m) : '',
+    yard_lat: v.yard_lat != null ? String(v.yard_lat) : '',
+    yard_lon: v.yard_lon != null ? String(v.yard_lon) : '',
     required_license_class: v.required_license_class,
     qualification_codes: new Set(v.qualifications.map((q) => q.code)),
   }
@@ -80,6 +84,8 @@ export function VehiclesSection({
   const [vehicleType, setVehicleType] = useState<VehicleType | ''>('')
   const [wheelchairPositions, setWheelchairPositions] = useState('')
   const [turningRadius, setTurningRadius] = useState('')
+  const [yardLat, setYardLat] = useState('')
+  const [yardLon, setYardLon] = useState('')
   const [requiredLicense, setRequiredLicense] = useState<LicenseClass | ''>('')
   const [qualCodes, setQualCodes] = useState<Set<string>>(new Set())
   const [createError, setCreateError] = useState<string | null>(null)
@@ -113,6 +119,8 @@ export function VehiclesSection({
         vehicle_type: vehicleType || undefined,
         wheelchair_positions: wheelchairPositions ? Number(wheelchairPositions) : undefined,
         turning_radius_m: turningRadius ? Number(turningRadius) : undefined,
+        yard_lat: yardLat ? Number(yardLat) : undefined,
+        yard_lon: yardLon ? Number(yardLon) : undefined,
         qualification_codes: Array.from(qualCodes),
         required_license_class: requiredLicense || undefined,
       })
@@ -126,6 +134,8 @@ export function VehiclesSection({
       setVehicleType('')
       setWheelchairPositions('')
       setTurningRadius('')
+      setYardLat('')
+      setYardLon('')
       setRequiredLicense('')
       setQualCodes(new Set())
       await onChanged()
@@ -186,6 +196,8 @@ export function VehiclesSection({
           ? Number(draft.wheelchair_positions)
           : null,
         turning_radius_m: draft.turning_radius_m ? Number(draft.turning_radius_m) : null,
+        yard_lat: draft.yard_lat ? Number(draft.yard_lat) : null,
+        yard_lon: draft.yard_lon ? Number(draft.yard_lon) : null,
         qualification_codes: Array.from(draft.qualification_codes),
         required_license_class: draft.required_license_class,
       })
@@ -318,6 +330,26 @@ export function VehiclesSection({
                   value={draft.turning_radius_m}
                   onChange={(event) => setDraft({ ...draft, turning_radius_m: event.target.value })}
                 />
+                <label htmlFor={`vehicle-edit-yard-lat-${v.id}`}>Yard latitude</label>
+                <input
+                  id={`vehicle-edit-yard-lat-${v.id}`}
+                  type="number"
+                  step="any"
+                  min="-90"
+                  max="90"
+                  value={draft.yard_lat}
+                  onChange={(event) => setDraft({ ...draft, yard_lat: event.target.value })}
+                />
+                <label htmlFor={`vehicle-edit-yard-lon-${v.id}`}>Yard longitude</label>
+                <input
+                  id={`vehicle-edit-yard-lon-${v.id}`}
+                  type="number"
+                  step="any"
+                  min="-180"
+                  max="180"
+                  value={draft.yard_lon}
+                  onChange={(event) => setDraft({ ...draft, yard_lon: event.target.value })}
+                />
                 <label htmlFor={`vehicle-edit-license-${v.id}`}>Required license</label>
                 <select
                   id={`vehicle-edit-license-${v.id}`}
@@ -370,6 +402,9 @@ export function VehiclesSection({
               {v.wheelchair_positions != null &&
                 ` — ${v.wheelchair_positions} wheelchair position${v.wheelchair_positions === 1 ? '' : 's'}`}
               {v.turning_radius_m != null && ` — turns in ${v.turning_radius_m}m`}
+              {v.yard_lat != null &&
+                v.yard_lon != null &&
+                ` — parks at ${v.yard_lat.toFixed(4)}, ${v.yard_lon.toFixed(4)}`}
               {v.qualifications.length > 0 &&
                 ` (${v.qualifications.map((q) => q.code).join(', ')})`}
               {!v.is_active && (
@@ -486,6 +521,32 @@ export function VehiclesSection({
             value={turningRadius}
             onChange={(event) => setTurningRadius(event.target.value)}
           />
+          <label htmlFor="vehicle-yard-lat">Yard latitude (optional)</label>
+          <input
+            id="vehicle-yard-lat"
+            type="number"
+            step="any"
+            min="-90"
+            max="90"
+            value={yardLat}
+            onChange={(event) => setYardLat(event.target.value)}
+            aria-describedby="vehicle-yard-help"
+          />
+          <label htmlFor="vehicle-yard-lon">Yard longitude (optional)</label>
+          <input
+            id="vehicle-yard-lon"
+            type="number"
+            step="any"
+            min="-180"
+            max="180"
+            value={yardLon}
+            onChange={(event) => setYardLon(event.target.value)}
+            aria-describedby="vehicle-yard-help"
+          />
+          <small id="vehicle-yard-help">
+            Where it parks overnight. With both, scheduling counts the drive out to its first run
+            and back.
+          </small>
           <label htmlFor="vehicle-required-license">Required license</label>
           <select
             id="vehicle-required-license"

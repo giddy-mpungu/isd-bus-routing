@@ -44,6 +44,8 @@ def create_vehicle(
         vehicle_type=payload.vehicle_type,
         wheelchair_positions=payload.wheelchair_positions,
         turning_radius_m=payload.turning_radius_m,
+        yard_lat=payload.yard_lat,
+        yard_lon=payload.yard_lon,
         qualifications=_resolve_qualifications(db, payload.qualification_codes),
         required_license_class=payload.required_license_class
         or infer_required_class(payload.nominal_capacity, payload.effective_capacity),
@@ -93,6 +95,7 @@ def update_vehicle(
         "vehicle_type": vehicle.vehicle_type.value if vehicle.vehicle_type else None,
         "wheelchair_positions": vehicle.wheelchair_positions,
         "turning_radius_m": vehicle.turning_radius_m,
+        "yard": [vehicle.yard_lat, vehicle.yard_lon] if vehicle.yard_lat is not None else None,
         "is_active": vehicle.is_active,
         "qualification_codes": sorted(q.code for q in vehicle.qualifications),
         "required_license_class": vehicle.required_license_class.value,
@@ -112,7 +115,13 @@ def update_vehicle(
         vehicle.height_m = payload.height_m
     if payload.weight_kg is not None:
         vehicle.weight_kg = payload.weight_kg
-    for name in ("vehicle_type", "wheelchair_positions", "turning_radius_m"):
+    for name in (
+        "vehicle_type",
+        "wheelchair_positions",
+        "turning_radius_m",
+        "yard_lat",
+        "yard_lon",
+    ):
         if name in payload.model_fields_set:
             setattr(vehicle, name, getattr(payload, name))
     if payload.is_active is not None:
@@ -141,6 +150,7 @@ def update_vehicle(
             "vehicle_type": vehicle.vehicle_type.value if vehicle.vehicle_type else None,
             "wheelchair_positions": vehicle.wheelchair_positions,
             "turning_radius_m": vehicle.turning_radius_m,
+            "yard": [vehicle.yard_lat, vehicle.yard_lon] if vehicle.yard_lat is not None else None,
             "is_active": vehicle.is_active,
             "qualification_codes": sorted(q.code for q in vehicle.qualifications),
             "required_license_class": vehicle.required_license_class.value,
