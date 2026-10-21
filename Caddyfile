@@ -14,6 +14,14 @@
 # origin, map tile server), so the web image generates it and nginx sends
 # it (services/web/scripts/csp.mjs).
 
+{
+	# A browser reaching the site by IP address sends no server name (SNI),
+	# so this names the certificate it gets. A real domain never needs it;
+	# a home install sets it to the PC's address on the home network
+	# (docker-compose.home.yml, deploy/home.ps1).
+	default_sni {$CADDY_DEFAULT_SNI:localhost}
+}
+
 (security_headers) {
     header {
         # Applied as the response is written, so these win over anything

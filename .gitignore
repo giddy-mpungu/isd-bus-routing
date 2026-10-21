@@ -34,3 +34,5 @@ dev/keycloak/out/
 
 # The laptop demo's backups (docker-compose.demo.yml).
 demo-backups/
+# A home install's backups (docker-compose.home.yml, deploy\home.ps1).
+home-backups/

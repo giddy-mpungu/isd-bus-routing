@@ -68,6 +68,7 @@ describe('DriversSection', () => {
     await waitFor(() =>
       expect(api.updateDriver).toHaveBeenCalledWith(1, {
         full_name: 'Jordan Updated',
+        employee_id: null,
         max_continuous_minutes: 480,
         license_class: 'cdl_b',
         qualification_codes: ['CDL_B'],

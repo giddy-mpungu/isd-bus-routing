@@ -11,6 +11,7 @@ function qualificationLabel(q: Qualification): string {
 
 interface DraftFields {
   full_name: string
+  employee_id: string
   max_continuous_minutes: string
   license_class: LicenseClass | ''
   qualification_codes: Set<string>
@@ -19,6 +20,7 @@ interface DraftFields {
 function draftFrom(d: Driver): DraftFields {
   return {
     full_name: d.full_name,
+    employee_id: d.employee_id ?? '',
     max_continuous_minutes:
       d.max_continuous_minutes != null ? String(d.max_continuous_minutes) : '',
     license_class: d.license_class ?? '',
@@ -41,6 +43,7 @@ export function DriversSection({
 
   // --- Create form ---
   const [fullName, setFullName] = useState('')
+  const [employeeId, setEmployeeId] = useState('')
   const [maxContinuous, setMaxContinuous] = useState('')
   const [licenseClass, setLicenseClass] = useState<LicenseClass | ''>('')
   const [qualCodes, setQualCodes] = useState<Set<string>>(new Set())
@@ -66,11 +69,13 @@ export function DriversSection({
     try {
       await api.createDriver({
         full_name: fullName,
+        employee_id: employeeId.trim() || undefined,
         max_continuous_minutes: maxContinuous ? Number(maxContinuous) : undefined,
         qualification_codes: Array.from(qualCodes),
         license_class: licenseClass || undefined,
       })
       setFullName('')
+      setEmployeeId('')
       setMaxContinuous('')
       setLicenseClass('')
       setQualCodes(new Set())
@@ -121,6 +126,7 @@ export function DriversSection({
     try {
       await api.updateDriver(editingId, {
         full_name: draft.full_name,
+        employee_id: draft.employee_id.trim() || null,
         max_continuous_minutes: draft.max_continuous_minutes
           ? Number(draft.max_continuous_minutes)
           : undefined,
@@ -165,6 +171,13 @@ export function DriversSection({
                   value={draft.full_name}
                   onChange={(event) => setDraft({ ...draft, full_name: event.target.value })}
                   required
+                />
+                <label htmlFor={`driver-edit-employee-${d.id}`}>Employee ID</label>
+                <input
+                  id={`driver-edit-employee-${d.id}`}
+                  value={draft.employee_id}
+                  maxLength={64}
+                  onChange={(event) => setDraft({ ...draft, employee_id: event.target.value })}
                 />
                 <label htmlFor={`driver-edit-max-${d.id}`}>Max continuous minutes</label>
                 <input
@@ -217,6 +230,7 @@ export function DriversSection({
           ) : (
             <li key={d.id}>
               {d.full_name}
+              {d.employee_id && ` (${d.employee_id})`}
               {' — '}
               {d.license_class ? (
                 LICENSE_LABELS[d.license_class]
@@ -254,6 +268,13 @@ export function DriversSection({
             value={fullName}
             onChange={(event) => setFullName(event.target.value)}
             required
+          />
+          <label htmlFor="driver-employee-id">Employee ID (optional, from HR)</label>
+          <input
+            id="driver-employee-id"
+            value={employeeId}
+            maxLength={64}
+            onChange={(event) => setEmployeeId(event.target.value)}
           />
           <label htmlFor="driver-max-continuous">Max continuous minutes (optional)</label>
           <input

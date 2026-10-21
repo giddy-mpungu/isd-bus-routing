@@ -158,6 +158,11 @@ computer with a fictional demo district and one login per role;
 `scripts\demo.cmd share` adds a free temporary HTTPS link for testers.
 See `docs/demo.md`.
 
+To install it on another Windows PC for people on that PC's Wi-Fi, clone the
+repository there and double-click `deploy.cmd`: it installs Docker Desktop if
+needed, builds and starts everything over HTTPS, and loads the same fictional
+district. See `docs/home-install.md`.
+
 ## Production deployment
 
 `docker-compose.prod.yml` (PostgreSQL + Caddy for automatic HTTPS) is

@@ -28,6 +28,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from isd_api import zones
 from isd_api.models import Student, StudentHome, TransportationRules
 
 GRADES = ["PK", "K", *[str(n) for n in range(1, 13)]]
@@ -158,6 +159,13 @@ def eligibility_for(student: Student, home: StudentHome | None, rules: Rules) ->
     miles = None if exact is None else math.floor(exact * 100) / 100
     if student.needs_specialized_transport:
         return Eligibility(True, "Specialized transportation", miles, band)
+    zone = student.school.zone_geojson
+    if (
+        zone is not None
+        and home is not None
+        and not zones.contains(zone, home.location_lat, home.location_lon)
+    ):
+        return Eligibility(False, "Lives outside the school's attendance zone", miles, band)
     if student.hazardous_route:
         return Eligibility(True, "Hazardous walking route", miles, band)
     if exact is None or miles is None:

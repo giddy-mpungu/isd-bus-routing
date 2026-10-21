@@ -120,13 +120,14 @@ def travel_pad(db: Session, trip: FieldTrip, service_date: date) -> int:
     if origin is None:
         return 0
     start = SolverLocation(lat=origin.location_lat, lon=origin.location_lon)
-    schools = (
-        db.query(School)
-        .join(Run, Run.school_id == School.id)
-        .filter(Run.service_date == service_date, School.id != origin.id)
+    # Distinct ids first: PostgreSQL can't DISTINCT whole School rows, since
+    # they hold a JSON column (the attendance zone).
+    with_runs = (
+        db.query(Run.school_id)
+        .filter(Run.service_date == service_date, Run.school_id != origin.id)
         .distinct()
-        .all()
     )
+    schools = db.query(School).filter(School.id.in_(with_runs)).all()
     return max(
         (
             _TRAVEL(start, SolverLocation(lat=s.location_lat, lon=s.location_lon), _ANY_BUS)

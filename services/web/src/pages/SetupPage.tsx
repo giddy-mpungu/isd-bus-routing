@@ -22,6 +22,7 @@ import { TabList, TabPanel, type TabItem } from '../components/Tabs'
 import { BellSchedulesSection } from './BellSchedulesSection'
 import { MaintenanceSection } from './MaintenanceSection'
 import { CorrectionsQueue } from './CorrectionsQueue'
+import { AbsenceImportSection } from './AbsenceImportSection'
 import { DriversSection } from './DriversSection'
 import { OptimizationSettingsSection } from './OptimizationSettingsSection'
 import { QualificationsSection } from './QualificationsSection'
@@ -379,6 +380,8 @@ export function SetupPage() {
           canEdit={canCreate}
           onChanged={loadAll}
         />
+
+        {canCreateDistrictKnowledge && <AbsenceImportSection />}
 
         <VehiclesSection
           vehicles={vehicles}

@@ -332,8 +332,16 @@ class School(Base):
     arrive_latest_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
     leave_earliest_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
     leave_latest_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Spec section 3's attendance zone: the school's boundary from the
+    # district's GIS, a GeoJSON Polygon or MultiPolygon (isd_api/zones.py).
+    zone_geojson: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     runs: Mapped[list[Run]] = relationship(back_populates="school")
+
+    @property
+    def has_zone(self) -> bool:
+        return self.zone_geojson is not None
+
     bell_schedules: Mapped[list[BellSchedule]] = relationship(
         back_populates="school", order_by="BellSchedule.name", cascade="all, delete-orphan"
     )
@@ -708,6 +716,9 @@ class Driver(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # The district's HR number, so HR's absence exports match exactly
+    # (spec section 19; isd_api/routers/absences.py import).
+    employee_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     # District-configured; see isd_solver.domain.Driver docstring — this
     # codebase asserts nothing about what any specific driver-hour law requires.
     max_continuous_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)

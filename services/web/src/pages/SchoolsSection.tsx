@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import * as api from '../api/client'
 import { ApiError } from '../api/client'
 import type { School } from '../api/types'
+import { SchoolZoneControl } from './SchoolZoneControl'
 
 export function SchoolsSection({
   schools,
@@ -132,6 +133,7 @@ export function SchoolsSection({
                   <button type="button" onClick={() => startEdit(s)} aria-label={`Edit ${s.name}`}>
                     Edit
                   </button>
+                  <SchoolZoneControl school={s} onChanged={onChanged} />
                 </>
               )}
             </li>

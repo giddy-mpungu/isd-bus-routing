@@ -225,6 +225,13 @@ class SchoolRead(BaseModel):
     location_lat: float
     location_lon: float
     external_id: str | None = None
+    # Spec section 3: an attendance zone is on file (GET .../zone for it).
+    has_zone: bool = False
+
+
+class SchoolZoneUpdate(BaseModel):
+    # A GeoJSON Polygon/MultiPolygon, Feature or one-feature collection.
+    geojson: dict
 
 
 class VehicleCreate(BaseModel):
@@ -284,6 +291,7 @@ class VehicleUpdate(BaseModel):
 
 class DriverCreate(BaseModel):
     full_name: str
+    employee_id: str | None = Field(default=None, min_length=1, max_length=64)
     max_continuous_minutes: int | None = Field(default=None, gt=0)
     qualification_codes: list[str] = Field(default_factory=list)
     # None = take it from a license code in qualification_codes (e.g.
@@ -295,6 +303,7 @@ class DriverRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     full_name: str
+    employee_id: str | None = None
     max_continuous_minutes: int | None
     license_class: LicenseClass | None = None
     is_active: bool = True
@@ -303,6 +312,8 @@ class DriverRead(BaseModel):
 
 class DriverUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1)
+    # Sent as null, clears it.
+    employee_id: str | None = Field(default=None, min_length=1, max_length=64)
     max_continuous_minutes: int | None = Field(default=None, gt=0)
     qualification_codes: list[str] | None = None
     is_active: bool | None = None
@@ -1704,6 +1715,25 @@ class BellChange(BaseModel):
     assigned_runs_moved: int
     # Calendar: schools that have no schedule by that name.
     skipped_schools: list[str] = []
+
+
+class AbsenceImportRequest(BaseModel):
+    # HR's export as CSV: employee_id or driver, date, start, end, reason.
+    csv: str = Field(min_length=1, max_length=1_000_000)
+
+
+class AbsenceImportRow(BaseModel):
+    line: int
+    driver: str
+    date: str
+    # created, unchanged or error
+    outcome: str
+    message: str | None = None
+
+
+class AbsenceImportRead(BaseModel):
+    applied: bool
+    rows: list[AbsenceImportRow]
 
 
 class BellImportRequest(BaseModel):

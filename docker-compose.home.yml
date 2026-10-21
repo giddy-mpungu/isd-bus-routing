@@ -1,0 +1,61 @@
+# A home install for a test PC on its own Wi-Fi (deploy.cmd, deploy/home.ps1,
+# docs/home-install.md). Don't run this directly; the script generates the
+# secrets and .env.home it expects, then loads the fictional demo district:
+#
+#   docker compose --env-file .env.home -f docker-compose.prod.yml -f docker-compose.home.yml ...
+#
+# It's the production stack unchanged (PostgreSQL, migrations,
+# ISD_API_ENVIRONMENT=production, Secure session cookies, Caddy in front),
+# with its own name, secrets and data, so it never touches a laptop demo
+# (docker-compose.demo.yml) on the same PC. What differs:
+#
+# 1. Caddy serves HTTPS on ports 80/443 (the production file's own ports)
+#    for `localhost` and the PC's address on the home network, which the
+#    script puts in CADDY_DOMAIN. Caddy gives localhost and IP addresses a
+#    certificate from its own local authority, so no domain name is
+#    needed; other devices warn about it until they trust it. The script
+#    opens port 443 in Windows Firewall for the local network only.
+# 2. Email goes to a local test inbox (Mailpit), never to real people.
+# 3. Backups go to .\home-backups on the PC.
+# 4. Its own secret files.
+
+name: isd-home
+
+services:
+  caddy:
+    environment:
+      # Browsers reaching it by the PC's address send no server name; this
+      # tells Caddy which certificate to show them (the Caddyfile's top).
+      CADDY_DEFAULT_SNI: ${CADDY_DEFAULT_SNI:-localhost}
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: 500
+    # This PC only; the script picks a free port (8025 unless taken).
+    ports:
+      - "127.0.0.1:${HOME_INBOX_PORT:-8025}:8025"
+
+  api:
+    environment: &home-mail
+      ISD_API_SMTP_HOST: mailpit
+      ISD_API_SMTP_PORT: 1025
+      ISD_API_SMTP_SECURITY: none
+      ISD_API_MAIL_FROM: isd-bus-routing (home test) <no-reply@home.invalid>
+    depends_on:
+      mailpit:
+        condition: service_started
+
+  worker:
+    environment: *home-mail
+
+  backup:
+    volumes: !override
+      - ./home-backups:/backups
+
+secrets:
+  postgres_password:
+    file: ./secrets/home_postgres_password.txt
+  restic_password:
+    file: ./secrets/home_restic_password.txt
