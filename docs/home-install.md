@@ -8,8 +8,6 @@ solver, the web app and an HTTPS proxy), not a cut-down version.
 ## What you need
 
 - A Windows 10 or 11 PC with at least 8 GB of memory and 15 GB of free disk.
-- Permission from the repository's owner to download the code (the
-  repository is private: ask to be added as a collaborator on GitHub).
 - An internet connection for the first install, which downloads Docker
   Desktop and the system's building blocks. After that it runs offline.
 

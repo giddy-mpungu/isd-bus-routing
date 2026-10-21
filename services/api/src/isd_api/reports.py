@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from isd_api import ridership_rules
+from isd_api import ridership_rules, tracking
 from isd_api.assignment_states import LABELS
 from isd_api.availability import trip_return
 from isd_api.models import (
@@ -389,7 +389,16 @@ def positions_report(db: Session, start: date, end: date, tz: ZoneInfo) -> Repor
     report = Report(
         "positions",
         "GPS position history",
-        ["Date", "Vehicle", "Driver", "Recorded at", "Latitude", "Longitude"],
+        [
+            "Date",
+            "Vehicle",
+            "Driver",
+            "Recorded at",
+            "Latitude",
+            "Longitude",
+            "Run",
+            "Metres from route",
+        ],
     )
     samples = (
         db.query(PositionSample)
@@ -398,7 +407,28 @@ def positions_report(db: Session, start: date, end: date, tz: ZoneInfo) -> Repor
         .order_by(Crew.service_date, PositionSample.crew_id, PositionSample.recorded_at)
         .all()
     )
+    # Spec section 20 "route deviations": each sample against the route of
+    # the run its crew was on at that minute (tracking.py's straight-line
+    # route through the day's stops), when there was one.
+    lines: dict[int, list[tuple[float, float]]] = {}
+    off_route = 0
     for s in samples:
+        minute = _local_minute(s.recorded_at, tz, s.crew.service_date)
+        running = next(
+            (a for a in s.crew.assignments if a.start_minute <= minute <= a.end_minute), None
+        )
+        away: Cell = None
+        label: Cell = None
+        if running is not None:
+            label = f"{running.run.school.name} {running.run.direction.value.upper()}"
+            if running.id not in lines:
+                lines[running.id] = tracking.route_line(db, running)
+            line = lines[running.id]
+            if len(line) >= 2:
+                metres = round(tracking.distance_from_line((s.location_lat, s.location_lon), line))
+                away = metres
+                if metres > tracking.OFF_ROUTE_METERS:
+                    off_route += 1
         report.rows.append(
             [
                 s.crew.service_date.isoformat(),
@@ -407,11 +437,14 @@ def positions_report(db: Session, start: date, end: date, tz: ZoneInfo) -> Repor
                 _local(s.recorded_at, tz).strftime("%Y-%m-%d %H:%M:%S"),
                 s.location_lat,
                 s.location_lon,
+                label,
+                away,
             ]
         )
     report.summary = {
         "Positions": len(samples),
         "Buses": len({s.crew.vehicle_id for s in samples}),
+        f"Over {tracking.OFF_ROUTE_METERS} m from the route": off_route,
     }
     return report
 

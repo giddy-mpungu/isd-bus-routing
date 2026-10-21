@@ -328,4 +328,6 @@ export const es = {
   "No signal. This is your day as of {time}. Buttons work again when there's signal.":
     'Sin señal. Este es su día a las {time}. Los botones vuelven a funcionar cuando haya señal.',
   'Try again': 'Intentar de nuevo',
+  '. {bus}, stop {position} of {count}.': '. {bus}, parada {position} de {count}.',
+  '. {bus}.': '. {bus}.',
 } satisfies Record<string, string>

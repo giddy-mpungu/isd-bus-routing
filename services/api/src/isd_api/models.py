@@ -1362,6 +1362,9 @@ class RidershipRules(Base):
     # AM / PM ridership. None = no cutoff for that leg.
     am_cutoff_minute: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pm_cutoff_minute: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Spec section 4.4's route lock: this many minutes before a run leaves
+    # (and while it's under way), its route's stops can't be changed.
+    route_lock_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

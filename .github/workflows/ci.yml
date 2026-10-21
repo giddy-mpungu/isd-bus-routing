@@ -6,15 +6,13 @@ name: CI
 # PR regardless of which files changed: path filtering risks silently
 # skipping a check on a shared-file change. The heaviest end-to-end jobs
 # (a fresh install by the runbook, the outside-system integrations) are
-# in e2e-heavy.yml instead, on the files they exercise, weekly and on
-# demand.
-#
-# Minutes are limited (a private repository on GitHub's free plan, 2,000
-# a month): a PR's run is the check, and its merge to main isn't run again
-# (a pull_request run already tests the merge result); a newer push to a
-# branch cancels that branch's run still going.
+# in e2e-heavy.yml, also on every PR. The repository is public (since
+# 2026-10-21), so Actions minutes aren't limited; a newer push to a branch
+# still cancels that branch's run in progress.
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:

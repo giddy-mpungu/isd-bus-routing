@@ -56,11 +56,9 @@ E2E_SSO_USERS=dev/keycloak/out/users.txt node e2e/scripts/seeded-rounds.mjs --ro
 `--worker` runs the background worker every 5 seconds. Without them, those
 tests skip.
 
-In CI the seeded rounds run on every PR (`ci.yml`). The fresh install and
-the integrations (`e2e-heavy.yml`) run on a PR that touches what they test
-(compose files, images, the runbook, sign-in, the SIS, the worker, mail,
-migrations, `e2e/`), every Sunday, and from the Actions tab ("Run
-workflow"), to stay within the free minutes for a private repository.
+In CI all three run on every PR and on main: the seeded rounds in `ci.yml`,
+the fresh install and the integrations in `e2e-heavy.yml` (which also runs
+every Sunday and from the Actions tab, "Run workflow").
 
 The fresh install (Linux, or WSL, with Docker; ports 80, 443 and 8025
 free). It installs the code **as committed** (`git archive HEAD`), so commit

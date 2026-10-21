@@ -216,7 +216,8 @@ def test_csv_neutralises_spreadsheet_formulas_but_keeps_numbers(client, admin_he
     _, table = _csv(client, admin_headers, "driver-reports")
     assert table[1][-1] == '\'=HYPERLINK("http://evil.example","click")'
     _, positions = _csv(client, admin_headers, "positions")
-    assert positions[1][3:] == ["2026-10-05 07:05:00", "29.7", "-95.4"]
+    # The run it was on; no distance, as that route has no stops to draw.
+    assert positions[1][3:] == ["2026-10-05 07:05:00", "29.7", "-95.4", "Riverside AM", ""]
 
 
 def test_report_ranges_are_checked_and_unknown_reports_are_404(client, admin_headers):

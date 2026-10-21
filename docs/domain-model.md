@@ -1670,3 +1670,19 @@ otherwise it's flagged. Deterministic, and quick (400 students well under
   only, cleared at sign-out) and shows it read-only, with its time, when
   a load gets no answer at all; status buttons wait for signal, and the
   day reloads when the browser reports it's back online.
+
+## Depth (October review, Phase E1)
+
+- **Route lock** (spec §4.4): `RidershipRules.route_lock_minutes`
+  (Setup → Rules & optimization, empty = none). From that many minutes
+  before a run of a route leaves today, and while it's under way, the
+  route's stops can't be replaced or a plan applied (409 with when the
+  lock started); previewing a plan is still fine
+  (`routes.route_lock_problem`). Families' changes already close at the
+  leg's cutoff.
+- **Assigned route for families** (spec §18): a child's bus time also
+  names the bus and where their stop comes on today's route ("Bus 12,
+  stop 2 of 5"), never the other stops or riders.
+- **Route deviations in reports** (spec §20): the GPS position report
+  adds the run each position belongs to and its distance in metres from
+  that run's route line (`tracking.py`), and counts those over 800 m.

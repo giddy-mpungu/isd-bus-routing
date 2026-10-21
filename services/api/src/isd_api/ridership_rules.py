@@ -27,6 +27,7 @@ class Rules:
     am_cutoff_minute: int | None
     pm_cutoff_minute: int | None
     is_default: bool
+    route_lock_minutes: int | None = None
 
     def cutoff_for(self, direction: RideDirection) -> int | None:
         return self.am_cutoff_minute if direction == RideDirection.AM else self.pm_cutoff_minute
@@ -36,7 +37,13 @@ def load_rules(db: Session) -> Rules:
     row = db.get(RidershipRules, _RULES_ID)
     if row is None:
         return Rules(DEFAULT_TIMEZONE, None, None, is_default=True)
-    return Rules(row.timezone, row.am_cutoff_minute, row.pm_cutoff_minute, is_default=False)
+    return Rules(
+        row.timezone,
+        row.am_cutoff_minute,
+        row.pm_cutoff_minute,
+        is_default=False,
+        route_lock_minutes=row.route_lock_minutes,
+    )
 
 
 def utc_now() -> datetime:

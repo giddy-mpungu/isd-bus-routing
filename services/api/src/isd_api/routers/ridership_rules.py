@@ -25,6 +25,7 @@ def _read(db: Session) -> RidershipRulesRead:
         timezone=rules.timezone,
         am_cutoff_minute=rules.am_cutoff_minute,
         pm_cutoff_minute=rules.pm_cutoff_minute,
+        route_lock_minutes=rules.route_lock_minutes,
         is_default=rules.is_default,
     )
 
@@ -51,6 +52,7 @@ def update_ridership_rules(
     row.timezone = payload.timezone
     row.am_cutoff_minute = payload.am_cutoff_minute
     row.pm_cutoff_minute = payload.pm_cutoff_minute
+    row.route_lock_minutes = payload.route_lock_minutes
     db.flush()
     record_audit(
         db,

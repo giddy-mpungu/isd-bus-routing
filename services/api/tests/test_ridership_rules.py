@@ -70,6 +70,7 @@ def test_defaults_are_the_district_time_zone_and_no_cutoffs(client, admin_header
         "timezone": "America/Chicago",
         "am_cutoff_minute": None,
         "pm_cutoff_minute": None,
+        "route_lock_minutes": None,
         "is_default": True,
     }
 
@@ -81,6 +82,7 @@ def test_rules_round_trip_are_audited_and_validated(client, admin_headers, db_se
         "timezone": "America/New_York",
         "am_cutoff_minute": 360,
         "pm_cutoff_minute": 720,
+        "route_lock_minutes": None,
         "is_default": False,
     }
     entry = (

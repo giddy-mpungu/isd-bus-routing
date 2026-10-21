@@ -143,6 +143,14 @@ export function FamilyPage() {
             {eta.changed &&
               eta.planned_minute != null &&
               t(' (changed from {time} today)', { time: hhmm(eta.planned_minute) })}
+            {eta.bus_label &&
+              (eta.stop_position != null && eta.stop_count != null
+                ? t('. {bus}, stop {position} of {count}.', {
+                    bus: eta.bus_label,
+                    position: eta.stop_position,
+                    count: eta.stop_count,
+                  })
+                : t('. {bus}.', { bus: eta.bus_label }))}
           </p>
         )}
         {closed && <p className="status family-leg-closed">{closed}</p>}
