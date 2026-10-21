@@ -140,6 +140,12 @@ class Settings(BaseSettings):
     # without one. See isd_solver.domain.ors_deadhead_estimator.
     ors_api_key: str | None = None
 
+    # The district's own routing engine (services/routing, GraphHopper with
+    # a school-bus profile and turn costs: docs/routing-engine.md), e.g.
+    # http://routing:8989. When set it's used instead of OpenRouteService.
+    routing_engine_url: str | None = None
+    routing_engine_profile: str = "school_bus"
+
     # GPS history (isd_api/position_history.py): how many days of a bus's
     # track to keep. A track shows where students were, so it's deleted
     # after this; spec section 20's learning only needs recent weeks.

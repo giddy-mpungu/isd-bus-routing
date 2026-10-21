@@ -22,6 +22,7 @@ services:
       ISD_API_SMTP_PORT: 1025
       ISD_API_SMTP_SECURITY: none
       ISD_API_MAIL_FROM: isd-bus-routing dev <no-reply@dev.invalid>
+      ISD_API_ROUTING_ENGINE_URL: http://routing:8989
       # ISD_API_JWT_SECRET_KEY deliberately NOT listed here. `VAR: ${VAR:-x}`
       # in compose still sets the env var (to `x`, or "" if x is empty) —
       # it does NOT mean "unset". Setting this to "" that way passes an
@@ -37,6 +38,14 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+
+  # The routing engine (docs/routing-engine.md), with the demo district's
+  # map; reachable from this PC only, at http://localhost:8989.
+  routing:
+    build:
+      context: services/routing
+    ports:
+      - "127.0.0.1:8989:8989"
 
   # Scheduled jobs (isd_api/worker.py), e.g. bus-time emails.
   worker:

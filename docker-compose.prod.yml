@@ -48,6 +48,30 @@ services:
     # `docker compose run` commands (e.g. alembic, bootstrap_admin)
     # need to reach it, both on this compose network.
 
+  # The district's own routing engine (services/routing,
+  # docs/routing-engine.md): bus travel times and turn-by-turn, with the
+  # bus's size, the district's zones and closures, and turn costs that
+  # prefer right turns and avoid U-turns. It ships with the demo district's
+  # map; a real district puts its region's .osm.pbf in ./maps and sets
+  # ROUTING_MAP_FILE=/maps/<file> in .env.
+  routing:
+    build:
+      context: services/routing
+    restart: unless-stopped
+    environment:
+      GH_MAP_FILE: ${ROUTING_MAP_FILE:-/opt/graphhopper/maps/demo-houston.osm.pbf}
+      JAVA_OPTS: ${ROUTING_JAVA_OPTS:--Xms256m -Xmx1g}
+    volumes:
+      - ./maps:/maps:ro
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8989 && printf 'GET /health HTTP/1.0\r\n\r\n' >&3 && grep -q OK <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      # Building the graph from the map: seconds for the demo area, minutes for a state.
+      start_period: 10m
+    # Not published to the host: only the api reaches it.
+
   api:
     build:
       context: .
@@ -55,6 +79,8 @@ services:
     restart: unless-stopped
     depends_on:
       postgres:
+        condition: service_healthy
+      routing:
         condition: service_healthy
     # Anchored: the worker below runs with exactly the same settings.
     environment: &api-environment
@@ -74,6 +100,8 @@ services:
       ISD_API_JWT_SECRET_KEY: ${ISD_API_JWT_SECRET_KEY:?set a real random secret in .env — see docs/deployment.md}
       ISD_API_CORS_ALLOWED_ORIGINS: ${ISD_API_CORS_ALLOWED_ORIGINS:?set the real public web origin(s) as a JSON list in .env, e.g. ["https://bus.yourdistrict.example.org"]}
       ISD_API_ORS_API_KEY: ${ISD_API_ORS_API_KEY:-}
+      # The routing engine above; set it blank in .env to go without.
+      ISD_API_ROUTING_ENGINE_URL: ${ISD_API_ROUTING_ENGINE_URL-http://routing:8989}
       # Two-step sign-in (docs/deployment.md, "Two-step sign-in").
       ISD_API_MFA_ENCRYPTION_KEY: ${ISD_API_MFA_ENCRYPTION_KEY:?set 32 random bytes, url-safe base64, in .env — see docs/deployment.md}
       ISD_API_MFA_REQUIRED_ROLES: ${ISD_API_MFA_REQUIRED_ROLES:-["transportation_admin","dispatcher"]}

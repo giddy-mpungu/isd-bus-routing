@@ -35,6 +35,12 @@ from isd_solver.domain import (
     osrm_deadhead_estimator,
     straight_line_deadhead_estimator,
 )
+from isd_solver.graphhopper import (
+    GraphHopperEstimator,
+    TurnRules,
+    graphhopper_deadhead_estimator,
+    graphhopper_directions,
+)
 from isd_solver.routing import (
     PlannedStop,
     RoutePlan,
@@ -54,6 +60,10 @@ from isd_solver.scheduler import (
 )
 
 __all__ = [
+    "GraphHopperEstimator",
+    "TurnRules",
+    "graphhopper_deadhead_estimator",
+    "graphhopper_directions",
     "Crew",
     "DeadheadEstimationError",
     "DeadheadEstimator",

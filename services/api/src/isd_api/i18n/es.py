@@ -289,9 +289,10 @@ PHRASES: dict[str, str] = {
     "Directions need the trip's bus to be assigned.": (
         "Las indicaciones necesitan que se asigne el autobús de la excursión."
     ),
-    "Turn-by-turn directions need an OpenRouteService key (ISD_API_ORS_API_KEY).": (
-        "Las indicaciones paso a paso necesitan una clave de OpenRouteService "
-        "(ISD_API_ORS_API_KEY)."
+    "Turn-by-turn directions need the district's routing engine "
+    "(ISD_API_ROUTING_ENGINE_URL) or an OpenRouteService key (ISD_API_ORS_API_KEY).": (
+        "Las indicaciones paso a paso necesitan el sistema de rutas del distrito "
+        "(ISD_API_ROUTING_ENGINE_URL) o una clave de OpenRouteService (ISD_API_ORS_API_KEY)."
     ),
     "Directions aren't available right now. Follow the stop order and try again.": (
         "Las indicaciones no están disponibles ahora. Siga el orden de las paradas e "

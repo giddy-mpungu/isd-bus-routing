@@ -391,9 +391,17 @@ To check it, sign out, choose "Forgot your password?" and enter your own
 email. `docker compose -f docker-compose.prod.yml logs api` shows
 `Couldn't send the '...' email` with the SMTP error if delivery failed.
 
+## Routing engine
+
+The stack runs its own routing engine (the `routing` service, GraphHopper)
+for bus travel times and turn-by-turn directions, with the demo district's
+map built in. Give it your region's map before going live:
+[docs/routing-engine.md](routing-engine.md).
+
 ## OpenRouteService key (optional)
 
-`ISD_API_ORS_API_KEY` in `.env` turns on road-network deadhead times for
+Only used when there's no routing engine (`ISD_API_ROUTING_ENGINE_URL`
+blank). `ISD_API_ORS_API_KEY` in `.env` turns on road-network deadhead times for
 scheduling and turn-by-turn directions on the driver app. Without it the
 scheduler uses straight-line estimates and the driver app shows the stop
 order with a link to open each stop in the tablet's maps app. ORS's free

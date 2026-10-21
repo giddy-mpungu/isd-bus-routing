@@ -142,6 +142,20 @@ jobs:
         run: docker build -f services/api/Dockerfile -t isd-api:ci .
       - name: Build web image
         run: docker build -f services/web/Dockerfile -t isd-web:ci services/web
+      - name: Build the routing engine image, and route a bus across the demo map
+        run: |
+          docker build -t isd-routing:ci services/routing
+          docker run -d --name isd-routing-ci -p 127.0.0.1:8989:8989 isd-routing:ci
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8989/health && break
+            sleep 2
+          done
+          curl -sf -H 'Content-Type: application/json' http://127.0.0.1:8989/route -d '{
+            "profile": "school_bus", "points": [[-95.3995, 29.7445], [-95.37, 29.7735]],
+            "instructions": false, "calc_points": false,
+            "custom_model": {"turn_penalty": [{"if": "change_angle < -25", "add": "20"}, {"else": "", "add": "0"}]}
+          }' | python3 -c "import json, sys; p = json.load(sys.stdin)['paths'][0]; assert 2000 < p['distance'] < 15000, p; print(p['distance'], 'm')"
+          docker rm -f isd-routing-ci
       - name: Smoke-test the api image starts and answers /health
         run: |
           docker run -d --name isd-api-ci -p 8000:8000 isd-api:ci
