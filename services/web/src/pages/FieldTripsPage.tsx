@@ -5,12 +5,14 @@ import type {
   DestinationProfile,
   Driver,
   FieldTrip,
+  TripKind,
   FieldTripObservedDuration,
   Qualification,
   School,
   TripStatus,
   Vehicle,
 } from '../api/types'
+import { TRIP_KIND_LABELS, TRIP_KINDS } from '../kinds'
 
 const TRIP_STATUSES: TripStatus[] = [
   'requested',
@@ -98,6 +100,7 @@ export function FieldTripsPage() {
 
   // --- Add field trip ---
   const [requestingParty, setRequestingParty] = useState('')
+  const [tripKind, setTripKind] = useState<TripKind>('field_trip')
   const [origin, setOrigin] = useState('')
   const [originSchoolId, setOriginSchoolId] = useState('')
   const [destination, setDestination] = useState('')
@@ -131,6 +134,7 @@ export function FieldTripsPage() {
     try {
       await api.createFieldTrip({
         requesting_party: requestingParty,
+        kind: tripKind,
         origin,
         origin_school_id: originSchoolId ? Number(originSchoolId) : undefined,
         destination,
@@ -144,6 +148,7 @@ export function FieldTripsPage() {
         required_qualification_codes: Array.from(qualCodes),
       })
       setRequestingParty('')
+      setTripKind('field_trip')
       setOrigin('')
       setOriginSchoolId('')
       setDestination('')
@@ -373,6 +378,7 @@ export function FieldTripsPage() {
           return (
             <li key={trip.id} className="field-trip-card">
               <div className="field-trip-summary">
+                {trip.kind && trip.kind !== 'field_trip' && `${TRIP_KIND_LABELS[trip.kind]}: `}
                 {trip.requesting_party} — {trip.origin} → {trip.destination}
                 {' ('}
                 {formatTripWindow(trip.departure_at, trip.expected_return_at)}
@@ -531,6 +537,18 @@ export function FieldTripsPage() {
               onChange={(event) => setRequestingParty(event.target.value)}
               required
             />
+            <label htmlFor="trip-kind">Kind of trip</label>
+            <select
+              id="trip-kind"
+              value={tripKind}
+              onChange={(event) => setTripKind(event.target.value as TripKind)}
+            >
+              {TRIP_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {TRIP_KIND_LABELS[k]}
+                </option>
+              ))}
+            </select>
             <label htmlFor="trip-origin">Origin</label>
             <input
               id="trip-origin"

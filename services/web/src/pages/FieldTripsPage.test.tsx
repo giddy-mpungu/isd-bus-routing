@@ -119,6 +119,7 @@ describe('FieldTripsPage', () => {
 
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Requesting school/department'), 'Athletics')
+    await user.selectOptions(screen.getByLabelText('Kind of trip'), 'athletic')
     await user.type(screen.getByLabelText('Origin'), 'High School')
     await user.type(screen.getByLabelText('Destination'), 'Away Game')
     await user.type(screen.getByLabelText('Departure'), '2026-09-01T13:00')
@@ -130,6 +131,7 @@ describe('FieldTripsPage', () => {
       expect(api.createFieldTrip).toHaveBeenCalledWith(
         expect.objectContaining({
           requesting_party: 'Athletics',
+          kind: 'athletic',
           origin: 'High School',
           destination: 'Away Game',
           trip_contact: 'Coach Lee',

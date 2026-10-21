@@ -231,6 +231,8 @@ export interface DriverAssignment {
   end_minute: number
   status: AssignmentStatus
   locked: boolean
+  // A special education, activity or shuttle route.
+  run_kind?: RouteKind
   roster_ambiguous: boolean
   stops: AssignmentStopRoster[]
   // True when `stops` is in the route's order.
@@ -530,6 +532,21 @@ export interface StudentCreate {
 
 export type RideDirection = 'am' | 'pm'
 
+// Spec section 11.
+export type RouteKind = 'regular' | 'special_education' | 'activity' | 'shuttle'
+export type TripKind = 'field_trip' | 'athletic' | 'activity' | 'other'
+
+// Spec section 16: why a route's buffer is what it is.
+export type BufferReason =
+  | 'traffic'
+  | 'loading'
+  | 'wheelchair'
+  | 'weather'
+  | 'rail_crossings'
+  | 'pre_trip'
+  | 'fueling'
+  | 'other'
+
 export interface RidershipOverrideUpdate {
   service_date: string
   direction: RideDirection
@@ -768,6 +785,7 @@ export interface FieldTrip {
   // The school it leaves from and returns to, when it's one of ours.
   origin_school_id: number | null
   destination: string
+  kind?: TripKind
   destination_profile_id: number | null
   destination_profile: DestinationProfile | null
   departure_at: string
@@ -788,6 +806,7 @@ export interface FieldTripCreate {
   origin: string
   origin_school_id?: number
   destination: string
+  kind?: TripKind
   destination_profile_id?: number
   departure_at: string
   expected_return_at: string
@@ -851,6 +870,9 @@ export interface RouteTemplate {
   window_latest: number
   duration_minutes: number
   buffer_minutes: number
+  // Minutes by reason; buffer_minutes is their sum when set.
+  buffer_breakdown?: Partial<Record<BufferReason, number>> | null
+  kind?: RouteKind
   days_of_week: number[]
   active_from: string | null
   active_until: string | null
@@ -909,6 +931,9 @@ export interface RouteTemplateCreate {
   follows_bells?: boolean
   duration_minutes: number
   buffer_minutes: number
+  // When given, the API sets buffer_minutes to its sum.
+  buffer_breakdown?: Partial<Record<BufferReason, number>>
+  kind?: RouteKind
   days_of_week: number[]
   active_from: string | null
   active_until: string | null
