@@ -25,6 +25,7 @@ from isd_api.models import (
     StudentHome,
     User,
 )
+from isd_api.routers.optimization_settings import load_walking_weight
 from isd_api.schemas import (
     GenerateStopProposals,
     StopProposalRead,
@@ -148,6 +149,7 @@ def generate_stop_proposals(
     if school is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown school_id")
     rules = eligibility.load_rules(db)
+    walking_weight = load_walking_weight(db)
     students = (
         db.query(Student)
         .filter(Student.school_id == school.id, Student.withdrawn_on.is_(None))
@@ -174,7 +176,7 @@ def generate_stop_proposals(
                 student_id=s.id,
                 lat=home.location_lat,
                 lon=home.location_lon,
-                walk_limit_miles=_walk_limit(s, rules),
+                walk_limit_miles=_walk_limit(s, rules) * (1 - walking_weight / 20),
                 specialized=s.needs_specialized_transport,
             )
         )

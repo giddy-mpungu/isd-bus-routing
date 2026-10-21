@@ -58,6 +58,13 @@ def load_ride_time_weight(db: Session) -> int:
     return 0 if row is None else row.ride_time_weight
 
 
+def load_walking_weight(db: Session) -> int:
+    """Proposing stops: 0 walks up to each grade's limit; each step takes
+    5% off it, for shorter walks at the cost of more stops."""
+    row = db.get(OptimizationSettings, _SETTINGS_ID)
+    return 0 if row is None else row.walking_weight
+
+
 def load_min_rest_minutes(db: Session) -> int | None:
     """Minutes off required between a driver's days (None = no rule)."""
     row = db.get(OptimizationSettings, _SETTINGS_ID)
@@ -73,6 +80,7 @@ def _read(db: Session) -> OptimizationSettingsRead:
         arrival_buffer_weight=weights.arrival_buffer,
         minimum_buffer_minutes=load_minimum_buffer_minutes(db),
         ride_time_weight=load_ride_time_weight(db),
+        walking_weight=load_walking_weight(db),
         max_duty_minutes=rules.max_duty_minutes,
         break_after_minutes=rules.break_after_minutes,
         break_minutes=rules.break_minutes,
@@ -105,6 +113,7 @@ def update_optimization_settings(
     row.arrival_buffer_weight = payload.arrival_buffer_weight
     row.minimum_buffer_minutes = payload.minimum_buffer_minutes
     row.ride_time_weight = payload.ride_time_weight
+    row.walking_weight = payload.walking_weight
     row.max_duty_minutes = payload.max_duty_minutes
     row.break_after_minutes = payload.break_after_minutes
     row.break_minutes = payload.break_minutes

@@ -122,3 +122,53 @@ def test_invalid_weights_are_rejected(kwargs):
 def test_zero_crew_weight_is_allowed_when_another_objective_is_positive():
     weights = ObjectiveWeights(crews_used=0, deadhead_minutes=1)
     assert weights.deadhead_minutes == 1
+
+
+def _three_in_a_row() -> list[Job]:
+    # Each occupies 50 min, 20 min apart by road: a, then b, then c.
+    return [_job("a", 360, 410, 29.70), _job("b", 430, 480, 29.71), _job("c", 500, 550, 29.72)]
+
+
+def test_empty_driving_is_counted_along_the_chain_not_between_every_pair():
+    """One crew drives a, b, c: 40 minutes empty (a to b, b to c), not 60
+    (a to c as well). So one crew (35 + 40 = 75) beats two (70 + 20)."""
+    result = _solve(
+        _three_in_a_row(),
+        [_crew("c1"), _crew("c2"), _crew("c3")],
+        ObjectiveWeights(crews_used=35, deadhead_minutes=1),
+    )
+    assert result.crews_used == 1
+    assert result.total_deadhead_minutes == 40
+
+
+def _crew_parked_at(crew_id: str, lat: float) -> Crew:
+    crew = _crew(crew_id)
+    return Crew(
+        id=crew.id,
+        driver=crew.driver,
+        vehicle=Vehicle(id=f"vehicle-{crew_id}", yard=Location(lat=lat, lon=-95.4)),
+        available_window=crew.available_window,
+    )
+
+
+def test_the_bus_parked_nearest_takes_the_run():
+    job = _job("a", 360, 410, 29.70)
+    far, near = _crew_parked_at("far", 29.90), _crew_parked_at("near", 29.70)
+    result = _solve([job], [far, near], ObjectiveWeights(crews_used=1, deadhead_minutes=1))
+    assert result.assignments[0].crew_id == "near"
+    assert result.total_yard_minutes == 0
+
+    only_far = _solve([job], [far], ObjectiveWeights(crews_used=1, deadhead_minutes=1))
+    # Out from the yard and back again.
+    assert only_far.total_yard_minutes == 2 * DEADHEAD
+
+
+def test_a_chain_starts_and_ends_at_the_yard():
+    crew = _crew_parked_at("c1", 29.70)  # parked at a
+    result = _solve(_three_in_a_row(), [crew], ObjectiveWeights(crews_used=1, deadhead_minutes=1))
+    assert [a.job_id for a in sorted(result.assignments, key=lambda a: a.start_minute)] == [
+        "a",
+        "b",
+        "c",
+    ]
+    assert (result.total_deadhead_minutes, result.total_yard_minutes) == (40, 20)

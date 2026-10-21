@@ -101,6 +101,9 @@ export interface Vehicle {
   vehicle_type: VehicleType | null
   wheelchair_positions: number | null
   turning_radius_m: number | null
+  // Where it parks overnight (spec section 2.2's fleet mileage).
+  yard_lat?: number | null
+  yard_lon?: number | null
   required_license_class: LicenseClass
   is_active: boolean
   qualifications: Qualification[]
@@ -149,6 +152,8 @@ export interface ScheduleResult {
   assignments: Assignment[]
   total_deadhead_minutes: number | null
   total_arrival_buffer_minutes: number | null
+  // From buses' yards to their first run and back.
+  total_yard_minutes?: number | null
 }
 
 export interface OptimizationSettingsUpdate {
@@ -161,6 +166,9 @@ export interface OptimizationSettingsUpdate {
   // Route planning (spec section 2.2): students' ride time against the
   // bus's own time; 0 = the fastest route.
   ride_time_weight: number
+  // Proposing stops (spec section 2.2): each step takes 5% off every
+  // grade's walking limit, for shorter walks and more stops. 0 to 10.
+  walking_weight: number
   // Spec section 2.1: driver work-hour rules, each null (off) until the
   // district sets it. Minutes.
   max_duty_minutes: number | null
@@ -316,6 +324,9 @@ export interface VehicleCreate {
   vehicle_type?: VehicleType
   wheelchair_positions?: number
   turning_radius_m?: number
+  // Both or neither.
+  yard_lat?: number
+  yard_lon?: number
   qualification_codes: string[]
   // Omitted = inferred from capacity (15+ passengers needs CDL B).
   required_license_class?: LicenseClass
@@ -333,6 +344,9 @@ export interface VehicleUpdate {
   vehicle_type?: VehicleType | null
   wheelchair_positions?: number | null
   turning_radius_m?: number | null
+  // Both together; both null clears the yard.
+  yard_lat?: number | null
+  yard_lon?: number | null
   qualification_codes?: string[]
   is_active?: boolean
   required_license_class?: LicenseClass

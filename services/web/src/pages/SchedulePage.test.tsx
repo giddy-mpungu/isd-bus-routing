@@ -223,13 +223,14 @@ describe('SchedulePage', () => {
       assignments: [assignment],
       total_deadhead_minutes: 22,
       total_arrival_buffer_minutes: 90,
+      total_yard_minutes: 16,
     })
     render(<SchedulePage />)
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Crew' })).toBeInTheDocument())
 
     await user.click(screen.getByRole('button', { name: 'Run schedule' }))
     expect(await screen.findByText(/Schedule solved using 2 crew\(s\)\./)).toHaveTextContent(
-      'Total deadhead 22 min; 90 min of slack before the bells.',
+      'Total deadhead 22 min; 90 min of slack before the bells. 16 min to and from the yards.',
     )
 
     vi.mocked(api.runSchedule).mockResolvedValueOnce({

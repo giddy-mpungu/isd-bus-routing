@@ -493,20 +493,25 @@ independently modeled resources.
   Weights only rank schedules that already satisfy every hard constraint —
   none can trade a hard rule away (ADR 0002).
   - `crews_used`: number of distinct crews. A crew is one driver + one
-    vehicle, so "minimize buses" and "minimize drivers" (§2.2 objectives
-    1-2) are the same term.
-  - `deadhead_minutes`: §2.2's mileage, measured in travel minutes because
-    that is what `DeadheadEstimator` returns. **Pairwise, not chain-exact:**
-    every two jobs sharing a crew contribute their deadhead in the order
-    driven, adjacent or not, so it over-counts for crews with 3+ jobs
-    (exact adjacency needs O(n^3) betweenness variables or a per-crew
-    circuit model; not worth it until real problem sizes demand it).
+    vehicle, and a driver or a vehicle has at most one crew a day
+    (`uq_crew_driver_per_day`, `uq_crew_vehicle_per_day`), so the fewest
+    crews is also the fewest buses and the fewest drivers (§2.2 objectives
+    1-2): one term serves both.
+  - `deadhead_minutes`: §2.2's fleet mileage, measured in travel minutes
+    because that is what `DeadheadEstimator` returns. **Chain-exact:** each
+    crew's day is a CP-SAT circuit through its vehicle's yard (node 0) and
+    the jobs it serves, so the cost is the drive out from the yard, between
+    consecutive jobs, and back (#92). A vehicle with no yard recorded
+    (`Vehicle.yard_lat/yard_lon`) costs nothing to start and end. A job's
+    own route time is the same whichever crew drives it, so this is all of
+    the mileage the schedule can change.
   - `arrival_buffer`: minimizes each job's end time, i.e. maximizes slack
     before its window's latest bound (§2.2 "maintain realistic operational
     buffers").
   - `SchedulingResult.total_deadhead_minutes` / `total_arrival_buffer_minutes`
-    are always the **exact** realized totals (chain deadhead, summed slack),
-    whatever the weights, and are returned by `POST /schedule`
+    / `total_yard_minutes` are always the **exact** realized totals (chain
+    deadhead, summed slack, the drives to and from yards), whatever the
+    weights, and are returned by `POST /schedule`
     (`null` when everything was already locked and nothing was solved).
 - **`OptimizationSettings`** (`optimization_settings`): singleton row (id 1),
   three int weights (0-1000) + `updated_at`. Absent row = defaults, reported
@@ -1601,11 +1606,15 @@ proposals aren't snapped to streets: staff check each on the map.
 
 Steps: curb stops; the nearest existing stop within each student's limit;
 then greedy grouping (the home from which the most remaining students are
-within their own limits, stop at the group's centre when everyone can
-still reach it, else at that home); a new stop closer than the minimum
+within their own limits; the stop goes where the group's walks add up to
+least, the geometric median by Weiszfeld's method, when everyone can still
+reach it, else the group's centre, else that home); a new stop closer than the minimum
 spacing to another new one joins it when all its students can walk there,
 otherwise it's flagged. Deterministic, and quick (400 students well under
-5 s in tests).
+5 s in tests). `OptimizationSettings.walking_weight` (0-10, §2.2's
+"minimize excessive walking" against "unnecessary stops") takes 5% a step
+off every student's limit before any of this: 0 is the fewest stops,
+10 halves every walk at the cost of more stops.
 
 - `POST /stop-proposals/generate {school_id}` replaces the school's
   pending proposals (decided ones stay as history) and reports who was

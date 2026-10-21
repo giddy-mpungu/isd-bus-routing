@@ -19,8 +19,12 @@ file and no stop yet:
   2. Within walking limit of an existing stop: that stop (the nearest).
   3. Everyone else, grouped greedily: repeatedly pick the home from which
      the most remaining students are within their own limits, place the
-     stop at the group's centre if that's still within everyone's limit
-     (else at that home), and take them out.
+     stop where the group's walks add up to least (spec section 2.2) if
+     that's still within everyone's limit (else at the group's centre, else
+     at that home), and take them out.
+
+The district's walking weight (Setup, Rules & optimization) shortens
+every limit by 5% a step before any of this: shorter walks, more stops.
   4. Spacing: a new stop closer than the minimum spacing to another stop
      joins it when all its students can walk there; otherwise it's kept,
      with a warning.
@@ -87,6 +91,27 @@ def _within(home: Home, lat: float, lon: float) -> bool:
     return _dist(home.lat, home.lon, lat, lon) <= home.walk_limit_miles + 1e-9
 
 
+def shortest_walks(points: list[tuple[float, float]]) -> tuple[float, float]:
+    """The point the group's straight-line walks add up to least (the
+    geometric median, by Weiszfeld's method), starting from the centre."""
+    lat = sum(p[0] for p in points) / len(points)
+    lon = sum(p[1] for p in points) / len(points)
+    for _ in range(100):
+        weights = []
+        for p_lat, p_lon in points:
+            d = _dist(lat, lon, p_lat, p_lon)
+            if d < 1e-9:  # standing on a home: stay (good enough here)
+                return lat, lon
+            weights.append(1 / d)
+        total = sum(weights)
+        new_lat = sum(w * p[0] for w, p in zip(weights, points, strict=True)) / total
+        new_lon = sum(w * p[1] for w, p in zip(weights, points, strict=True)) / total
+        if abs(new_lat - lat) < 1e-9 and abs(new_lon - lon) < 1e-9:
+            break
+        lat, lon = new_lat, new_lon
+    return lat, lon
+
+
 def hazard_warnings(lat: float, lon: float, hazards: list[Hazard]) -> list[str]:
     warnings = []
     for h in hazards:
@@ -151,10 +176,19 @@ def propose(
             ),
         )
         group = sorted(neighbours[best] & left)
-        lat = sum(by_id[j].lat for j in group) / len(group)
-        lon = sum(by_id[j].lon for j in group) / len(group)
-        if not all(_within(by_id[j], lat, lon) for j in group):
-            lat, lon = by_id[best].lat, by_id[best].lon
+        median = shortest_walks([(by_id[j].lat, by_id[j].lon) for j in group])
+        centre = (
+            sum(by_id[j].lat for j in group) / len(group),
+            sum(by_id[j].lon for j in group) / len(group),
+        )
+        lat, lon = next(
+            (
+                spot
+                for spot in (median, centre)
+                if all(_within(by_id[j], spot[0], spot[1]) for j in group)
+            ),
+            (by_id[best].lat, by_id[best].lon),
+        )
         left -= set(group)
 
         # 4. Spacing: join a stop that's too close when everyone can walk there.

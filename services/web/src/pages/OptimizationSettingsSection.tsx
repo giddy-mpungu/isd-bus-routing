@@ -14,12 +14,12 @@ const FIELDS: {
   {
     key: 'crews_used_weight',
     label: 'Crews used',
-    help: 'Prefer schedules that need fewer buses and drivers.',
+    help: 'Prefer schedules that need fewer buses and drivers (a crew is one of each).',
   },
   {
     key: 'deadhead_minutes_weight',
     label: 'Deadhead travel',
-    help: 'Prefer less empty driving between schools (per minute of travel).',
+    help: "Prefer less empty driving (per minute of travel): between runs, and from each bus's yard to its first run and back.",
   },
   {
     key: 'arrival_buffer_weight',
@@ -89,6 +89,7 @@ export function OptimizationSettingsSection({ canEdit }: { canEdit: boolean }) {
         arrival_buffer_weight: String(settings.arrival_buffer_weight),
         minimum_buffer_minutes: String(settings.minimum_buffer_minutes),
         ride_time_weight: String(settings.ride_time_weight),
+        walking_weight: String(settings.walking_weight),
         ...Object.fromEntries(WORK_RULES.map((r) => [r.key, shown(settings[r.key], r.unit)])),
       })
     } catch (err) {
@@ -112,6 +113,7 @@ export function OptimizationSettingsSection({ canEdit }: { canEdit: boolean }) {
         arrival_buffer_weight: Number(values.arrival_buffer_weight),
         minimum_buffer_minutes: Number(values.minimum_buffer_minutes),
         ride_time_weight: Number(values.ride_time_weight),
+        walking_weight: Number(values.walking_weight),
         max_duty_minutes: entered(values.max_duty_minutes, 'hours'),
         break_after_minutes: entered(values.break_after_minutes, 'hours'),
         break_minutes: entered(values.break_minutes, 'minutes'),
@@ -205,6 +207,27 @@ export function OptimizationSettingsSection({ canEdit }: { canEdit: boolean }) {
               When &quot;Plan order and times&quot; orders a route&apos;s stops: 0 plans the fastest
               route; 1 counts each student&apos;s minute on the bus like a minute of the bus&apos;s
               own time, so stops with more children come closer to school.
+            </small>
+          </div>
+          <div>
+            <label htmlFor="opt-walking_weight">Shorter walks (proposing stops)</label>
+            <input
+              id="opt-walking_weight"
+              type="number"
+              min="0"
+              max="10"
+              step="1"
+              value={values.walking_weight ?? ''}
+              onChange={(event) =>
+                setValues((prev) => ({ ...prev, walking_weight: event.target.value }))
+              }
+              disabled={!canEdit}
+              required
+            />
+            <small>
+              When stops are proposed: 0 lets children walk up to their grade&apos;s limit, for the
+              fewest stops; each step takes 5% off every limit, down to half at 10, for shorter
+              walks and more stops. Each stop goes where its children&apos;s walks add up to least.
             </small>
           </div>
           <fieldset className="work-rules">

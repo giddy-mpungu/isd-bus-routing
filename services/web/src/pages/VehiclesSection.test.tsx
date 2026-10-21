@@ -112,6 +112,8 @@ describe('VehiclesSection', () => {
         vehicle_type: null,
         wheelchair_positions: null,
         turning_radius_m: null,
+        yard_lat: null,
+        yard_lon: null,
         required_license_class: 'cdl_b',
         qualification_codes: [],
       }),
@@ -186,6 +188,30 @@ describe('VehiclesSection', () => {
     )
     expect(screen.getByRole('checkbox', { name: /lift/ })).toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: /wheelchair/ })).not.toBeInTheDocument()
+  })
+
+  it('records where a vehicle parks overnight, and shows it', async () => {
+    vi.mocked(api.createVehicle).mockResolvedValue({ ...vehicle, id: 4 })
+    const user = userEvent.setup()
+    render(
+      <VehiclesSection
+        vehicles={[{ ...vehicle, yard_lat: 29.75, yard_lon: -95.45 }]}
+        qualifications={[]}
+        canEdit
+        onChanged={onChanged}
+      />,
+    )
+    expect(screen.getByText(/parks at 29\.7500, -95\.4500/)).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Label'), 'Bus 7')
+    await user.type(screen.getByLabelText('Yard latitude (optional)'), '29.7')
+    await user.type(screen.getByLabelText('Yard longitude (optional)'), '-95.4')
+    await user.click(screen.getByRole('button', { name: 'Add vehicle' }))
+    await waitFor(() =>
+      expect(api.createVehicle).toHaveBeenCalledWith(
+        expect.objectContaining({ label: 'Bus 7', yard_lat: 29.7, yard_lon: -95.4 }),
+      ),
+    )
   })
 
   it('lets the required license default to automatic, or be chosen', async () => {

@@ -164,6 +164,9 @@ class Vehicle:
     weight_kg: float | None = None
     # Wheelchair securement positions (spec section 6); None = not recorded.
     wheelchair_positions: int | None = None
+    # Where it parks overnight: its day starts and ends there (spec section
+    # 2.2's fleet mileage). None = not recorded, and no drive is counted.
+    yard: Location | None = None
 
     def __post_init__(self) -> None:
         if self.wheelchair_positions is not None and self.wheelchair_positions < 0:
