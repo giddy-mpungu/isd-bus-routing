@@ -20,6 +20,7 @@ from isd_solver import (
     DeadheadEstimator,
     DirectionsError,
     InfeasibleResult,
+    NoRouteError,
     SchedulingResult,
     SizeRestriction,
     UTurn,
@@ -48,6 +49,7 @@ from isd_solver import (
 from isd_solver import (
     Vehicle as SolverVehicle,
 )
+from isd_solver.graphhopper import SNAP_LIMIT_M
 from sqlalchemy.orm import Session
 
 from isd_api import access_log, closures, i18n
@@ -1252,6 +1254,17 @@ def route_directions(
                 profile=settings.ors_profile,
                 language=lang,
             )
+    except NoRouteError:
+        # Spec section 2.1: never send a bus along roads it may not use.
+        return DirectionsRead(
+            available=False,
+            reason=i18n.tr(
+                lang,
+                "No road this bus may use reaches every stop: a closure or a size limit is in "
+                "the way. Check with dispatch.",
+            ),
+            waypoints=waypoints,
+        )
     except DirectionsError:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -1283,7 +1296,20 @@ def route_directions(
             )
             for s in found.steps
         ],
-        warnings=u_turn_warnings(db, found.u_turns, vehicle, lang),
+        warnings=[
+            *(
+                i18n.tr(
+                    lang,
+                    "{place} is about {distance} m from the nearest road this bus may use. "
+                    "Check with dispatch.",
+                    place=waypoints[index].label,
+                    distance=f"{metres:.0f}",
+                )
+                for index, metres in enumerate(found.snap_distances_m)
+                if metres > SNAP_LIMIT_M and index < len(waypoints)
+            ),
+            *u_turn_warnings(db, found.u_turns, vehicle, lang),
+        ],
     )
     if settings.routing_engine_url:
         result.attribution = (

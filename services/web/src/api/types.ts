@@ -562,9 +562,11 @@ export type BufferReason =
   | 'traffic'
   | 'loading'
   | 'wheelchair'
+  | 'school_congestion'
   | 'weather'
   | 'rail_crossings'
   | 'pre_trip'
+  | 'minor_delays'
   | 'fueling'
   | 'other'
 

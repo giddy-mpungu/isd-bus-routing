@@ -14,6 +14,7 @@ from isd_solver.directions import (
     DirectionsError,
     DirectionStep,
     Leg,
+    NoRouteError,
     UTurn,
     area_polygon,
     areas_geojson,
@@ -61,6 +62,7 @@ from isd_solver.scheduler import (
 )
 
 __all__ = [
+    "NoRouteError",
     "UTurn",
     "GraphHopperEstimator",
     "TurnRules",

@@ -34,6 +34,13 @@ Every request the API makes carries a *custom model* built for that bus
 | §10 | Road closures in force | Closed |
 
 Turn costs only choose the route: the times reported are driving times.
+
+When no road this bus may use reaches a place (a closure, or a size limit
+on every way in), or the nearest such road is more than 300 m away, the
+scheduler treats that leg as impossible (it's never chained) and the
+driver's directions say so instead of sending the bus somewhere else.
+Directions also warn when a stop is more than 300 m from a road the bus
+may use.
 Turn restrictions in the map (no left turn, only straight on) apply too.
 
 What the map can't say: whether an intersection has signals or a protected

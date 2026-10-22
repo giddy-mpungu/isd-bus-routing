@@ -7,13 +7,14 @@ from isd_solver import (
     DeadheadEstimationError,
     DirectionsError,
     Location,
+    NoRouteError,
     SizeRestriction,
     TurnRules,
     Vehicle,
     graphhopper_deadhead_estimator,
     graphhopper_directions,
 )
-from isd_solver.graphhopper import custom_model, turn_penalty
+from isd_solver.graphhopper import UNREACHABLE_MINUTES, custom_model, turn_penalty
 
 A, B, C = Location(29.74, -95.40), Location(29.71, -95.40), Location(29.70, -95.40)
 BUS = Vehicle(id="1", length_m=12.2, width_m=2.6, height_m=3.2, weight_kg=14000)
@@ -243,3 +244,56 @@ def test_directions_say_where_the_bus_turns_round():
         "http://routing:8989", [A, B], BUS, http_post=lambda *args: payload
     )
     assert [(u.lat, u.lon, u.street) for u in found.u_turns] == [(29.759, -95.385, "Rhode Place")]
+
+
+def test_a_leg_the_bus_may_not_drive_is_never_chained():
+    def no_road(url, body, headers, timeout):
+        raise OSError("Connection between locations not found")
+
+    def straight(a, b, vehicle):
+        return 3
+
+    estimate = graphhopper_deadhead_estimator(
+        "http://routing:8989", http_post=no_road, fallback=straight
+    )
+    # Not the straight-line guess: no road this bus may use joins them.
+    assert estimate(A, B, BUS) == UNREACHABLE_MINUTES
+
+
+def test_a_place_far_from_any_road_the_bus_may_use_is_out_of_reach():
+    def moved(url, body, headers, timeout):
+        # The engine routed to a road about 1 km north of B.
+        return {
+            "paths": [
+                {
+                    "time": 300_000,
+                    "snapped_waypoints": {"coordinates": [[A.lon, A.lat], [B.lon, B.lat + 0.009]]},
+                }
+            ]
+        }
+
+    estimate = graphhopper_deadhead_estimator("http://routing:8989", http_post=moved)
+    assert estimate(A, B, BUS) == UNREACHABLE_MINUTES
+
+
+def test_directions_say_when_no_legal_route_exists_and_how_far_each_stop_is_from_a_road():
+    def no_road(url, body, headers, timeout):
+        raise OSError("Connection between locations not found")
+
+    with pytest.raises(NoRouteError):
+        graphhopper_directions("http://routing:8989", [A, B], BUS, http_post=no_road)
+
+    payload = {
+        "paths": [
+            {
+                **GH_RESPONSE["paths"][0],
+                "snapped_waypoints": {
+                    "coordinates": [[A.lon, A.lat], [B.lon, B.lat + 0.0045], [C.lon, C.lat]]
+                },
+            }
+        ]
+    }
+    found = graphhopper_directions(
+        "http://routing:8989", [A, B, C], BUS, http_post=lambda *args: payload
+    )
+    assert [round(m, -1) for m in found.snap_distances_m] == [0, 500, 0]
