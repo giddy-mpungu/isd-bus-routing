@@ -49,7 +49,7 @@ finishes, it prints:
 |---|---|
 | `admin@demo.example.org` | Everything: Setup, Users, Templates, Schedule, Field Trips |
 | `dispatcher@demo.example.org` | The dispatcher console: Schedule, Field Trips, Templates, Setup |
-| `driver.jordan@…`, `driver.sam@…` | The driver app: today's runs, riders by stop, status buttons, reports |
+| `driver.jordan@…`, `driver.sam@…` | The driver app: today's runs, stops in order with riders, turn-by-turn directions, status buttons, reports |
 | `school.willowcreek@…` | One school's buses and notices |
 | `parent.alvarez@…` | A guardian of two students: ridership toggles, bus location |
 | `student.noah@…` | A student's own view |
@@ -60,7 +60,10 @@ finishes, it prints:
 
 - 3 schools, 6 stops, 12 students, 4 drivers, and 4 vehicles (one with
   a wheelchair lift).
-- Recurring route and crew templates.
+- Recurring route and crew templates. Every route comes with its stops
+  in order and timed (by the route planner, as "Plan order and times"
+  would), so drivers see their stops and get turn-by-turn directions from
+  the first sign-in.
 - **14 days of schedule already generated and solved**, starting today.
   The templates run all 7 days so a weekend demo isn't empty.
 - District geographic knowledge, two announcements, and an unassigned
@@ -116,8 +119,8 @@ fail. The tunnel is how other devices get in, including your own phone.
 ## Everyday commands
 
 The demo also runs the background worker, so bus-time emails to parents
-land in the test inbox too (the demo district's routes have no planned
-stop times yet, so it has nothing to send until you plan some).
+land in the test inbox too, when a child's bus time moves by 10 minutes
+or more.
 
 The admin and dispatcher logins need an authenticator app on your phone
 (two-step sign-in, as on a real server): the first sign-in shows a QR

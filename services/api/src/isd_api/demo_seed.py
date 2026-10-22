@@ -222,9 +222,10 @@ def seed_demo(
     # Recurring templates (spec section 11): one AM and one PM run per
     # school, and three standing driver+vehicle crews. The lift-equipped
     # bus is in a crew, so the elementary runs that need it are feasible.
+    routes = []
     for school, (_, _, _, am, pm, quals) in zip(schools, _SCHOOLS, strict=True):
         for direction, (earliest, latest, duration) in (("am", am), ("pm", pm)):
-            post(
+            route = post(
                 "/route-templates",
                 {
                     "school_id": school["id"],
@@ -237,6 +238,28 @@ def seed_demo(
                     "required_qualification_codes": quals,
                 },
             )
+            routes.append((route, school, duration))
+
+    # Each route gets the stops its school's students use, put in order and
+    # timed by the route planner ("Plan order and times"), so drivers have
+    # stops in order and turn-by-turn directions from the first day. The
+    # route keeps its scheduled time (the plan's is driving alone), which
+    # keeps the three schools' runs overlapping: every crew has work.
+    for route, school, duration in routes:
+        used = sorted(
+            {
+                stop_i
+                for _, school_i, stop_i, _ in _STUDENTS
+                if schools[school_i]["id"] == school["id"]
+            }
+        )
+        request(
+            "PUT",
+            f"/route-templates/{route['id']}/stops",
+            {"stops": [{"stop_id": stops[i]["id"], "minutes_from_start": None} for i in used]},
+        )
+        post(f"/route-templates/{route['id']}/stops/plan", {"apply": True})
+        request("PATCH", f"/route-templates/{route['id']}", {"duration_minutes": duration})
     for driver, vehicle in zip(drivers[:3], vehicles[:3], strict=True):
         post(
             "/crew-templates",

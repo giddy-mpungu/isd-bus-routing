@@ -60,6 +60,26 @@ def test_each_generated_day_is_fully_scheduled(client, seeded):
     assert client.get("/schedule/2026-09-24/assignments", headers=headers).json() == []
 
 
+def test_every_route_starts_with_its_stops_planned(client, seeded):
+    """So a tester's driver has stops in order, and directions, at once."""
+    headers, accounts = seeded
+    for route in client.get("/route-templates", headers=headers).json():
+        stops = route["stops"]
+        assert stops, route
+        assert all(s["minutes_from_start"] is not None for s in stops)
+        assert max(s["minutes_from_start"] for s in stops) <= route["duration_minutes"]
+
+    sam = next(a for a in accounts if a.email.startswith("driver.sam"))
+    driver = auth_headers(login(client, email=sam.email, password=sam.password))
+    [first, *_] = client.get("/schedule/2026-09-21/my-assignments", headers=driver).json()
+    directions = client.get(
+        f"/schedule/assignments/{first['id']}/directions", headers=driver
+    ).json()
+    # Without a routing engine in tests: the stops in order, then school.
+    assert len(directions["waypoints"]) >= 3
+    assert "no stops" not in (directions["reason"] or "")
+
+
 def test_linked_role_views_show_real_data(client, seeded):
     _, accounts = seeded
     by_email = {a.email: a for a in accounts}

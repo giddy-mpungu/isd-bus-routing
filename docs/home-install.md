@@ -101,3 +101,7 @@ long as Docker Desktop is set to start when you sign in (its default).
   ports 80 and 443.
 - The district is fictional ([docs/demo.md](demo.md#the-demo-district)).
   Don't enter real student information on a test PC.
+- The demo district's routes come with their stops planned, so drivers get
+  turn-by-turn directions straight away. An install made before 22 October
+  2026 loaded routes without stops; `deploy.cmd update` keeps that data, and
+  `deploy.cmd reset` starts again with the current demo district.
