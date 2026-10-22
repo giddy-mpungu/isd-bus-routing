@@ -89,9 +89,11 @@ BUFFER_FACTORS = (
     "traffic",
     "loading",
     "wheelchair",
+    "school_congestion",
     "weather",
     "rail_crossings",
     "pre_trip",
+    "minor_delays",
     "fueling",
     "other",
 )

@@ -295,6 +295,15 @@ PHRASES: dict[str, str] = {
         "(ISD_API_ROUTING_ENGINE_URL) o una clave de OpenRouteService (ISD_API_ORS_API_KEY)."
     ),
     "an unnamed road": "una calle sin nombre",
+    "No road this bus may use reaches every stop: a closure or a size limit is in "
+    "the way. Check with dispatch.": (
+        "Ninguna calle que este autobús pueda usar llega a todas las paradas: hay un cierre "
+        "o un límite de tamaño. Consulte con despacho."
+    ),
+    "{place} is about {distance} m from the nearest road this bus may use. Check with dispatch.": (
+        "{place} está a unos {distance} m de la calle más cercana que este autobús puede "
+        "usar. Consulte con despacho."
+    ),
     "Turns round on {street}, which isn't an approved turnaround. "
     "Check with dispatch before going this way.": (
         "Da la vuelta en {street}, que no es un retorno aprobado. "

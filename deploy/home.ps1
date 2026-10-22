@@ -289,7 +289,7 @@ function Start-Home {
     $inboxPort = Set-InboxPort
 
     Write-Step 'Building and starting everything (the first build takes several minutes)...'
-    Invoke-Compose up -d --build --wait postgres mailpit api worker web caddy
+    Invoke-Compose up -d --build --wait postgres routing mailpit api worker web caddy
 
     Write-Step 'Backing up the database before applying migrations...'
     Invoke-Compose up -d --build backup

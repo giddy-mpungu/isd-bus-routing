@@ -167,7 +167,7 @@ function Start-Demo {
     Initialize-Secrets
 
     Write-Step 'Building and starting the stack (the first build takes a few minutes)...'
-    Invoke-Compose up -d --build --wait postgres mailpit api worker web caddy
+    Invoke-Compose up -d --build --wait postgres routing mailpit api worker web caddy
 
     Write-Step 'Backing up the database before applying migrations...'
     Invoke-Compose up -d --build backup

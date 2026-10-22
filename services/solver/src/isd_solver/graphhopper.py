@@ -22,9 +22,9 @@ Turn costs only choose the route; the times reported are driving times.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
+import math
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -35,6 +35,7 @@ from isd_solver.directions import (
     DirectionsError,
     DirectionStep,
     Leg,
+    NoRouteError,
     UTurn,
     areas_geojson,
 )
@@ -59,6 +60,16 @@ MAIN_ROADS = ("TRUNK", "PRIMARY", "SECONDARY")
 # How much less attractive a road is inside a difficult-turn zone: driving
 # through costs about this many times its time.
 SLOW_ZONE_PRIORITY = 0.2
+
+# A place farther than this from any road the bus may use counts as out of
+# its reach: the engine would otherwise route to the nearest usable road,
+# which can be far from the place (a stop behind a low bridge, say).
+SNAP_LIMIT_M = 300.0
+# What an unreachable leg costs a schedule: more than any day, so the
+# solver never chains two runs the bus can't drive between.
+UNREACHABLE_MINUTES = 24 * 60
+# GraphHopper's answer when no road joins the points.
+NO_CONNECTION = "Connection between locations not found"
 
 # GraphHopper's instruction signs for turning round.
 U_TURN_SIGNS = {-98, -8, 8}
@@ -166,6 +177,30 @@ def _avoid(
     return _merge_avoid_polygons(fixed, zones), violated
 
 
+def _metres(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> float:
+    """Great-circle distance, metres."""
+    p1, p2 = math.radians(a_lat), math.radians(b_lat)
+    dp, dl = p2 - p1, math.radians(b_lon - a_lon)
+    h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * 6_371_000 * math.asin(math.sqrt(h))
+
+
+def snap_distances(payload: dict, waypoints: list[Location]) -> list[float]:
+    """How far the engine moved each waypoint onto a road, metres."""
+    snapped = (payload.get("paths") or [{}])[0].get("snapped_waypoints") or {}
+    coordinates = snapped.get("coordinates") if isinstance(snapped, dict) else None
+    if not coordinates or len(coordinates) != len(waypoints):
+        return []
+    return [
+        _metres(w.lat, w.lon, float(lat), float(lon))
+        for w, (lon, lat, *_) in zip(waypoints, coordinates, strict=True)
+    ]
+
+
+class _Unreachable(Exception):
+    """The bus can't legally get there (see SNAP_LIMIT_M, NO_CONNECTION)."""
+
+
 def _message(exc: Exception) -> str:
     """GraphHopper's own reason, when it gave one (an HTTP 400 body)."""
     read = getattr(exc, "read", None)
@@ -191,9 +226,12 @@ def graphhopper_deadhead_estimator(
 ) -> GraphHopperEstimator:
     """A DeadheadEstimator backed by the routing engine: the bus's driving
     minutes from a to b. Cached per (a, b, the bus's size, the zones it
-    exceeds). On failure (engine down, a point off the map, no road
-    between them) it uses `fallback`, logging a warning, or raises
-    DeadheadEstimationError when there is none."""
+    exceeds). When no road this bus may use joins them (or one end is more
+    than SNAP_LIMIT_M from such a road) the leg costs UNREACHABLE_MINUTES,
+    so it's never driven (spec section 2.1: roadway and vehicle
+    restrictions). On any other failure (engine down, a point off the map)
+    it uses `fallback`, logging a warning, or raises DeadheadEstimationError
+    when there is none."""
     if not base_url:
         raise ValueError("base_url must be the routing engine's address")
     return GraphHopperEstimator(
@@ -245,13 +283,28 @@ class GraphHopperEstimator:
             "points": [[a.lon, a.lat], [b.lon, b.lat]],
             "instructions": False,
             "calc_points": False,
+            "points_encoded": False,
             "custom_model": custom_model(vehicle, avoid, self._rules, self._slow),
         }
-        payload = self._post(self._url, body, {}, self._timeout)
+        try:
+            payload = self._post(self._url, body, {}, self._timeout)
+        except Exception as exc:  # noqa: BLE001 - sorted by GraphHopper's reason
+            message = _message(exc)
+            if NO_CONNECTION in message:
+                raise _Unreachable(message) from exc
+            raise RuntimeError(message) from exc
         paths = payload.get("paths") or []
         if not paths:
             raise DeadheadEstimationError(f"Routing engine found no route for {a} -> {b}")
+        moved = snap_distances(payload, [a, b])
+        if moved and max(moved) > SNAP_LIMIT_M:
+            raise _Unreachable(f"{max(moved):.0f} m from the nearest road this bus may use")
         return int(round(float(paths[0]["time"]) / 60_000.0))
+
+    def _remember_unreachable(self, key: tuple, a: Location, b: Location, why: str) -> int:
+        logger.warning("No road this bus may use joins %s -> %s (%s)", a, b, why)
+        self._cache[key] = UNREACHABLE_MINUTES
+        return UNREACHABLE_MINUTES
 
     def __call__(self, a: Location, b: Location, vehicle: Vehicle) -> int:
         if a == b:
@@ -261,6 +314,8 @@ class GraphHopperEstimator:
             return self._cache[key]
         try:
             minutes = self._fetch(a, b, vehicle)
+        except _Unreachable as exc:
+            return self._remember_unreachable(key, a, b, str(exc))
         except Exception as exc:  # noqa: BLE001 - network, HTTP and JSON errors alike
             if self._fallback is not None:
                 logger.warning(
@@ -290,8 +345,12 @@ class GraphHopperEstimator:
 
         def one(item: tuple[tuple, tuple[Location, Location, Vehicle]]) -> None:
             key, (a, b, vehicle) = item
-            with contextlib.suppress(Exception):  # see the docstring
+            try:
                 self._cache[key] = self._fetch(a, b, vehicle)
+            except _Unreachable as exc:
+                self._remember_unreachable(key, a, b, str(exc))
+            except Exception:  # noqa: BLE001, S110 - see the docstring
+                pass
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
             list(pool.map(one, todo.items()))
@@ -343,11 +402,14 @@ def graphhopper_directions(
     post = http_post or _default_http_post
     try:
         payload = post(f"{base_url.rstrip('/')}/route", body, {}, timeout_seconds)
-        return parse_graphhopper(payload)
-    except DirectionsError:
-        raise
     except Exception as exc:  # noqa: BLE001 - network, HTTP and JSON errors alike
-        raise DirectionsError(f"Routing engine directions failed: {_message(exc)}") from exc
+        message = _message(exc)
+        if NO_CONNECTION in message:
+            raise NoRouteError(message) from exc
+        raise DirectionsError(f"Routing engine directions failed: {message}") from exc
+    found = parse_graphhopper(payload)
+    found.snap_distances_m.extend(snap_distances(payload, waypoints))
+    return found
 
 
 def parse_graphhopper(payload: dict) -> Directions:

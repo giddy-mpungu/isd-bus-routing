@@ -54,7 +54,7 @@ def test_an_approved_turnaround_says_the_longest_bus_that_fits(client, admin_hea
 def engine(monkeypatch):
     monkeypatch.setattr(schedule.settings, "routing_engine_url", ENGINE)
     monkeypatch.setattr(schedule.settings, "ors_api_key", None)
-    state = {"u_turns": [], "calls": []}
+    state = {"u_turns": [], "calls": [], "snaps": []}
 
     def fake(url, waypoints, vehicle, **kwargs):
         state["calls"].append(kwargs)
@@ -65,6 +65,7 @@ def engine(monkeypatch):
             legs=[Leg(2500.0, 300.0) for _ in waypoints[1:]],
             steps=[DirectionStep("Continue", "Oak Street", 2500.0, 300.0, 0)],
             u_turns=state["u_turns"],
+            snap_distances_m=list(state["snaps"]),
         )
 
     monkeypatch.setattr(schedule, "graphhopper_directions", fake)
@@ -129,3 +130,33 @@ def test_difficult_places_are_costs_with_the_engine_and_avoids_without(
     schedule._directions_cache.clear()
     _directions(client, driver, assignment)
     assert engine["calls"][-1]["turn_rules"].left_s == 45
+
+
+def test_when_no_road_this_bus_may_use_reaches_the_stops_the_driver_is_told(
+    client, admin_headers, db_session, monkeypatch
+):
+    from isd_solver import NoRouteError
+
+    assignment, driver = _setup(client, admin_headers, db_session)
+    monkeypatch.setattr(schedule.settings, "routing_engine_url", ENGINE)
+
+    def no_road(url, waypoints, vehicle, **kwargs):
+        raise NoRouteError("Connection between locations not found")
+
+    monkeypatch.setattr(schedule, "graphhopper_directions", no_road)
+    body = _directions(client, driver, assignment).json()
+    assert body["available"] is False
+    assert body["reason"].startswith("No road this bus may use reaches every stop")
+    # The stop order is still there.
+    assert [w["label"] for w in body["waypoints"]] == ["Far", "Near", "Riverside"]
+
+
+def test_a_stop_far_from_a_road_the_bus_may_use_is_flagged(
+    client, admin_headers, db_session, engine
+):
+    assignment, driver = _setup(client, admin_headers, db_session)
+    engine["snaps"] = [0.0, 640.0, 0.0]  # Far, Near, Riverside
+    body = _directions(client, driver, assignment).json()
+    assert body["warnings"] == [
+        "Near is about 640 m from the nearest road this bus may use. Check with dispatch."
+    ]

@@ -56,11 +56,12 @@ def test_the_buffer_is_the_sum_of_its_reasons(client, admin_headers):
     updated = client.patch(
         f"/route-templates/{route['id']}",
         headers=h,
-        json={"buffer_breakdown": {"loading": 4, "wheelchair": 6}},
+        json={"buffer_breakdown": {"minor_delays": 1, "loading": 3, "wheelchair": 6}},
     ).json()
-    assert (updated["buffer_minutes"], updated["buffer_breakdown"]) == (
+    # The spec's whole list, in its order (section 16).
+    assert (updated["buffer_minutes"], list(updated["buffer_breakdown"].items())) == (
         10,
-        {"loading": 4, "wheelchair": 6},
+        [("loading", 3), ("wheelchair", 6), ("minor_delays", 1)],
     )
 
     # Too much for the 60-minute window with a 30-minute route.

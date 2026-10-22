@@ -37,6 +37,10 @@ class DirectionsError(RuntimeError):
     """ORS couldn't be reached, refused the request, or answered oddly."""
 
 
+class NoRouteError(DirectionsError):
+    """No road this bus may use joins the waypoints (closures, size limits)."""
+
+
 @dataclass(frozen=True)
 class DirectionStep:
     instruction: str
@@ -63,6 +67,9 @@ class Directions:
     steps: list[DirectionStep]
     # Where the route turns round (the routing engine reports these).
     u_turns: list[UTurn] = field(default_factory=list)
+    # How far each waypoint is from the road the route uses there, in
+    # metres (the routing engine reports these; empty otherwise).
+    snap_distances_m: list[float] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
