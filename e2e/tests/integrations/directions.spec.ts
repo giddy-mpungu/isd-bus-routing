@@ -73,11 +73,14 @@ test('Sam follows directions stop by stop, and around a closed road', async ({ p
 
   const watcher = watch(page)
   await signIn(page, sam().email, sam().password)
-  // (The bus-time email test may have given Sam another route with stops.)
+  // The afternoon run: the morning one keeps all its planned stops.
   const run = page
     .locator('.driver-run-card', { has: page.getByRole('heading', { name: 'Stops in order' }) })
     .filter({ hasText: 'Willow Creek Elementary' })
     .filter({ hasText: 'Pinecrest Apartments' })
+    .filter({
+      hasNot: page.locator('.driver-route-stops strong', { hasText: 'Riverside Park Entrance' }),
+    })
   await run.getByRole('button', { name: 'Directions', exact: true }).click()
 
   // From school to the first stop, then on to the next.

@@ -1,17 +1,17 @@
 import { expect, test } from '@playwright/test'
 import { linkIn, needsMail, waitForMail } from '../helpers/mail'
-import { api, day } from '../helpers/roles'
+import { api } from '../helpers/roles'
 
 /**
  * The background worker emails a family when their child's bus time moves
  * 10 minutes or more from the plan, and the email's "stop these emails"
  * link works. Needs the harness's --worker and a captured inbox.
  *
- * The demo district's routes have no stops or planned times, so this sets
- * one up through the API: a Maple Valley afternoon route through Mia's stop
- * whose planned time is well off the estimate, starting 45 minutes from now
- * in a district time zone where it's around noon (the worker only emails on
- * the service day, after 05:30, before the time has passed).
+ * The demo district's routes come planned, so the estimate matches the plan
+ * and nobody is emailed. This moves Mia's stop on today's Maple Valley
+ * afternoon route to a planned time well off the estimate, in a district
+ * time zone where it's around noon (the worker only emails on the service
+ * day, after 05:30, before the time has passed; that run leaves at 14:30).
  */
 needsMail()
 
@@ -37,35 +37,23 @@ test("Mia's bus time changes: Pat is emailed, and the email's link turns them of
       data: { timezone: zone, am_cutoff_minute: null, pm_cutoff_minute: null },
     }),
   )
-  const localMinute = 12 * 60 + now.getUTCMinutes()
-  const start = localMinute + 45
-
   const schools = (await ok(admin.get('schools'))) as { id: number; name: string }[]
   const maple = schools.find((s) => s.name === 'Maple Valley High School')!
   const stops = (await ok(admin.get('stops'))) as { id: number; label: string }[]
   const oak = stops.find((s) => s.label === 'Oak St & 3rd Ave')!
 
-  const route = (await ok(
-    admin.post('route-templates', {
-      data: {
-        school_id: maple.id,
-        direction: 'pm',
-        window_earliest: start,
-        window_latest: start + 60,
-        duration_minutes: 45,
-        buffer_minutes: 0,
-        days_of_week: [0, 1, 2, 3, 4, 5, 6],
-      },
-    }),
-  )) as { id: number }
+  const templates = (await ok(admin.get('route-templates'))) as {
+    id: number
+    school_id: number
+    direction: string
+  }[]
+  const route = templates.find((t) => t.school_id === maple.id && t.direction === 'pm')!
   // Planned 35 minutes after the bus leaves school; the estimate is a few.
   await ok(
     admin.put(`route-templates/${route.id}/stops`, {
       data: { stops: [{ stop_id: oak.id, minutes_from_start: 35 }] },
     }),
   )
-  await ok(admin.post(`schedule/${day()}/generate-from-templates`))
-  await ok(admin.post('schedule', { data: { service_date: day() } }))
   await admin.dispose()
 
   // The worker notices within a pass or two.

@@ -6,9 +6,10 @@ import { signIn } from '../helpers/signin'
 import { watch } from '../helpers/watch'
 
 /**
- * A route gets its stops (spec section 4): the transportation admin puts
- * three stops on Willow Creek's afternoon route, lets the planner order
- * them and set the times, and applies it. Sam, who drives that route
+ * A route's stops change (spec section 4): the demo district starts with
+ * every route planned; the transportation admin trims Willow Creek's
+ * afternoon route to three stops, lets the planner order them and set the
+ * times, and applies it. Sam, who drives that route
  * (Bus 12, the only bus with the lift), sees the stops in that order with
  * the children at each; Pat sees when the bus is due at Emma's stop.
  * Turn-by-turn directions come from the district's routing engine: the
@@ -18,6 +19,7 @@ import { watch } from '../helpers/watch'
  */
 const sam = () => seededAccounts().find((a) => a.email.startsWith('driver.sam'))!
 const STOPS = ['Oak St & 3rd Ave', 'Birch Ln Cul-de-sac', 'Pinecrest Apartments']
+const DROPPED = ['Riverside Park Entrance', 'Hillcrest Community Center']
 
 test("a route's stops are planned, and the driver and family see them", async ({
   page,
@@ -30,15 +32,15 @@ test("a route's stops are planned, and the driver and family see them", async ({
   const route = office
     .locator('tr', { hasText: 'Willow Creek Elementary' })
     .filter({ has: office.getByRole('cell', { name: 'PM', exact: true }) })
-  await expect(route).toContainText('None yet')
+  // Planned when the demo district was loaded: every stop its children use.
+  for (const stop of [...STOPS, ...DROPPED]) await expect(route).toContainText(stop)
   await route.getByRole('button', { name: 'Edit stops' }).click()
 
-  for (const stop of STOPS) {
-    await office.getByLabel('Add a stop').selectOption(stop)
-    await office.getByRole('button', { name: 'Add to route' }).click()
+  for (const stop of DROPPED) {
+    await office.getByRole('button', { name: `Remove ${stop}` }).click()
   }
   await office.getByRole('button', { name: 'Save stops' }).click()
-  await expect(route).toContainText(STOPS.join(' → '))
+  for (const stop of DROPPED) await expect(route).not.toContainText(stop)
 
   // The planner orders them and works out the minutes; nothing changes
   // until the plan is applied.
@@ -72,8 +74,11 @@ test("a route's stops are planned, and the driver and family see them", async ({
   // Sam's afternoon run: the stops in that order, the children at each.
   const watcher = watch(page)
   await signIn(page, sam().email, sam().password)
+  // The morning run keeps all its planned stops; the afternoon one is the
+  // route just trimmed.
   const run = page.locator('.driver-run-card', {
     has: page.getByRole('heading', { name: 'Stops in order' }),
+    hasNot: page.locator('.driver-route-stops strong', { hasText: DROPPED[0] }),
   })
   await expect(run.locator('.driver-route-stops li strong')).toHaveText(
     planned.map((s) => s.stop_label),
@@ -94,7 +99,10 @@ test("a route's stops are planned, and the driver and family see them", async ({
   const family = await as(browser, 'parent', baseURL)
   await family.goto('/family')
   await expect(
-    family.locator('.family-eta', { hasText: 'Bus due at Oak St & 3rd Ave around' }),
+    // Emma's afternoon bus is the lift bus, between 14:40 and 15:35.
+    family.locator('.family-eta', {
+      hasText: /Bus due at Oak St & 3rd Ave around 1[45]:\d\d\. Bus 12 \(lift\)/,
+    }),
   ).toBeVisible()
   await family.context().close()
 })
