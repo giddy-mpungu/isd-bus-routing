@@ -28,6 +28,25 @@ const FIELDS: {
   },
 ]
 
+// Spec section 7: what the routing engine adds to a route's cost for each
+// kind of turn, in seconds. They choose the route; times shown don't
+// include them.
+const TURN_COSTS: {
+  key:
+    | 'turn_right_seconds'
+    | 'turn_sharp_right_seconds'
+    | 'turn_left_seconds'
+    | 'turn_sharp_left_seconds'
+    | 'turn_main_road_left_seconds'
+  label: string
+}[] = [
+  { key: 'turn_right_seconds', label: 'Right turn' },
+  { key: 'turn_sharp_right_seconds', label: 'Sharp right turn' },
+  { key: 'turn_left_seconds', label: 'Left turn' },
+  { key: 'turn_sharp_left_seconds', label: 'Sharp left turn' },
+  { key: 'turn_main_road_left_seconds', label: 'Left at a main road (on top of the left)' },
+]
+
 // Spec section 2.1: driver work-hour rules, entered by the district (this
 // system asserts nothing about what any law requires). Empty means no rule.
 const WORK_RULES: {
@@ -90,6 +109,7 @@ export function OptimizationSettingsSection({ canEdit }: { canEdit: boolean }) {
         minimum_buffer_minutes: String(settings.minimum_buffer_minutes),
         ride_time_weight: String(settings.ride_time_weight),
         walking_weight: String(settings.walking_weight),
+        ...Object.fromEntries(TURN_COSTS.map((c) => [c.key, String(settings[c.key])])),
         ...Object.fromEntries(WORK_RULES.map((r) => [r.key, shown(settings[r.key], r.unit)])),
       })
     } catch (err) {
@@ -114,6 +134,10 @@ export function OptimizationSettingsSection({ canEdit }: { canEdit: boolean }) {
         minimum_buffer_minutes: Number(values.minimum_buffer_minutes),
         ride_time_weight: Number(values.ride_time_weight),
         walking_weight: Number(values.walking_weight),
+        ...(Object.fromEntries(TURN_COSTS.map((c) => [c.key, Number(values[c.key])])) as Record<
+          (typeof TURN_COSTS)[number]['key'],
+          number
+        >),
         max_duty_minutes: entered(values.max_duty_minutes, 'hours'),
         break_after_minutes: entered(values.break_after_minutes, 'hours'),
         break_minutes: entered(values.break_minutes, 'minutes'),
@@ -230,6 +254,32 @@ export function OptimizationSettingsSection({ canEdit }: { canEdit: boolean }) {
               walks and more stops. Each stop goes where its children&apos;s walks add up to least.
             </small>
           </div>
+          <fieldset className="work-rules">
+            <legend>Turn costs (routing engine, seconds)</legend>
+            <p>
+              What each kind of turn adds when the routing engine chooses a bus&apos;s route: higher
+              numbers mean more of a detour to avoid it. U-turns are used only where there&apos;s no
+              other way, and never at a stop.
+            </p>
+            {TURN_COSTS.map((cost) => (
+              <div key={cost.key}>
+                <label htmlFor={`opt-${cost.key}`}>{cost.label}</label>
+                <input
+                  id={`opt-${cost.key}`}
+                  type="number"
+                  min="0"
+                  max="600"
+                  step="1"
+                  value={values[cost.key] ?? ''}
+                  onChange={(event) =>
+                    setValues((prev) => ({ ...prev, [cost.key]: event.target.value }))
+                  }
+                  disabled={!canEdit}
+                  required
+                />
+              </div>
+            ))}
+          </fieldset>
           <fieldset className="work-rules">
             <legend>Driver work hours</legend>
             <p>

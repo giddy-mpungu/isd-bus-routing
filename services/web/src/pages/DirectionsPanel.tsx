@@ -127,6 +127,16 @@ export function DirectionsPanel({
           )}
           {result && result.available && current && (
             <>
+              {(result.warnings ?? []).length > 0 && (
+                <div className="directions-warnings" role="status">
+                  <h4>{t('Check before you go')}</h4>
+                  <ul>
+                    {(result.warnings ?? []).map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <p className="directions-summary">
                 {t('Whole route: {distance}, about {time}', {
                   distance: miles(result.distance_m),

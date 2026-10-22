@@ -25,10 +25,12 @@ Every request the API makes carries a *custom model* built for that bus
 |---|---|---|
 | §6 | The bus's height, width, length and weight | Roads whose mapped limit it exceeds are closed to it |
 | §6 | Roads a bus may use | The `school_bus` profile (`services/routing/custom_models/school_bus.json`): bus access, no private roads, destination-only roads avoided |
-| §7 | Prefer right turns over lefts | Each turn adds seconds to the route's cost: right 5, sharp right 30, left 20, sharp left 60 |
+| §7 | Prefer right turns over lefts | Each turn adds seconds to the route's cost: right 5, sharp right 30, left 20, sharp left 60 (Setup → Rules & optimization → Turn costs) |
 | §7 | Lefts across several lanes | A left onto or off a main road (trunk, primary, secondary) adds 60 more |
 | §7 | U-turns | Never by reversing onto another road; turning back along the same road costs 120 s (the profile's `u_turn_costs`), so it's used only when there's no other way, as at the end of a dead end. Stops never make the bus turn round (`pass_through`) |
-| §8 | The district's hazard zones and size-restricted zones | Closed to every bus, or to the buses that don't fit |
+| §7 | Dead ends and approved turnarounds | The district records approved turnarounds (District knowledge → "approved turnaround") with the longest bus that can turn there. Directions warn the driver ("Check before you go") wherever the route turns round anywhere else, or at a turnaround too short for this bus or for a bus whose length isn't recorded |
+| §8 | Flooding, invalid turnarounds, size-restricted zones | Closed to every bus, or to the buses that don't fit |
+| §8 | Difficult intersections and unsafe turns | Costs, not closures: roads within about 40 m count as five times their time, so the route goes round unless that's much longer |
 | §10 | Road closures in force | Closed |
 
 Turn costs only choose the route: the times reported are driving times.
@@ -36,7 +38,10 @@ Turn restrictions in the map (no left turn, only straight on) apply too.
 
 What the map can't say: whether an intersection has signals or a protected
 left, and the number of lanes at a turn (GraphHopper can't use lane counts in
-turn costs), so "main road" stands in for "several lanes".
+turn costs), so "main road" stands in for "several lanes". Nor can a turn's
+cost depend on where it is (areas aren't allowed in turn costs), so
+difficult places make their roads costly instead, and a U-turn's cost is
+the same everywhere: turnarounds are checked on the finished route.
 
 ## The map
 

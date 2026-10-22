@@ -120,6 +120,11 @@ function mockLoad() {
     minimum_buffer_minutes: 0,
     ride_time_weight: 0,
     walking_weight: 0,
+    turn_right_seconds: 5,
+    turn_sharp_right_seconds: 30,
+    turn_left_seconds: 20,
+    turn_sharp_left_seconds: 60,
+    turn_main_road_left_seconds: 60,
     max_duty_minutes: null,
     break_after_minutes: null,
     break_minutes: null,
@@ -278,6 +283,46 @@ describe('SetupPage', () => {
         max_allowed_value: null,
         school_id: null,
       }),
+    )
+  })
+
+  it('an approved turnaround records the longest bus that can turn there', async () => {
+    vi.mocked(api.createGeographicKnowledgeOverride).mockResolvedValue({
+      id: 4,
+      location_lat: 29.759,
+      location_lon: -95.385,
+      category: 'approved_turnaround',
+      note: 'Church car park, end of Rhode Place.',
+      window_start_minute: null,
+      window_end_minute: null,
+      restricted_dimension: 'length_m',
+      max_allowed_value: 12,
+      school_id: null,
+      created_at: '2026-10-22T12:00:00Z',
+    })
+    renderAsRole(dispatcherUser)
+    await waitFor(() =>
+      expect(screen.getAllByText('Riverside Elementary', { exact: false })[0]).toBeInTheDocument(),
+    )
+    await openTab(/District knowledge/)
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Override latitude'), '29.759')
+    await user.type(screen.getByLabelText('Override longitude'), '-95.385')
+    await user.selectOptions(screen.getByLabelText('Category'), 'approved_turnaround')
+    await user.type(screen.getByLabelText('Longest bus that can turn here (metres)'), '12')
+    await user.type(screen.getByLabelText('Note'), 'Church car park, end of Rhode Place.')
+    await user.click(screen.getByRole('button', { name: 'Add override' }))
+
+    await waitFor(() =>
+      expect(api.createGeographicKnowledgeOverride).toHaveBeenCalledWith(
+        expect.objectContaining({
+          category: 'approved_turnaround',
+          restricted_dimension: 'length_m',
+          max_allowed_value: 12,
+          window_start_minute: null,
+        }),
+      ),
     )
   })
 

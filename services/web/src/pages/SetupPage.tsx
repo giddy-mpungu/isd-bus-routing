@@ -45,6 +45,7 @@ const GEO_CATEGORIES: GeographicKnowledgeCategory[] = [
   'difficult_intersection',
   'unsafe_turn',
   'invalid_turnaround',
+  'approved_turnaround',
   'congestion_window',
   'vehicle_size_restricted',
   'preferred_entrance',
@@ -172,9 +173,15 @@ export function SetupPage() {
         window_start_minute: geoCategory === 'congestion_window' ? Number(geoWindowStart) : null,
         window_end_minute: geoCategory === 'congestion_window' ? Number(geoWindowEnd) : null,
         restricted_dimension:
-          geoCategory === 'vehicle_size_restricted' ? geoRestrictedDimension : null,
+          geoCategory === 'vehicle_size_restricted'
+            ? geoRestrictedDimension
+            : geoCategory === 'approved_turnaround'
+              ? 'length_m'
+              : null,
         max_allowed_value:
-          geoCategory === 'vehicle_size_restricted' ? Number(geoMaxAllowedValue) : null,
+          geoCategory === 'vehicle_size_restricted' || geoCategory === 'approved_turnaround'
+            ? Number(geoMaxAllowedValue)
+            : null,
         school_id: geoCategory === 'preferred_entrance' ? Number(geoSchoolId) : null,
       })
       setGeoLat('')
@@ -485,6 +492,28 @@ export function SetupPage() {
                     onChange={(event) => setGeoMaxAllowedValue(event.target.value)}
                     required
                   />
+                </>
+              )}
+              {geoCategory === 'approved_turnaround' && (
+                <>
+                  <label htmlFor="geo-turnaround-length">
+                    Longest bus that can turn here (metres)
+                  </label>
+                  <input
+                    id="geo-turnaround-length"
+                    type="number"
+                    step="any"
+                    min="1"
+                    max="30"
+                    value={geoMaxAllowedValue}
+                    onChange={(event) => setGeoMaxAllowedValue(event.target.value)}
+                    aria-describedby="geo-turnaround-help"
+                    required
+                  />
+                  <small id="geo-turnaround-help">
+                    Directions warn the driver when a route turns round anywhere else, or here in a
+                    longer bus.
+                  </small>
                 </>
               )}
               {geoCategory === 'preferred_entrance' && (

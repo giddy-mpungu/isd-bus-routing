@@ -842,6 +842,24 @@ fieldset.motion-lockable:disabled {
   margin: 0.6rem 0;
 }
 
+.directions-warnings {
+  background: var(--warning-50);
+  border: 1px solid var(--warning-500);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.85rem;
+  color: var(--warning-700);
+  margin-bottom: 0.75rem;
+}
+
+.directions-warnings h4 {
+  margin: 0 0 0.35rem;
+}
+
+.directions-warnings ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
 .directions-body {
   margin-top: 0.5rem;
 }

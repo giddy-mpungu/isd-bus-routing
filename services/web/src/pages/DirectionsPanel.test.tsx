@@ -96,6 +96,17 @@ describe('DirectionsPanel', () => {
     expect(map.querySelector('path.map-track')).not.toBeNull()
   })
 
+  it('warns the driver where the route turns round outside an approved turnaround', async () => {
+    vi.mocked(api.getDirections).mockResolvedValue({
+      ...directions,
+      warnings: ["Turns round on Hartman Street, which isn't an approved turnaround."],
+    })
+    await open()
+    const box = await screen.findByRole('status')
+    expect(box).toHaveTextContent('Check before you go')
+    expect(box).toHaveTextContent('Turns round on Hartman Street')
+  })
+
   it('reads the next instruction aloud', async () => {
     const utterances: string[] = []
     vi.stubGlobal('speechSynthesis', { speak: (u: { text: string }) => utterances.push(u.text) })

@@ -211,6 +211,7 @@ export const es = {
   '{kind}, {start} to {end}, at {place}.': '{kind}, de {start} a {end}, en {place}.',
   '{kind}, {start} to {end}.': '{kind}, de {start} a {end}.',
   'Dispatch: {kind}': 'Despacho: {kind}',
+  'Check before you go': 'Compruebe antes de salir',
   'Regular route': 'Ruta regular',
   'Special education route': 'Ruta de educación especial',
   'Activity route': 'Ruta de actividades',

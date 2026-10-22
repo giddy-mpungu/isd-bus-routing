@@ -22,6 +22,7 @@ from isd_solver import (
     InfeasibleResult,
     SchedulingResult,
     SizeRestriction,
+    UTurn,
     areas_geojson,
     avoid_polygons_geojson,
     graphhopper_deadhead_estimator,
@@ -60,6 +61,7 @@ from isd_api.availability import (
 from isd_api.config import settings
 from isd_api.daily_trip import daily_trip
 from isd_api.db import get_db
+from isd_api.eligibility import METRES_PER_MILE, miles_between
 from isd_api.models import (
     Assignment,
     AssignmentStatus,
@@ -79,6 +81,7 @@ from isd_api.routers.optimization_settings import (
     load_min_rest_minutes,
     load_minimum_buffer_minutes,
     load_objective_weights,
+    load_turn_rules,
     load_work_rules,
 )
 from isd_api.routers.runs import _resolve_riding_students
@@ -129,6 +132,91 @@ _HARD_AVOID_CATEGORIES = (
     GeographicKnowledgeCategory.UNSAFE_TURN,
     GeographicKnowledgeCategory.INVALID_TURNAROUND,
 )
+# With the district's own routing engine, these two become costs instead
+# (spec section 8: "persistent constraints or costs"): still usable when
+# there's no sensible way round. OpenRouteService can only avoid them.
+_TURN_COST_CATEGORIES = (
+    GeographicKnowledgeCategory.DIFFICULT_INTERSECTION,
+    GeographicKnowledgeCategory.UNSAFE_TURN,
+)
+# How near a U-turn must be to an approved turnaround to count as at it.
+TURNAROUND_REACH_M = 60.0
+
+
+def _knowledge_points(
+    db: Session, categories: tuple[GeographicKnowledgeCategory, ...]
+) -> list[SolverLocation]:
+    return [
+        SolverLocation(lat=o.location_lat, lon=o.location_lon)
+        for o in db.query(GeographicKnowledgeOverride).filter(
+            GeographicKnowledgeOverride.category.in_(categories)
+        )
+    ]
+
+
+def _engine_categories() -> tuple[
+    tuple[GeographicKnowledgeCategory, ...], tuple[GeographicKnowledgeCategory, ...]
+]:
+    """(avoided, costly) knowledge categories for the routing in use."""
+    if settings.routing_engine_url:
+        avoided = tuple(c for c in _HARD_AVOID_CATEGORIES if c not in _TURN_COST_CATEGORIES)
+        return avoided, _TURN_COST_CATEGORIES
+    return _HARD_AVOID_CATEGORIES, ()
+
+
+def u_turn_warnings(db: Session, u_turns: list[UTurn], vehicle: DBVehicle, lang: str) -> list[str]:
+    """Spec section 7: where the route turns round anywhere but an approved
+    turnaround this bus fits (a dead end, usually), for the driver and
+    dispatch to check."""
+    turnarounds = (
+        db.query(GeographicKnowledgeOverride)
+        .filter(
+            GeographicKnowledgeOverride.category == GeographicKnowledgeCategory.APPROVED_TURNAROUND
+        )
+        .all()
+    )
+    warnings = []
+    for turn in u_turns:
+        near = [
+            t
+            for t in turnarounds
+            if miles_between(turn.lat, turn.lon, t.location_lat, t.location_lon) * METRES_PER_MILE
+            <= TURNAROUND_REACH_M
+        ]
+        street = turn.street or i18n.tr(lang, "an unnamed road")
+        if not near:
+            warnings.append(
+                i18n.tr(
+                    lang,
+                    "Turns round on {street}, which isn't an approved turnaround. "
+                    "Check with dispatch before going this way.",
+                    street=street,
+                )
+            )
+            continue
+        longest = max(t.max_allowed_value or 0.0 for t in near)
+        if vehicle.length_m is None:
+            warnings.append(
+                i18n.tr(
+                    lang,
+                    "Turns round on {street}, at a turnaround approved for buses up to "
+                    "{limit} m. This bus's length isn't recorded: check it fits.",
+                    street=street,
+                    limit=f"{longest:g}",
+                )
+            )
+        elif vehicle.length_m > longest:
+            warnings.append(
+                i18n.tr(
+                    lang,
+                    "Turns round on {street}, at a turnaround approved for buses up to "
+                    "{limit} m; this bus is {length} m. Check with dispatch.",
+                    street=street,
+                    limit=f"{longest:g}",
+                    length=f"{vehicle.length_m:g}",
+                )
+            )
+    return warnings
 
 
 def _congestion_avoid_points(db: Session, jobs: list[SolverJob]) -> list[SolverLocation]:
@@ -484,12 +572,8 @@ def run_schedule(
         average_speed_kmh=payload.average_deadhead_speed_kmh
     )
     if settings.routing_engine_url or settings.ors_api_key:
-        avoid_points = [
-            SolverLocation(lat=override.location_lat, lon=override.location_lon)
-            for override in db.query(GeographicKnowledgeOverride)
-            .filter(GeographicKnowledgeOverride.category.in_(_HARD_AVOID_CATEGORIES))
-            .all()
-        ]
+        avoided, costly = _engine_categories()
+        avoid_points = _knowledge_points(db, avoided)
         avoid_points += _congestion_avoid_points(db, unlocked_jobs)
         # Spec section 10: temporary closures in force on this service date.
         day_closures = closures.for_service_date(db, payload.service_date)
@@ -507,7 +591,9 @@ def run_schedule(
                 settings.routing_engine_url,
                 profile=settings.routing_engine_profile,
                 avoid_polygons=avoid,
+                slow_points=_knowledge_points(db, costly),
                 size_restrictions=_size_restrictions_for_schedule(db),
+                turn_rules=load_turn_rules(db),
                 fallback=fallback_estimator,
             )
             # Every leg the solve may ask about, timed in parallel first.
@@ -1126,12 +1212,8 @@ def route_directions(
     if cached is not None and now - cached[0] < DIRECTIONS_CACHE_SECONDS:
         return cached[1]
 
-    avoid_points = [
-        SolverLocation(lat=o.location_lat, lon=o.location_lon)
-        for o in db.query(GeographicKnowledgeOverride).filter(
-            GeographicKnowledgeOverride.category.in_(_HARD_AVOID_CATEGORIES)
-        )
-    ]
+    avoided, costly = _engine_categories()
+    avoid_points = _knowledge_points(db, avoided)
     points = [SolverLocation(lat=w.lat, lon=w.lon) for w in waypoints]
     bus = SolverVehicle(
         id=str(vehicle.id),
@@ -1152,7 +1234,9 @@ def route_directions(
                 bus,
                 avoid_points=avoid_points,
                 avoid_areas=areas,
+                slow_points=_knowledge_points(db, costly),
                 size_restrictions=_size_restrictions_for_schedule(db),
+                turn_rules=load_turn_rules(db),
                 profile=settings.routing_engine_profile,
                 language=lang,
             )
@@ -1199,7 +1283,13 @@ def route_directions(
             )
             for s in found.steps
         ],
+        warnings=u_turn_warnings(db, found.u_turns, vehicle, lang),
     )
+    if settings.routing_engine_url:
+        result.attribution = (
+            "Directions: the district's routing engine (GraphHopper) | "
+            "Map data © OpenStreetMap contributors"
+        )
     if len(_directions_cache) > 500:
         _directions_cache.clear()
     _directions_cache[key] = (now, result)
