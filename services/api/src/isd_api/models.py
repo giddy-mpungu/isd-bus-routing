@@ -856,6 +856,9 @@ class GeographicKnowledgeCategory(enum.StrEnum):
     CONGESTION_WINDOW = "congestion_window"
     VEHICLE_SIZE_RESTRICTED = "vehicle_size_restricted"
     PREFERRED_ENTRANCE = "preferred_entrance"
+    # Spec section 7: where a bus may turn round, for buses up to the
+    # length in max_allowed_value (not every bus fits every turnaround).
+    APPROVED_TURNAROUND = "approved_turnaround"
     OTHER = "other"
 
 
@@ -1466,6 +1469,23 @@ class OptimizationSettings(Base):
     # (0 = walk up to each grade's limit; 10 = half of it).
     walking_weight: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
+    )
+    # Spec section 7, the routing engine's turn costs (seconds added to a
+    # route's cost; isd_solver.TurnRules).
+    turn_right_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=5, server_default="5"
+    )
+    turn_sharp_right_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=30, server_default="30"
+    )
+    turn_left_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=20, server_default="20"
+    )
+    turn_sharp_left_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=60, server_default="60"
+    )
+    turn_main_road_left_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=60, server_default="60"
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow

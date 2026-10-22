@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from isd_solver.domain import (
     Location,
@@ -61,6 +61,16 @@ class Directions:
     coordinates: list[tuple[float, float]]
     legs: list[Leg]
     steps: list[DirectionStep]
+    # Where the route turns round (the routing engine reports these).
+    u_turns: list[UTurn] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class UTurn:
+    lat: float
+    lon: float
+    # The road it turns round on, when the map names it.
+    street: str
 
 
 def area_polygon(center: Location, radius_m: float, sides: int = 12) -> list[list[float]]:

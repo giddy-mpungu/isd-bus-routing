@@ -6,6 +6,10 @@ Every request carries a custom model built here:
     length or weight limit it exceeds are closed to it;
   - areas to keep out of (spec sections 8 and 10): the district's hazard
     zones, the size-restricted zones this bus exceeds, and closures;
+  - places that cost more to drive through (spec section 8): the
+    district's difficult intersections and unsafe turns, still usable when
+    there's no sensible way round (the engine can't price a turn by place,
+    so the roads there are made less attractive instead);
   - turn costs (spec section 7): a right turn costs a little, a left more,
     a sharp turn more still, a left onto or off a main road (where it
     crosses several lanes of traffic) more again, and reversing onto
@@ -31,6 +35,7 @@ from isd_solver.directions import (
     DirectionsError,
     DirectionStep,
     Leg,
+    UTurn,
     areas_geojson,
 )
 from isd_solver.domain import (
@@ -50,6 +55,10 @@ DEFAULT_PROFILE = "school_bus"
 
 # Main roads: a left onto or off one crosses several lanes of traffic.
 MAIN_ROADS = ("TRUNK", "PRIMARY", "SECONDARY")
+
+# How much less attractive a road is inside a difficult-turn zone: driving
+# through costs about this many times its time.
+SLOW_ZONE_PRIORITY = 0.2
 
 # GraphHopper's instruction signs for turning round.
 U_TURN_SIGNS = {-98, -8, 8}
@@ -97,9 +106,20 @@ def turn_penalty(rules: TurnRules) -> list[dict]:
     ]
 
 
-def custom_model(vehicle: Vehicle, avoid: dict | None, rules: TurnRules) -> dict:
-    """The per-request custom model for this bus. `avoid` is a GeoJSON
-    Polygon or MultiPolygon (the same shape the ORS client takes)."""
+def _polygons(geojson: dict | None) -> list[list]:
+    if geojson is None:
+        return []
+    if geojson["type"] == "Polygon":
+        return [geojson["coordinates"]]
+    return list(geojson["coordinates"])
+
+
+def custom_model(
+    vehicle: Vehicle, avoid: dict | None, rules: TurnRules, slow: dict | None = None
+) -> dict:
+    """The per-request custom model for this bus. `avoid` (closed) and
+    `slow` (costly to drive through) are GeoJSON Polygons or MultiPolygons
+    (the same shape the ORS client takes)."""
     priority: list[dict] = []
     limits = []
     if vehicle.height_m is not None:
@@ -114,27 +134,25 @@ def custom_model(vehicle: Vehicle, avoid: dict | None, rules: TurnRules) -> dict
         priority.append({"if": " || ".join(limits), "multiply_by": "0"})
 
     model: dict = {"turn_penalty": turn_penalty(rules)}
-    polygons: list[list] = []
-    if avoid is not None:
-        if avoid["type"] == "Polygon":
-            polygons = [avoid["coordinates"]]
-        else:
-            polygons = list(avoid["coordinates"])
-    if polygons:
-        ids = [f"avoid_{i}" for i in range(len(polygons))]
-        model["areas"] = {
-            "type": "FeatureCollection",
-            "features": [
-                {
-                    "type": "Feature",
-                    "id": area_id,
-                    "properties": {},
-                    "geometry": {"type": "Polygon", "coordinates": rings},
-                }
-                for area_id, rings in zip(ids, polygons, strict=True)
-            ],
-        }
-        priority.append({"if": " || ".join(f"in_{i}" for i in ids), "multiply_by": "0"})
+    features: list[dict] = []
+    for prefix, polygons, factor in (
+        ("avoid", _polygons(avoid), "0"),
+        ("slow", _polygons(slow), str(SLOW_ZONE_PRIORITY)),
+    ):
+        ids = [f"{prefix}_{i}" for i in range(len(polygons))]
+        features += [
+            {
+                "type": "Feature",
+                "id": area_id,
+                "properties": {},
+                "geometry": {"type": "Polygon", "coordinates": rings},
+            }
+            for area_id, rings in zip(ids, polygons, strict=True)
+        ]
+        if ids:
+            priority.append({"if": " || ".join(f"in_{i}" for i in ids), "multiply_by": factor})
+    if features:
+        model["areas"] = {"type": "FeatureCollection", "features": features}
     if priority:
         model["priority"] = priority
     return model
@@ -164,6 +182,7 @@ def graphhopper_deadhead_estimator(
     *,
     profile: str = DEFAULT_PROFILE,
     avoid_polygons: dict | None = None,
+    slow_points: list[Location] | None = None,
     size_restrictions: tuple[SizeRestriction, ...] = (),
     turn_rules: TurnRules | None = None,
     timeout_seconds: float = 10.0,
@@ -181,6 +200,7 @@ def graphhopper_deadhead_estimator(
         base_url.rstrip("/"),
         profile,
         avoid_polygons,
+        avoid_polygons_geojson(list(slow_points)) if slow_points else None,
         size_restrictions,
         turn_rules or TurnRules(),
         timeout_seconds,
@@ -195,6 +215,7 @@ class GraphHopperEstimator:
         base_url: str,
         profile: str,
         avoid_polygons: dict | None,
+        slow: dict | None,
         size_restrictions: tuple[SizeRestriction, ...],
         rules: TurnRules,
         timeout_seconds: float,
@@ -204,6 +225,7 @@ class GraphHopperEstimator:
         self._url = f"{base_url}/route"
         self._profile = profile
         self._fixed = avoid_polygons
+        self._slow = slow
         self._size_restrictions = size_restrictions
         self._rules = rules
         self._timeout = timeout_seconds
@@ -223,7 +245,7 @@ class GraphHopperEstimator:
             "points": [[a.lon, a.lat], [b.lon, b.lat]],
             "instructions": False,
             "calc_points": False,
-            "custom_model": custom_model(vehicle, avoid, self._rules),
+            "custom_model": custom_model(vehicle, avoid, self._rules, self._slow),
         }
         payload = self._post(self._url, body, {}, self._timeout)
         paths = payload.get("paths") or []
@@ -282,6 +304,7 @@ def graphhopper_directions(
     *,
     avoid_points: list[Location] | None = None,
     avoid_areas: list[tuple[Location, float]] | None = None,
+    slow_points: list[Location] | None = None,
     size_restrictions: tuple[SizeRestriction, ...] = (),
     turn_rules: TurnRules | None = None,
     profile: str = DEFAULT_PROFILE,
@@ -310,7 +333,12 @@ def graphhopper_directions(
         "points_encoded": False,
         "locale": language,
         "pass_through": True,
-        "custom_model": custom_model(vehicle, avoid, turn_rules or TurnRules()),
+        "custom_model": custom_model(
+            vehicle,
+            avoid,
+            turn_rules or TurnRules(),
+            avoid_polygons_geojson(list(slow_points)) if slow_points else None,
+        ),
     }
     post = http_post or _default_http_post
     try:
@@ -328,6 +356,8 @@ def parse_graphhopper(payload: dict) -> Directions:
         coordinates = [(float(lat), float(lon)) for lon, lat, *_ in path["points"]["coordinates"]]
         steps: list[DirectionStep] = []
         legs: list[Leg] = []
+        u_turns: list[UTurn] = []
+        points = path["points"]["coordinates"]
         leg, leg_distance, leg_time = 0, 0.0, 0.0
         for instruction in path.get("instructions", []):
             distance = float(instruction["distance"])
@@ -344,6 +374,11 @@ def parse_graphhopper(payload: dict) -> Directions:
                     leg=leg,
                 )
             )
+            if sign in U_TURN_SIGNS:
+                lon, lat, *_ = points[int(instruction["interval"][0])]
+                u_turns.append(
+                    UTurn(float(lat), float(lon), str(instruction.get("street_name") or ""))
+                )
             if sign in (VIA_REACHED, FINISH):
                 legs.append(Leg(leg_distance, leg_time))
                 leg, leg_distance, leg_time = leg + 1, 0.0, 0.0
@@ -353,6 +388,7 @@ def parse_graphhopper(payload: dict) -> Directions:
             coordinates=coordinates,
             legs=legs,
             steps=steps,
+            u_turns=u_turns,
         )
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         raise DirectionsError(f"Unexpected directions response: {exc}") from exc

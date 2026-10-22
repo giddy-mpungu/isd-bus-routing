@@ -192,3 +192,54 @@ def test_directions_failures_are_directions_errors():
         graphhopper_directions(
             "http://routing:8989", [A, B], BUS, http_post=lambda *args: {"paths": []}
         )
+
+
+def test_difficult_places_cost_more_to_drive_through_but_stay_open():
+    post, calls = _engine()
+    estimate = graphhopper_deadhead_estimator(
+        "http://routing:8989", slow_points=[C], http_post=post
+    )
+    estimate(A, B, BUS)
+    model = calls[0][1]["custom_model"]
+    assert [f["id"] for f in model["areas"]["features"]] == ["slow_0"]
+    assert model["priority"][-1] == {"if": "in_slow_0", "multiply_by": "0.2"}
+
+
+def test_directions_say_where_the_bus_turns_round():
+    payload = {
+        "paths": [
+            {
+                "distance": 900.0,
+                "time": 120_000,
+                "points": {"coordinates": [[-95.40, 29.74], [-95.385, 29.759], [-95.37, 29.77]]},
+                "instructions": [
+                    {
+                        "text": "Continue",
+                        "distance": 500.0,
+                        "time": 60_000,
+                        "sign": 0,
+                        "interval": [0, 1],
+                    },
+                    {
+                        "text": "Make a U-turn onto Rhode Place",
+                        "street_name": "Rhode Place",
+                        "distance": 400.0,
+                        "time": 60_000,
+                        "sign": -98,
+                        "interval": [1, 2],
+                    },
+                    {
+                        "text": "Arrive at destination",
+                        "distance": 0.0,
+                        "time": 0,
+                        "sign": 4,
+                        "interval": [2, 2],
+                    },
+                ],
+            }
+        ]
+    }
+    found = graphhopper_directions(
+        "http://routing:8989", [A, B], BUS, http_post=lambda *args: payload
+    )
+    assert [(u.lat, u.lon, u.street) for u in found.u_turns] == [(29.759, -95.385, "Rhode Place")]

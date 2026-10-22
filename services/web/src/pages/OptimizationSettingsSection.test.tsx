@@ -21,6 +21,11 @@ const defaults = {
   minimum_buffer_minutes: 0,
   ride_time_weight: 0,
   walking_weight: 0,
+  turn_right_seconds: 5,
+  turn_sharp_right_seconds: 30,
+  turn_left_seconds: 20,
+  turn_sharp_left_seconds: 60,
+  turn_main_road_left_seconds: 60,
   max_duty_minutes: null,
   break_after_minutes: null,
   break_minutes: null,
@@ -51,6 +56,11 @@ describe('OptimizationSettingsSection', () => {
       minimum_buffer_minutes: 10,
       ride_time_weight: 0,
       walking_weight: 0,
+      turn_right_seconds: 5,
+      turn_sharp_right_seconds: 30,
+      turn_left_seconds: 20,
+      turn_sharp_left_seconds: 60,
+      turn_main_road_left_seconds: 60,
       max_duty_minutes: null,
       break_after_minutes: null,
       break_minutes: null,
@@ -78,6 +88,11 @@ describe('OptimizationSettingsSection', () => {
         minimum_buffer_minutes: 10,
         ride_time_weight: 0,
         walking_weight: 0,
+        turn_right_seconds: 5,
+        turn_sharp_right_seconds: 30,
+        turn_left_seconds: 20,
+        turn_sharp_left_seconds: 60,
+        turn_main_road_left_seconds: 60,
         max_duty_minutes: null,
         break_after_minutes: null,
         break_minutes: null,
@@ -86,6 +101,28 @@ describe('OptimizationSettingsSection', () => {
     )
     expect(await screen.findByText(/apply the next time a schedule is solved/)).toBeInTheDocument()
     expect(screen.queryByText(/defaults are in effect/)).not.toBeInTheDocument()
+  })
+
+  it('saves the turn costs the routing engine uses', async () => {
+    vi.mocked(api.updateOptimizationSettings).mockResolvedValue({
+      ...defaults,
+      turn_left_seconds: 45,
+      is_default: false,
+    })
+    const user = userEvent.setup()
+    render(<OptimizationSettingsSection canEdit />)
+    const left = await screen.findByLabelText('Left turn')
+    expect(left).toHaveValue(20)
+    expect(screen.getByLabelText('Left at a main road (on top of the left)')).toHaveValue(60)
+
+    await user.clear(left)
+    await user.type(left, '45')
+    await user.click(screen.getByRole('button', { name: 'Save settings' }))
+    await waitFor(() =>
+      expect(api.updateOptimizationSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ turn_left_seconds: 45, turn_right_seconds: 5 }),
+      ),
+    )
   })
 
   it('saves the walking weight for proposing stops', async () => {

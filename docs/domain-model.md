@@ -265,8 +265,18 @@ produces them rather than duplicated here.
   `window_start_minute`/`window_end_minute` (minute-of-day range, for
   `CONGESTION_WINDOW`), `restricted_dimension`/`max_allowed_value`
   (one of `Vehicle`'s own `length_m`/`width_m`/`height_m`/`weight_kg`
-  field names plus a threshold, for `VEHICLE_SIZE_RESTRICTED`), and
-  `school_id` (nullable FK to `School`, for `PREFERRED_ENTRANCE`).
+  field names plus a threshold, for `VEHICLE_SIZE_RESTRICTED`; for
+  `APPROVED_TURNAROUND` (#94, spec §7) always `length_m` and the longest
+  bus that can turn there), and `school_id` (nullable FK to `School`, for
+  `PREFERRED_ENTRANCE`).
+
+  With the district's routing engine (#94, docs/routing-engine.md):
+  `DIFFICULT_INTERSECTION` and `UNSAFE_TURN` are costs (the engine's
+  "slow" zones, priority 0.2) instead of avoids; `APPROVED_TURNAROUND`
+  isn't sent to the engine at all: `routers/schedule.u_turn_warnings`
+  checks each U-turn on the finished route (within 60 m) and warns the
+  driver unless it's at one this bus fits. Turn costs are
+  `OptimizationSettings.turn_*_seconds` → `isd_solver.TurnRules`.
 
   **7 of the 8 categories are now applied to routing**, each via a
   mechanism appropriate to what it actually means:

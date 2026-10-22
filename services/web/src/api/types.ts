@@ -169,6 +169,13 @@ export interface OptimizationSettingsUpdate {
   // Proposing stops (spec section 2.2): each step takes 5% off every
   // grade's walking limit, for shorter walks and more stops. 0 to 10.
   walking_weight: number
+  // Spec section 7: seconds the routing engine adds to a route's cost for
+  // each kind of turn (main-road lefts on top of the left).
+  turn_right_seconds: number
+  turn_sharp_right_seconds: number
+  turn_left_seconds: number
+  turn_sharp_left_seconds: number
+  turn_main_road_left_seconds: number
   // Spec section 2.1: driver work-hour rules, each null (off) until the
   // district sets it. Minutes.
   max_duty_minutes: number | null
@@ -651,6 +658,8 @@ export type GeographicKnowledgeCategory =
   | 'congestion_window'
   | 'vehicle_size_restricted'
   | 'preferred_entrance'
+  // Spec section 7: where buses up to max_allowed_value metres long may turn round.
+  | 'approved_turnaround'
   | 'other'
 
 // Matches Vehicle's own length_m/width_m/height_m/weight_kg field
@@ -1146,6 +1155,9 @@ export interface DirectionsResult {
     duration_s: number
     leg: number
   }[]
+  // Spec section 7: where the route turns round anywhere but an approved
+  // turnaround this bus fits. Already in the driver's language.
+  warnings?: string[]
   attribution: string
 }
 

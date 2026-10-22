@@ -20,6 +20,7 @@ from isd_api.db import get_db
 from isd_api.models import (
     GeographicKnowledgeCategory,
     GeographicKnowledgeOverride,
+    RestrictedVehicleDimension,
     Role,
     School,
     User,
@@ -44,6 +45,7 @@ def _validate_category_specific_fields(
     is_congestion = payload.category == GeographicKnowledgeCategory.CONGESTION_WINDOW
     is_size_restricted = payload.category == GeographicKnowledgeCategory.VEHICLE_SIZE_RESTRICTED
     is_preferred_entrance = payload.category == GeographicKnowledgeCategory.PREFERRED_ENTRANCE
+    is_turnaround = payload.category == GeographicKnowledgeCategory.APPROVED_TURNAROUND
 
     if is_congestion:
         if payload.window_start_minute is None or payload.window_end_minute is None:
@@ -71,11 +73,28 @@ def _validate_category_specific_fields(
                     "max_allowed_value"
                 ),
             )
+    elif is_turnaround:
+        # Spec section 7: not every bus fits every turnaround.
+        if payload.max_allowed_value is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "approved_turnaround requires max_allowed_value: the longest bus, in "
+                    "metres, that can turn there"
+                ),
+            )
+        if payload.restricted_dimension not in (None, RestrictedVehicleDimension.LENGTH_M):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="an approved_turnaround is measured by the bus's length (length_m)",
+            )
+        payload.restricted_dimension = RestrictedVehicleDimension.LENGTH_M
     elif payload.restricted_dimension is not None or payload.max_allowed_value is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                "restricted_dimension/max_allowed_value are only valid for vehicle_size_restricted"
+                "restricted_dimension/max_allowed_value are only valid for "
+                "vehicle_size_restricted and approved_turnaround"
             ),
         )
 

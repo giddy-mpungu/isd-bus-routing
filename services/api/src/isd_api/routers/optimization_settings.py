@@ -7,7 +7,7 @@ result in their terms); only a transportation administrator changes them.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from isd_solver import ObjectiveWeights, WorkRules
+from isd_solver import ObjectiveWeights, TurnRules, WorkRules
 from sqlalchemy.orm import Session
 
 from isd_api.audit import record as record_audit
@@ -65,6 +65,20 @@ def load_walking_weight(db: Session) -> int:
     return 0 if row is None else row.walking_weight
 
 
+def load_turn_rules(db: Session) -> TurnRules:
+    """The routing engine's turn costs (spec section 7); defaults until set."""
+    row = db.get(OptimizationSettings, _SETTINGS_ID)
+    if row is None:
+        return TurnRules()
+    return TurnRules(
+        right_s=row.turn_right_seconds,
+        sharp_right_s=row.turn_sharp_right_seconds,
+        left_s=row.turn_left_seconds,
+        sharp_left_s=row.turn_sharp_left_seconds,
+        main_road_left_s=row.turn_main_road_left_seconds,
+    )
+
+
 def load_min_rest_minutes(db: Session) -> int | None:
     """Minutes off required between a driver's days (None = no rule)."""
     row = db.get(OptimizationSettings, _SETTINGS_ID)
@@ -74,6 +88,7 @@ def load_min_rest_minutes(db: Session) -> int | None:
 def _read(db: Session) -> OptimizationSettingsRead:
     weights = load_objective_weights(db)
     rules = load_work_rules(db)
+    turns = load_turn_rules(db)
     return OptimizationSettingsRead(
         crews_used_weight=weights.crews_used,
         deadhead_minutes_weight=weights.deadhead_minutes,
@@ -81,6 +96,11 @@ def _read(db: Session) -> OptimizationSettingsRead:
         minimum_buffer_minutes=load_minimum_buffer_minutes(db),
         ride_time_weight=load_ride_time_weight(db),
         walking_weight=load_walking_weight(db),
+        turn_right_seconds=turns.right_s,
+        turn_sharp_right_seconds=turns.sharp_right_s,
+        turn_left_seconds=turns.left_s,
+        turn_sharp_left_seconds=turns.sharp_left_s,
+        turn_main_road_left_seconds=turns.main_road_left_s,
         max_duty_minutes=rules.max_duty_minutes,
         break_after_minutes=rules.break_after_minutes,
         break_minutes=rules.break_minutes,
@@ -114,6 +134,11 @@ def update_optimization_settings(
     row.minimum_buffer_minutes = payload.minimum_buffer_minutes
     row.ride_time_weight = payload.ride_time_weight
     row.walking_weight = payload.walking_weight
+    row.turn_right_seconds = payload.turn_right_seconds
+    row.turn_sharp_right_seconds = payload.turn_sharp_right_seconds
+    row.turn_left_seconds = payload.turn_left_seconds
+    row.turn_sharp_left_seconds = payload.turn_sharp_left_seconds
+    row.turn_main_road_left_seconds = payload.turn_main_road_left_seconds
     row.max_duty_minutes = payload.max_duty_minutes
     row.break_after_minutes = payload.break_after_minutes
     row.break_minutes = payload.break_minutes

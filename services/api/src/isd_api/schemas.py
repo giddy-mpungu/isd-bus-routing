@@ -766,9 +766,11 @@ class DirectionsStepRead(BaseModel):
 
 class DirectionsRead(BaseModel):
     """Turn-by-turn directions through a run's stops today (spec section
-    9), from OpenRouteService's heavy-vehicle profile. `available` is
-    False, with `reason`, when there's no ORS key or no stops; the
-    waypoints are still listed so the tablet can show the order."""
+    9), from the district's routing engine (else OpenRouteService's
+    heavy-vehicle profile). `available` is False, with `reason`, when
+    there's neither or no stops; the waypoints are still listed so the
+    tablet can show the order. `warnings`: where the route turns round
+    anywhere but an approved turnaround this bus fits (spec section 7)."""
 
     available: bool
     reason: str | None = None
@@ -779,6 +781,7 @@ class DirectionsRead(BaseModel):
     coordinates: list[list[float]] = []
     legs: list[DirectionsLeg] = []
     steps: list[DirectionsStepRead] = []
+    warnings: list[str] = []
     attribution: str = "Directions © openrouteservice.org | Map data © OpenStreetMap contributors"
 
 
@@ -877,6 +880,14 @@ class OptimizationSettingsBase(BaseModel):
     # Proposing stops (spec section 2.2): shorter walks against fewer
     # stops; each step takes 5% off every grade's walking limit.
     walking_weight: int = Field(default=0, ge=0, le=10)
+    # Spec section 7: seconds the routing engine adds to a route's cost for
+    # each kind of turn (they choose the route; reported times don't
+    # include them). Main-road lefts are on top of the left.
+    turn_right_seconds: int = Field(default=5, ge=0, le=600)
+    turn_sharp_right_seconds: int = Field(default=30, ge=0, le=600)
+    turn_left_seconds: int = Field(default=20, ge=0, le=600)
+    turn_sharp_left_seconds: int = Field(default=60, ge=0, le=600)
+    turn_main_road_left_seconds: int = Field(default=60, ge=0, le=600)
     # Driver work-hour rules (spec section 2.1); leave empty for none.
     # max_duty_minutes: first start to last end in a day.
     max_duty_minutes: int | None = Field(default=None, ge=60, le=1440)
@@ -1195,6 +1206,8 @@ class GeographicKnowledgeOverrideCreate(BaseModel):
     window_start_minute: int | None = Field(default=None, ge=0, le=1439)
     window_end_minute: int | None = Field(default=None, ge=0, le=1439)
     # Required together, and only meaningful, for category=vehicle_size_restricted.
+    # For category=approved_turnaround, max_allowed_value is the longest bus
+    # (metres) that can turn there, and the dimension is length_m.
     restricted_dimension: RestrictedVehicleDimension | None = None
     max_allowed_value: float | None = Field(default=None, gt=0)
     # Required, and only meaningful, for category=preferred_entrance -- says
